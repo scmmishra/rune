@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct FileEditorDrawer: View {
@@ -40,6 +41,9 @@ struct FileEditorDrawer: View {
                 .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.22), radius: 24, y: 8)
+        .background {
+            DrawerEscapeMonitor(onEscape: onClose)
+        }
         .task(id: fileURL) {
             load()
         }
@@ -68,7 +72,6 @@ struct FileEditorDrawer: View {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.plain)
-            .keyboardShortcut(.escape, modifiers: [])
             .help("Close")
         }
         .font(.system(size: 11, weight: .semibold))
@@ -103,6 +106,64 @@ struct FileEditorDrawer: View {
             savedText = text
         } catch {
             loadError = error.localizedDescription
+        }
+    }
+}
+
+private struct DrawerEscapeMonitor: NSViewRepresentable {
+    let onEscape: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onEscape: onEscape)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.install(for: view)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.onEscape = onEscape
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    @MainActor
+    final class Coordinator {
+        var onEscape: () -> Void
+
+        private weak var view: NSView?
+        private var monitor: Any?
+
+        init(onEscape: @escaping () -> Void) {
+            self.onEscape = onEscape
+        }
+
+        func install(for view: NSView) {
+            self.view = view
+
+            // Keep the drawer alive until key-up so both halves of Escape are
+            // consumed. Letting key-up escape can make a full-screen window exit.
+            // Source: https://developer.apple.com/documentation/appkit/nsevent/addlocalmonitorforevents(matching:handler:)
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+                guard let self,
+                      event.window === self.view?.window,
+                      event.charactersIgnoringModifiers == "\u{1B}" else { return event }
+
+                if event.type == .keyUp {
+                    self.onEscape()
+                }
+                return nil
+            }
+        }
+
+        func uninstall() {
+            guard let monitor else { return }
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
         }
     }
 }

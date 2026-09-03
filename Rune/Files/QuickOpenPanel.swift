@@ -2,13 +2,19 @@ import SwiftUI
 
 struct QuickOpenPanel: View {
     let rootURL: URL
-    let files: [URL]
     let onOpen: (URL) -> Void
     let onClose: () -> Void
 
     @State private var query = ""
+    @State private var files: [WorkspaceFileIndex.Entry] = []
+    @State private var matchingFiles: [WorkspaceFileIndex.Entry] = []
+    @State private var isLoading = true
     @State private var selectedURL: URL?
+    @State private var searchTask: Task<Void, Never>?
     @FocusState private var isSearchFocused: Bool
+
+    // Bound SwiftUI diffing while still keeping far more results than the panel can display.
+    private let resultLimit = 200
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,12 +36,18 @@ struct QuickOpenPanel: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(matchingFiles, id: \.self) { fileURL in
-                            fileRow(fileURL)
-                                .id(fileURL)
+                        ForEach(matchingFiles, id: \.url) { file in
+                            fileRow(file)
+                                .id(file.url)
                         }
                     }
                     .padding(6)
+                }
+                .overlay {
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
                 }
                 .onChange(of: selectedURL) { _, selectedURL in
                     if let selectedURL {
@@ -52,41 +64,30 @@ struct QuickOpenPanel: View {
         }
         .shadow(color: .black.opacity(0.28), radius: 28, y: 10)
         .onAppear {
-            selectedURL = matchingFiles.first
             isSearchFocused = true
         }
         .onChange(of: query) {
-            selectedURL = matchingFiles.first
+            refreshMatches()
+        }
+        .task(id: rootURL) {
+            await loadFiles()
+        }
+        .onDisappear {
+            searchTask?.cancel()
         }
         .onKeyPress(keys: [.upArrow, .downArrow, .escape]) { keyPress in
             handleKeyPress(keyPress.key)
         }
     }
 
-    private var matchingFiles: [URL] {
-        guard !query.isEmpty else { return files }
-        return files.compactMap { fileURL -> (url: URL, path: String, score: Int)? in
-            let path = relativePath(for: fileURL)
-            guard let score = FuzzyMatcher.pathScore(query, path: path) else { return nil }
-            return (fileURL, path, score)
-        }
-        .sorted { lhs, rhs in
-            if lhs.score != rhs.score {
-                return lhs.score > rhs.score
-            }
-            return lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
-        }
-        .map(\.url)
-    }
-
-    private func fileRow(_ fileURL: URL) -> some View {
+    private func fileRow(_ file: WorkspaceFileIndex.Entry) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: FileTreeIcon.symbolName(for: fileURL, isDirectory: false))
+            Image(systemName: FileTreeIcon.symbolName(for: file.url, isDirectory: false))
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .frame(width: 12)
 
-            Text(relativePath(for: fileURL))
+            Text(file.relativePath)
                 .font(.system(size: 12, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -96,23 +97,19 @@ struct QuickOpenPanel: View {
         .padding(.horizontal, 8)
         .frame(height: 25)
         .background {
-            if selectedURL == fileURL {
+            if selectedURL == file.url {
                 RoundedRectangle(cornerRadius: 5)
                     .fill(Color.accentColor.opacity(0.20))
             }
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            onOpen(fileURL)
+            onOpen(file.url)
         }
     }
 
-    private func relativePath(for fileURL: URL) -> String {
-        WorkspaceFileIndex.relativePath(of: fileURL, in: rootURL)
-    }
-
     private func openSelection() {
-        guard let fileURL = selectedURL ?? matchingFiles.first else { return }
+        guard let fileURL = selectedURL ?? matchingFiles.first?.url else { return }
         onOpen(fileURL)
     }
 
@@ -123,18 +120,95 @@ struct QuickOpenPanel: View {
         }
 
         guard !matchingFiles.isEmpty else { return .ignored }
-        let currentIndex = selectedURL.flatMap { matchingFiles.firstIndex(of: $0) }
+        let currentIndex = selectedURL.flatMap { selectedURL in
+            matchingFiles.firstIndex { $0.url == selectedURL }
+        }
 
         if key == .upArrow {
-            selectedURL = matchingFiles[max(0, (currentIndex ?? 1) - 1)]
+            selectedURL = matchingFiles[max(0, (currentIndex ?? 1) - 1)].url
             return .handled
         }
 
         if key == .downArrow {
-            selectedURL = matchingFiles[min(matchingFiles.count - 1, (currentIndex ?? -1) + 1)]
+            selectedURL = matchingFiles[min(matchingFiles.count - 1, (currentIndex ?? -1) + 1)].url
             return .handled
         }
 
         return .ignored
+    }
+
+    private func loadFiles() async {
+        isLoading = true
+        let rootURL = rootURL
+        let indexedFiles = await Task.detached(priority: .userInitiated) {
+            WorkspaceFileIndex.files(in: rootURL)
+        }.value
+
+        guard !Task.isCancelled else { return }
+        files = indexedFiles
+        isLoading = false
+        refreshMatches()
+    }
+
+    private func refreshMatches() {
+        searchTask?.cancel()
+
+        let query = query
+        let files = files
+        guard !query.isEmpty else {
+            matchingFiles = Array(files.prefix(resultLimit))
+            selectedURL = matchingFiles.first?.url
+            return
+        }
+
+        let worker = Task.detached(priority: .userInitiated) {
+            QuickOpenSearch.matches(query: query, files: files, limit: resultLimit)
+        }
+
+        searchTask = Task {
+            let matches = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+
+            guard !Task.isCancelled, self.query == query else { return }
+            matchingFiles = matches
+            selectedURL = matches.first?.url
+        }
+    }
+}
+
+nonisolated private enum QuickOpenSearch {
+    static func matches(
+        query: String,
+        files: [WorkspaceFileIndex.Entry],
+        limit: Int
+    ) -> [WorkspaceFileIndex.Entry] {
+        let normalizedQuery = Array(query.lowercased().utf8)
+        var matches: [(file: WorkspaceFileIndex.Entry, score: Int)] = []
+        matches.reserveCapacity(files.count)
+
+        for (index, file) in files.enumerated() {
+            if index.isMultiple(of: 256), Task.isCancelled {
+                return []
+            }
+
+            guard let score = FuzzyMatcher.pathScore(
+                normalizedQuery,
+                path: file.searchablePath,
+                filename: file.searchableFilename
+            ) else { continue }
+            matches.append((file, score))
+        }
+
+        matches.sort { lhs, rhs in
+            if lhs.score != rhs.score {
+                return lhs.score > rhs.score
+            }
+            return lhs.file.relativePath < rhs.file.relativePath
+        }
+
+        return matches.prefix(limit).map(\.file)
     }
 }

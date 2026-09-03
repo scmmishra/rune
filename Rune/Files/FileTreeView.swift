@@ -292,7 +292,7 @@ private enum GitFileTree {
         return makeTree(from: paths, statuses: statuses, rootedAt: directoryURL)
     }
 
-    static func filePaths(in directoryURL: URL) -> [String]? {
+    nonisolated static func filePaths(in directoryURL: URL) -> [String]? {
         guard let files = runGit(
             ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
             in: directoryURL
@@ -303,7 +303,7 @@ private enum GitFileTree {
         return files.split(separator: 0).compactMap { String(data: $0, encoding: .utf8) }
     }
 
-    private static func runGit(_ arguments: [String], in directoryURL: URL) -> Data? {
+    nonisolated private static func runGit(_ arguments: [String], in directoryURL: URL) -> Data? {
         let process = Process()
         let output = Pipe()
 
@@ -420,12 +420,33 @@ private enum GitFileTree {
     }
 }
 
-enum WorkspaceFileIndex {
-    static func files(in rootURL: URL) -> [URL] {
+nonisolated enum WorkspaceFileIndex {
+    struct Entry: Identifiable, Hashable, Sendable {
+        let url: URL
+        let relativePath: String
+        let searchablePath: String
+        let searchableFilename: String
+
+        var id: URL { url }
+
+        init(url: URL, relativePath: String) {
+            self.url = url
+            self.relativePath = relativePath
+            searchablePath = relativePath.lowercased()
+            searchableFilename = relativePath.split(separator: "/").last.map(String.init)?.lowercased() ?? ""
+        }
+    }
+
+    static func files(in rootURL: URL) -> [Entry] {
         if let paths = GitFileTree.filePaths(in: rootURL) {
             return paths
-                .map { rootURL.appending(path: $0, directoryHint: .notDirectory) }
-                .sorted { relativePath(of: $0, in: rootURL) < relativePath(of: $1, in: rootURL) }
+                .map { path in
+                    Entry(
+                        url: rootURL.appending(path: path, directoryHint: .notDirectory),
+                        relativePath: path
+                    )
+                }
+                .sorted { $0.relativePath < $1.relativePath }
         }
 
         guard let enumerator = FileManager.default.enumerator(
@@ -437,7 +458,7 @@ enum WorkspaceFileIndex {
             return []
         }
 
-        return enumerator.compactMap { element -> URL? in
+        return enumerator.compactMap { element -> Entry? in
             guard let url = element as? URL else { return nil }
             if url.lastPathComponent == ".git" {
                 enumerator.skipDescendants()
@@ -446,9 +467,9 @@ enum WorkspaceFileIndex {
             guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
                   values.isRegularFile == true,
                   values.isSymbolicLink != true else { return nil }
-            return url
+            return Entry(url: url, relativePath: relativePath(of: url, in: rootURL))
         }
-        .sorted { relativePath(of: $0, in: rootURL) < relativePath(of: $1, in: rootURL) }
+        .sorted { $0.relativePath < $1.relativePath }
     }
 
     static func relativePath(of fileURL: URL, in rootURL: URL) -> String {

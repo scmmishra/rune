@@ -3,7 +3,6 @@ import SwiftUI
 struct WorkspaceView: View {
     let directoryURL: URL?
     @State private var openFileURL: URL?
-    @State private var quickOpenFiles: [URL] = []
     @State private var isQuickOpenPresented = false
 
     private enum Layout {
@@ -77,7 +76,6 @@ struct WorkspaceView: View {
                 if isQuickOpenPresented, let directoryURL {
                     QuickOpenPanel(
                         rootURL: directoryURL,
-                        files: quickOpenFiles,
                         onOpen: open,
                         onClose: { isQuickOpenPresented = false }
                     )
@@ -97,8 +95,7 @@ struct WorkspaceView: View {
     }
 
     private func presentQuickOpen() {
-        guard let directoryURL else { return }
-        quickOpenFiles = WorkspaceFileIndex.files(in: directoryURL)
+        guard directoryURL != nil else { return }
         withAnimation(.snappy(duration: 0.18)) {
             isQuickOpenPresented = true
         }
