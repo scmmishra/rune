@@ -19,6 +19,15 @@ From the command line:
 xcodebuild -project Rune.xcodeproj -scheme Rune -configuration Debug build CODE_SIGNING_ALLOWED=NO
 ```
 
+For an incremental rebuild and relaunch loop while developing:
+
+```sh
+mise run dev
+```
+
+The task watches the app sources and Xcode project. A successful build replaces the
+previous development process, while a failed build leaves the running app open.
+
 Install `Rune.app` in `/Applications`, then add the CLI to your path:
 
 ```sh

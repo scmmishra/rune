@@ -1,0 +1,53 @@
+[tools]
+watchexec = "2.3.3"
+
+[tasks.build]
+description = "Build Rune in Debug mode"
+run = """
+xcodebuild \
+  -project Rune.xcodeproj \
+  -scheme Rune \
+  -configuration Debug \
+  -derivedDataPath DerivedData \
+  build \
+  CODE_SIGNING_ALLOWED=NO
+"""
+
+[tasks.dev]
+description = "Rebuild and relaunch Rune when sources change"
+run = """
+watchexec \
+  --watch Rune \
+  --watch Rune.xcodeproj \
+  --exts swift,plist,pbxproj,xcscheme,resolved \
+  --debounce 500ms \
+  --on-busy-update restart \
+  -- mise run dev:reload
+"""
+
+[tasks."dev:reload"]
+hide = true
+run = """
+xcodebuild \
+  -project Rune.xcodeproj \
+  -scheme Rune \
+  -configuration Debug \
+  -derivedDataPath DerivedData \
+  build \
+  CODE_SIGNING_ALLOWED=NO
+
+app_executable="$PWD/DerivedData/Build/Products/Debug/Rune.app/Contents/MacOS/Rune"
+pid_file="$PWD/DerivedData/rune-dev.pid"
+
+if [ -f "$pid_file" ]; then
+  old_pid=$(cat "$pid_file")
+  old_command=$(ps -p "$old_pid" -o command= 2>/dev/null || true)
+
+  case "$old_command" in
+    "$app_executable"*) kill "$old_pid" 2>/dev/null || true ;;
+  esac
+fi
+
+nohup "$app_executable" "$PWD" >"$PWD/DerivedData/rune-dev.log" 2>&1 &
+echo "$!" >"$pid_file"
+"""
