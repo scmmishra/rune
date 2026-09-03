@@ -28,6 +28,7 @@ private struct FileTreeContents: View {
                         name: visibleItem.item.name,
                         url: visibleItem.item.url,
                         isDirectory: visibleItem.item.isDirectory,
+                        status: visibleItem.item.status,
                         depth: visibleItem.depth
                     )
                 }
@@ -57,6 +58,7 @@ private struct FileTreeContents: View {
         name: String,
         url: URL,
         isDirectory: Bool,
+        status: FileTreeStatus?,
         depth: Int
     ) -> some View {
         HStack(spacing: 4) {
@@ -69,12 +71,14 @@ private struct FileTreeContents: View {
                     .frame(width: 8)
             }
 
-            Image(systemName: isDirectory ? "folder.fill" : "doc")
+            Image(systemName: FileTreeIcon.symbolName(for: url, isDirectory: isDirectory))
                 .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(status?.color ?? Color.secondary)
+                .frame(width: 12)
 
             Text(name)
                 .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(status?.color ?? Color.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -104,21 +108,24 @@ private struct VisibleFileTreeItem: Identifiable {
 private final class FileTreeItem: Identifiable {
     let url: URL
     let isDirectory: Bool
+    let status: FileTreeStatus?
     private let loadChildren: (() -> [FileTreeItem])?
 
     var id: URL { url }
     var name: String { url.lastPathComponent }
     lazy var children: [FileTreeItem]? = loadChildren?()
 
-    init(url: URL, isDirectory: Bool) {
+    init(url: URL, isDirectory: Bool, status: FileTreeStatus? = nil) {
         self.url = url
         self.isDirectory = isDirectory
+        self.status = status
         loadChildren = isDirectory ? { Self.contents(of: url) } : nil
     }
 
-    init(directoryURL: URL, children: [FileTreeItem]) {
+    init(directoryURL: URL, children: [FileTreeItem], status: FileTreeStatus?) {
         url = directoryURL
         isDirectory = true
+        self.status = status
         loadChildren = { children }
     }
 
@@ -149,16 +156,86 @@ private final class FileTreeItem: Identifiable {
     }
 }
 
+private enum FileTreeStatus: Equatable {
+    case modified
+    case untracked
+
+    var color: Color {
+        switch self {
+        case .modified:
+            .yellow
+        case .untracked:
+            .green
+        }
+    }
+}
+
+private enum FileTreeIcon {
+    static func symbolName(for url: URL, isDirectory: Bool) -> String {
+        if isDirectory {
+            return "folder.fill"
+        }
+
+        switch url.lastPathComponent.lowercased() {
+        case ".gitignore", ".gitattributes", ".gitmodules":
+            return "arrow.triangle.branch"
+        case "license", "license.md", "copying":
+            return "checkmark.seal"
+        case "makefile", "dockerfile":
+            return "hammer"
+        default:
+            break
+        }
+
+        switch url.pathExtension.lowercased() {
+        case "swift":
+            return "swift"
+        case "sh", "bash", "zsh", "fish":
+            return "terminal"
+        case "js", "jsx", "ts", "tsx", "c", "h", "cpp", "hpp", "m", "mm", "rs", "go", "rb", "py", "java", "kt":
+            return "chevron.left.forwardslash.chevron.right"
+        case "md", "markdown", "txt", "rtf":
+            return "doc.text"
+        case "json", "jsonc", "plist", "yaml", "yml", "toml", "xml":
+            return "curlybraces"
+        case "xcodeproj", "xcworkspace":
+            return "hammer.fill"
+        case "png", "jpg", "jpeg", "gif", "webp", "heic", "svg":
+            return "photo"
+        case "zip", "gz", "tar", "tgz", "bz2", "xz":
+            return "archivebox"
+        case "pdf":
+            return "doc.richtext"
+        default:
+            return "doc"
+        }
+    }
+}
+
 private enum GitFileTree {
     static func contents(of directoryURL: URL) -> [FileTreeItem]? {
+        guard let files = runGit(
+            ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            in: directoryURL
+        ) else {
+            return nil
+        }
+
+        let paths = files.split(separator: 0).compactMap { String(data: $0, encoding: .utf8) }
+        let statusData = runGit(
+            ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=no"],
+            in: directoryURL
+        )
+        let statuses = statusData.map(parseStatuses) ?? [:]
+        return makeTree(from: paths, statuses: statuses, rootedAt: directoryURL)
+    }
+
+    private static func runGit(_ arguments: [String], in directoryURL: URL) -> Data? {
         let process = Process()
         let output = Pipe()
 
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = [
-            "-C", directoryURL.path,
-            "ls-files", "--cached", "--others", "--exclude-standard", "-z"
-        ]
+        process.arguments = ["-C", directoryURL.path] + arguments
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
 
@@ -171,12 +248,40 @@ private enum GitFileTree {
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { return nil }
-
-        let paths = data.split(separator: 0).compactMap { String(data: $0, encoding: .utf8) }
-        return makeTree(from: paths, rootedAt: directoryURL)
+        return data
     }
 
-    private static func makeTree(from paths: [String], rootedAt rootURL: URL) -> [FileTreeItem] {
+    private static func parseStatuses(_ data: Data) -> [String: FileTreeStatus] {
+        let records = data.split(separator: 0)
+        var statuses: [String: FileTreeStatus] = [:]
+        var index = 0
+
+        while index < records.count {
+            let record = records[index]
+            guard record.count >= 4,
+                  let value = String(data: record, encoding: .utf8) else {
+                index += 1
+                continue
+            }
+
+            let code = String(value.prefix(2))
+            let path = String(value.dropFirst(3))
+            statuses[path] = code == "??" || code.first == "A" ? .untracked : .modified
+
+            if code.contains("R") || code.contains("C") {
+                index += 1
+            }
+            index += 1
+        }
+
+        return statuses
+    }
+
+    private static func makeTree(
+        from paths: [String],
+        statuses: [String: FileTreeStatus],
+        rootedAt rootURL: URL
+    ) -> [FileTreeItem] {
         let root = Node()
 
         for path in paths {
@@ -190,6 +295,8 @@ private enum GitFileTree {
                 node.children[component] = child
                 node = child
             }
+
+            node.status = statuses[path]
         }
 
         return root.items(at: rootURL)
@@ -197,6 +304,7 @@ private enum GitFileTree {
 
     private final class Node {
         var isDirectory: Bool
+        var status: FileTreeStatus?
         var children: [String: Node] = [:]
 
         init(isDirectory: Bool = true) {
@@ -207,9 +315,14 @@ private enum GitFileTree {
             children.map { name, node in
                 let url = directoryURL.appending(path: name, directoryHint: node.isDirectory ? .isDirectory : .notDirectory)
                 if node.isDirectory {
-                    return FileTreeItem(directoryURL: url, children: node.items(at: url))
+                    let children = node.items(at: url)
+                    return FileTreeItem(
+                        directoryURL: url,
+                        children: children,
+                        status: Self.aggregateStatus(of: children)
+                    )
                 }
-                return FileTreeItem(url: url, isDirectory: false)
+                return FileTreeItem(url: url, isDirectory: false, status: node.status)
             }
             .sorted { lhs, rhs in
                 if lhs.isDirectory != rhs.isDirectory {
@@ -217,6 +330,16 @@ private enum GitFileTree {
                 }
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
             }
+        }
+
+        private static func aggregateStatus(of children: [FileTreeItem]) -> FileTreeStatus? {
+            if children.contains(where: { $0.status == .modified }) {
+                return .modified
+            }
+            if children.contains(where: { $0.status == .untracked }) {
+                return .untracked
+            }
+            return nil
         }
     }
 }
