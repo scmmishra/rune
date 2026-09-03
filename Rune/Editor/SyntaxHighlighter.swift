@@ -19,7 +19,13 @@ enum SyntaxHighlighter {
         apply(#"\b(?:true|false|null|nil|self|Self)\b"#, color: .systemPurple, to: output, range: fullRange)
         apply(#"\b(?:0x[\dA-Fa-f]+|\d+(?:\.\d+)?)\b"#, color: .systemOrange, to: output, range: fullRange)
         apply(language.strings, color: .systemRed, to: output, range: fullRange)
-        apply(language.comments, options: [.anchorsMatchLines, .dotMatchesLineSeparators], color: .systemGray, to: output, range: fullRange)
+        apply(
+            language.comments,
+            options: [.anchorsMatchLines, .dotMatchesLineSeparators],
+            color: .systemGray,
+            to: output,
+            range: fullRange
+        )
 
         if language == .markup {
             apply(#"(?m)^#{1,6}\s.*$"#, color: .systemBlue, to: output, range: fullRange)

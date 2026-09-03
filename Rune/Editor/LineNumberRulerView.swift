@@ -62,16 +62,12 @@ final class LineNumberRulerView: NSRulerView {
         if firstLine <= lastLine {
             for lineIndex in firstLine...lastLine {
                 let y = topInset + CGFloat(lineIndex) * lineHeight - visibleBounds.minY
-                let number = String(lineIndex + 1)
-                number.draw(
+                String(lineIndex + 1).draw(
                     in: NSRect(x: 4, y: y, width: ruleThickness - 10, height: lineHeight),
                     withAttributes: attributes
                 )
             }
         }
-
-        NSColor.separatorColor.withAlphaComponent(0.45).setFill()
-        NSRect(x: ruleThickness - 1, y: rect.minY, width: 1, height: rect.height).fill()
     }
 
     func reload() {

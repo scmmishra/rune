@@ -5,8 +5,12 @@ struct FileEditorDrawer: View {
     let onClose: () -> Void
 
     @State private var text = ""
+    @State private var savedText = ""
     @State private var loadError: String?
-    @State private var isDirty = false
+
+    private var isDirty: Bool {
+        text != savedText
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,10 +27,10 @@ struct FileEditorDrawer: View {
             } else {
                 CodeEditorView(
                     text: $text,
-                    fileURL: fileURL,
-                    onChange: { isDirty = true },
-                    onSave: save
+                    fileURL: fileURL
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -39,6 +43,7 @@ struct FileEditorDrawer: View {
         .task(id: fileURL) {
             load()
         }
+        .focusedSceneValue(\.saveCurrentFile, save)
     }
 
     private var header: some View {
@@ -72,8 +77,6 @@ struct FileEditorDrawer: View {
     }
 
     private func load() {
-        isDirty = false
-
         do {
             let data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
             guard data.count <= 5_000_000 else {
@@ -83,9 +86,11 @@ struct FileEditorDrawer: View {
                 throw FileEditorError.notText
             }
             text = contents
+            savedText = contents
             loadError = nil
         } catch {
             text = ""
+            savedText = ""
             loadError = error.localizedDescription
         }
     }
@@ -95,7 +100,7 @@ struct FileEditorDrawer: View {
 
         do {
             try text.write(to: fileURL, atomically: true, encoding: .utf8)
-            isDirty = false
+            savedText = text
         } catch {
             loadError = error.localizedDescription
         }

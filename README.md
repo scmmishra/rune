@@ -48,6 +48,6 @@ The CLI delegates directory opening to macOS Launch Services. Rune registers fol
 
 The app uses the `GhosttyTerminal` product from `libghostty-spm` 1.5.2. The package supplies a prebuilt libghostty XCFramework, its SwiftUI surface wrapper, and the runtime resources needed by the `.exec` backend. Rune remains unsandboxed so libghostty can launch the user’s shell.
 
-Click a file in the tree, select it with the arrow keys and press Return, or press Command+P to find a workspace file. Files open in the editor drawer, which uses the native macOS text system for selection and navigation, supports Command+S, and applies lightweight syntax highlighting for common source formats.
+Click a file in the tree, select it with the arrow keys and press Return, or press Command+P to fuzzy-find a workspace file. Files open in the editor drawer, which uses the native macOS text system for selection and navigation, supports Command+S, and applies lightweight syntax highlighting for common source formats.
 
 There is no Git detail UI, tabs, or orchestration yet.

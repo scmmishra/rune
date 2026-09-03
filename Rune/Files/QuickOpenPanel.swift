@@ -65,9 +65,18 @@ struct QuickOpenPanel: View {
 
     private var matchingFiles: [URL] {
         guard !query.isEmpty else { return files }
-        return files.filter {
-            relativePath(for: $0).localizedCaseInsensitiveContains(query)
+        return files.compactMap { fileURL -> (url: URL, path: String, score: Int)? in
+            let path = relativePath(for: fileURL)
+            guard let score = FuzzyMatcher.pathScore(query, path: path) else { return nil }
+            return (fileURL, path, score)
         }
+        .sorted { lhs, rhs in
+            if lhs.score != rhs.score {
+                return lhs.score > rhs.score
+            }
+            return lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
+        }
+        .map(\.url)
     }
 
     private func fileRow(_ fileURL: URL) -> some View {
