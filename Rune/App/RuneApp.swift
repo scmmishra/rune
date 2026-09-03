@@ -2,29 +2,45 @@ import SwiftUI
 
 @main
 struct RuneApp: App {
-    @State private var directoryURL = Self.initialDirectoryURL
-
     var body: some Scene {
-        Window("Rune", id: "main") {
-            WorkspaceView(directoryURL: directoryURL)
-                .onOpenURL { url in
-                    guard Self.isDirectory(url) else { return }
-                    directoryURL = url.standardizedFileURL
-                }
+        WindowGroup("Rune", id: "workspace", for: WorkspaceIdentity.self) { $workspace in
+            WorkspaceWindow(workspace: $workspace)
         }
         .defaultSize(width: 1_200, height: 760)
         .windowStyle(.hiddenTitleBar)
     }
+}
 
-    private static var initialDirectoryURL: URL? {
-        guard let path = CommandLine.arguments.dropFirst().first else { return nil }
+private struct WorkspaceWindow: View {
+    @Binding var workspace: WorkspaceIdentity?
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
+    @State private var routedCommandLineDirectory = false
 
-        let url = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
-        return isDirectory(url) ? url.standardizedFileURL : nil
+    var body: some View {
+        WorkspaceView(directoryURL: workspace?.directoryURL)
+            .navigationTitle(workspace?.name ?? "Rune")
+            .onAppear {
+                guard !routedCommandLineDirectory, workspace == nil else { return }
+                routedCommandLineDirectory = true
+
+                if let directory = WorkspaceIdentity.commandLineDirectory {
+                    open(directory)
+                }
+            }
+            .onOpenURL { url in
+                guard let directory = WorkspaceIdentity(url: url) else { return }
+                open(directory)
+            }
     }
 
-    private static func isDirectory(_ url: URL) -> Bool {
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+    private func open(_ directory: WorkspaceIdentity) {
+        openWindow(id: "workspace", value: directory)
+
+        if workspace == nil {
+            DispatchQueue.main.async {
+                dismiss()
+            }
+        }
     }
 }

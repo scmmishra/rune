@@ -31,7 +31,7 @@ Open the current directory:
 rune
 ```
 
-You can also open another directory with `rune path/to/project`.
+You can also open another directory with `rune path/to/project`. Rune keeps one window per canonical directory: invoking `rune` again for an open directory focuses its existing window, while a different directory opens in a new window.
 
 ## Architecture
 
@@ -43,7 +43,7 @@ Rune/Terminal     Single libghostty-backed terminal surface
 bin/rune           CLI entry point
 ```
 
-The CLI delegates directory opening to macOS Launch Services. Rune registers folders as a supported document type, and SwiftUI routes incoming folder URLs into the active workspace. In Git repositories, the tree uses `git ls-files` to include tracked and untracked files while respecting ignore rules. Other directories fall back to filesystem enumeration.
+The CLI delegates directory opening to macOS Launch Services. Rune registers folders as a supported document type, then uses the canonical directory path as the identity of a data-driven SwiftUI window. In Git repositories, the tree uses `git ls-files` to include tracked and untracked files while respecting ignore rules. Other directories fall back to filesystem enumeration.
 
 The app uses the `GhosttyTerminal` product from `libghostty-spm` 1.5.2. The package supplies a prebuilt libghostty XCFramework, its SwiftUI surface wrapper, and the runtime resources needed by the `.exec` backend. Rune remains unsandboxed so libghostty can launch the user’s shell.
 

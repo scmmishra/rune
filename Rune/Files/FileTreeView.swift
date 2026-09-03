@@ -37,7 +37,7 @@ private struct FileTreeContents: View {
             }
             .padding(.horizontal, 4)
         }
-        .padding(.top, 52)
+        .padding(.top, 38)
         .onAppear {
             watcher.start()
         }
