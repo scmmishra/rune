@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+directory=${1:-"$PWD"}
+
+if [ ! -d "$directory" ]; then
+    echo "rune: not a directory: $directory" >&2
+    exit 1
+fi
+
+directory=$(cd "$directory" && pwd -P)
+open -a "${RUNE_APP_PATH:-Rune}" "$directory"
