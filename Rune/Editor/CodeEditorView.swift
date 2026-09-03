@@ -10,17 +10,33 @@ struct CodeEditorView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
-        guard let textView = scrollView.documentView as? NSTextView else {
-            return scrollView
-        }
-
+        let scrollView = NSScrollView()
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
 
+        // Syntax highlighting edits NSTextStorage directly, so keep the editor on one
+        // predictable TextKit 1 stack instead of entering compatibility mode lazily.
+        // The coordinator owns the storage for the lifetime of the represented view.
+        // Source: https://developer.apple.com/documentation/appkit/nstextview/init(frame:textcontainer:)
+        let textStorage = context.coordinator.textStorage
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(
+            size: NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        )
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(textContainer)
+        textContainer.widthTracksTextView = false
+
+        let textView = NSTextView(
+            frame: NSRect(origin: .zero, size: scrollView.contentSize),
+            textContainer: textContainer
+        )
         textView.delegate = context.coordinator
         textView.isEditable = true
         textView.isSelectable = true
@@ -34,20 +50,15 @@ struct CodeEditorView: NSViewRepresentable {
         textView.isIncrementalSearchingEnabled = true
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 12, height: 10)
-
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = true
-        textView.autoresizingMask = [.width, .height]
-        textView.textContainer?.containerSize = NSSize(
+        textView.minSize = .zero
+        textView.maxSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
         )
-        textView.textContainer?.widthTracksTextView = false
-
-        let lineNumberRuler = LineNumberRulerView(scrollView: scrollView, textView: textView)
-        scrollView.verticalRulerView = lineNumberRuler
-        scrollView.hasVerticalRuler = true
-        scrollView.rulersVisible = true
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = true
+        textView.autoresizingMask = [.width, .height]
+        scrollView.documentView = textView
 
         context.coordinator.render(text, in: textView, fileURL: fileURL)
         return scrollView
@@ -65,6 +76,7 @@ struct CodeEditorView: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CodeEditorView
+        let textStorage = NSTextStorage()
         private var isRendering = false
 
         init(parent: CodeEditorView) {
@@ -100,7 +112,6 @@ struct CodeEditorView: NSViewRepresentable {
                 return NSValue(range: NSRange(location: location, length: length))
             }
             textView.typingAttributes = SyntaxHighlighter.baseAttributes
-            (textView.enclosingScrollView?.verticalRulerView as? LineNumberRulerView)?.reload()
             isRendering = false
         }
     }
