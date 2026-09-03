@@ -2,6 +2,9 @@ import SwiftUI
 
 struct WorkspaceView: View {
     let directoryURL: URL?
+    @State private var openFileURL: URL?
+    @State private var quickOpenFiles: [URL] = []
+    @State private var isQuickOpenPresented = false
 
     private enum Layout {
         static let sidebarWidthRatio: CGFloat = 0.20
@@ -11,24 +14,29 @@ struct WorkspaceView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 0) {
-                Group {
-                    if let directoryURL {
-                        FileTreeView(rootURL: directoryURL)
-                    } else {
-                        Color.clear
+            ZStack(alignment: .trailing) {
+                HStack(spacing: 0) {
+                    Group {
+                        if let directoryURL {
+                            FileTreeView(rootURL: directoryURL) { fileURL in
+                                withAnimation(.snappy(duration: 0.22)) {
+                                    openFileURL = fileURL
+                                }
+                            }
+                        } else {
+                            Color.clear
+                        }
                     }
-                }
                     .frame(width: geometry.size.width * Layout.sidebarWidthRatio)
 
-                Group {
-                    if let directoryURL {
-                        TerminalPane(workingDirectory: directoryURL)
-                            .id(directoryURL)
-                    } else {
-                        WorkspacePlaceholder()
+                    Group {
+                        if let directoryURL {
+                            TerminalPane(workingDirectory: directoryURL)
+                                .id(directoryURL)
+                        } else {
+                            WorkspacePlaceholder()
+                        }
                     }
-                }
                     .frame(minWidth: 480)
                     .clipShape(
                         RoundedRectangle(
@@ -45,12 +53,62 @@ struct WorkspaceView: View {
                     }
                     .padding(.vertical, Layout.workspaceInset)
 
-                Color.clear
-                    .frame(width: geometry.size.width * Layout.sidebarWidthRatio)
+                    Color.clear
+                        .frame(width: geometry.size.width * Layout.sidebarWidthRatio)
+                }
+
+                if let openFileURL {
+                    FileEditorDrawer(fileURL: openFileURL) {
+                        withAnimation(.snappy(duration: 0.18)) {
+                            self.openFileURL = nil
+                        }
+                    }
+                    .frame(
+                        width: min(
+                            max(480, geometry.size.width * 0.62),
+                            geometry.size.width * 0.78
+                        )
+                    )
+                    .padding(16)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .zIndex(1)
+                }
+
+                if isQuickOpenPresented, let directoryURL {
+                    QuickOpenPanel(
+                        rootURL: directoryURL,
+                        files: quickOpenFiles,
+                        onOpen: open,
+                        onClose: { isQuickOpenPresented = false }
+                    )
+                    .frame(width: min(600, geometry.size.width - 64), height: 420)
+                    .padding(.top, 48)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(2)
+                }
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .ignoresSafeArea(.container, edges: .top)
+        .focusedSceneValue(\.presentQuickOpen) {
+            presentQuickOpen()
+        }
+    }
+
+    private func presentQuickOpen() {
+        guard let directoryURL else { return }
+        quickOpenFiles = WorkspaceFileIndex.files(in: directoryURL)
+        withAnimation(.snappy(duration: 0.18)) {
+            isQuickOpenPresented = true
+        }
+    }
+
+    private func open(_ fileURL: URL) {
+        isQuickOpenPresented = false
+        withAnimation(.snappy(duration: 0.22)) {
+            openFileURL = fileURL
+        }
     }
 }
 

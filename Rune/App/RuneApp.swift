@@ -8,6 +8,9 @@ struct RuneApp: App {
         }
         .defaultSize(width: 1_200, height: 760)
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            QuickOpenCommands()
+        }
     }
 }
 

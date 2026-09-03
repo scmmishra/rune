@@ -2,21 +2,26 @@ import SwiftUI
 
 struct FileTreeView: View {
     let rootURL: URL
+    let onOpenFile: (URL) -> Void
 
     var body: some View {
-        FileTreeContents(rootURL: rootURL)
+        FileTreeContents(rootURL: rootURL, onOpenFile: onOpenFile)
             .id(rootURL)
     }
 }
 
 private struct FileTreeContents: View {
     let rootURL: URL
+    let onOpenFile: (URL) -> Void
     @State private var items: [FileTreeItem]
     @State private var expandedDirectories: Set<URL>
+    @State private var selectedURL: URL?
     @StateObject private var watcher: WorkspaceWatcher
+    @FocusState private var hasKeyboardFocus: Bool
 
-    init(rootURL: URL) {
+    init(rootURL: URL, onOpenFile: @escaping (URL) -> Void) {
         self.rootURL = rootURL
+        self.onOpenFile = onOpenFile
         _items = State(initialValue: FileTreeItem.workspaceContents(of: rootURL))
         _expandedDirectories = State(initialValue: [])
         _watcher = StateObject(wrappedValue: WorkspaceWatcher(rootURL: rootURL))
@@ -38,6 +43,12 @@ private struct FileTreeContents: View {
             .padding(.horizontal, 4)
         }
         .padding(.top, 38)
+        .focusable()
+        .focusEffectDisabled()
+        .focused($hasKeyboardFocus)
+        .onKeyPress(keys: [.upArrow, .downArrow, .return]) { keyPress in
+            handleKeyPress(keyPress.key)
+        }
         .onAppear {
             watcher.start()
         }
@@ -97,14 +108,58 @@ private struct FileTreeContents: View {
         }
         .padding(.leading, CGFloat(depth) * 10)
         .frame(maxWidth: .infinity, minHeight: 17, maxHeight: 17, alignment: .leading)
+        .background {
+            if selectedURL == url {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.accentColor.opacity(hasKeyboardFocus ? 0.20 : 0.10))
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture {
-            guard isDirectory else { return }
+            selectedURL = url
+            hasKeyboardFocus = true
+            activate(url: url, isDirectory: isDirectory)
+        }
+    }
+
+    private func handleKeyPress(_ key: KeyEquivalent) -> KeyPress.Result {
+        guard !visibleItems.isEmpty else { return .ignored }
+
+        if key == .return {
+            guard let selectedURL,
+                  let selectedItem = visibleItems.first(where: { $0.item.url == selectedURL }) else {
+                return .ignored
+            }
+            activate(url: selectedItem.item.url, isDirectory: selectedItem.item.isDirectory)
+            return .handled
+        }
+
+        let currentIndex = selectedURL.flatMap { selectedURL in
+            visibleItems.firstIndex(where: { $0.item.url == selectedURL })
+        }
+        let nextIndex: Int
+
+        if key == .upArrow {
+            nextIndex = max(0, (currentIndex ?? 1) - 1)
+        } else if key == .downArrow {
+            nextIndex = min(visibleItems.count - 1, (currentIndex ?? -1) + 1)
+        } else {
+            return .ignored
+        }
+
+        selectedURL = visibleItems[nextIndex].item.url
+        return .handled
+    }
+
+    private func activate(url: URL, isDirectory: Bool) {
+        if isDirectory {
             if expandedDirectories.contains(url) {
                 expandedDirectories.remove(url)
             } else {
                 expandedDirectories.insert(url)
             }
+        } else {
+            onOpenFile(url)
         }
     }
 }
@@ -181,7 +236,7 @@ private enum FileTreeStatus: Equatable {
     }
 }
 
-private enum FileTreeIcon {
+enum FileTreeIcon {
     static func symbolName(for url: URL, isDirectory: Bool) -> String {
         if isDirectory {
             return "folder.fill"
@@ -225,6 +280,19 @@ private enum FileTreeIcon {
 
 private enum GitFileTree {
     static func contents(of directoryURL: URL) -> [FileTreeItem]? {
+        guard let paths = filePaths(in: directoryURL) else {
+            return nil
+        }
+
+        let statusData = runGit(
+            ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=no"],
+            in: directoryURL
+        )
+        let statuses = statusData.map(parseStatuses) ?? [:]
+        return makeTree(from: paths, statuses: statuses, rootedAt: directoryURL)
+    }
+
+    static func filePaths(in directoryURL: URL) -> [String]? {
         guard let files = runGit(
             ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
             in: directoryURL
@@ -232,13 +300,7 @@ private enum GitFileTree {
             return nil
         }
 
-        let paths = files.split(separator: 0).compactMap { String(data: $0, encoding: .utf8) }
-        let statusData = runGit(
-            ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=no"],
-            in: directoryURL
-        )
-        let statuses = statusData.map(parseStatuses) ?? [:]
-        return makeTree(from: paths, statuses: statuses, rootedAt: directoryURL)
+        return files.split(separator: 0).compactMap { String(data: $0, encoding: .utf8) }
     }
 
     private static func runGit(_ arguments: [String], in directoryURL: URL) -> Data? {
@@ -355,5 +417,43 @@ private enum GitFileTree {
             }
             return nil
         }
+    }
+}
+
+enum WorkspaceFileIndex {
+    static func files(in rootURL: URL) -> [URL] {
+        if let paths = GitFileTree.filePaths(in: rootURL) {
+            return paths
+                .map { rootURL.appending(path: $0, directoryHint: .notDirectory) }
+                .sorted { relativePath(of: $0, in: rootURL) < relativePath(of: $1, in: rootURL) }
+        }
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+            options: [.skipsPackageDescendants],
+            errorHandler: { _, _ in true }
+        ) else {
+            return []
+        }
+
+        return enumerator.compactMap { element -> URL? in
+            guard let url = element as? URL else { return nil }
+            if url.lastPathComponent == ".git" {
+                enumerator.skipDescendants()
+                return nil
+            }
+            guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+                  values.isRegularFile == true,
+                  values.isSymbolicLink != true else { return nil }
+            return url
+        }
+        .sorted { relativePath(of: $0, in: rootURL) < relativePath(of: $1, in: rootURL) }
+    }
+
+    static func relativePath(of fileURL: URL, in rootURL: URL) -> String {
+        fileURL.standardizedFileURL.pathComponents
+            .dropFirst(rootURL.standardizedFileURL.pathComponents.count)
+            .joined(separator: "/")
     }
 }

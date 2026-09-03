@@ -2,7 +2,7 @@
 
 Rune is a minimal native macOS workspace for terminal-first development, built with SwiftUI and libghostty.
 
-This initial foundation contains an adaptive light and dark application shell, a Git-aware file tree, and one embedded Ghostty terminal session. Running `rune` from a directory opens that directory in Rune and starts the terminal there.
+This initial foundation contains an adaptive light and dark application shell, a Git-aware file tree, one embedded Ghostty terminal session, and a lightweight source editor drawer. Running `rune` from a directory opens that directory in Rune and starts the terminal there.
 
 ## Build and run
 
@@ -38,6 +38,7 @@ You can also open another directory with `rune path/to/project`. Rune keeps one 
 ```text
 Rune/App          Application entry point
 Rune/Files        Lazy native file tree
+Rune/Editor       Native source editor and syntax highlighting
 Rune/Workspace    Native three-pane workspace shell
 Rune/Terminal     Single libghostty-backed terminal surface
 bin/rune           CLI entry point
@@ -47,4 +48,6 @@ The CLI delegates directory opening to macOS Launch Services. Rune registers fol
 
 The app uses the `GhosttyTerminal` product from `libghostty-spm` 1.5.2. The package supplies a prebuilt libghostty XCFramework, its SwiftUI surface wrapper, and the runtime resources needed by the `.exec` backend. Rune remains unsandboxed so libghostty can launch the user’s shell.
 
-There is no file editing, Git status UI, persistence, tabs, or orchestration yet.
+Click a file in the tree, select it with the arrow keys and press Return, or press Command+P to find a workspace file. Files open in the editor drawer, which uses the native macOS text system for selection and navigation, supports Command+S, and applies lightweight syntax highlighting for common source formats.
+
+There is no Git detail UI, tabs, or orchestration yet.
