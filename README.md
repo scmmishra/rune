@@ -70,3 +70,11 @@ The app uses the `GhosttyTerminal` product from `libghostty-spm` 1.5.2. The pack
 Click a file in the tree, select it with the arrow keys and press Return, or press Command+P to fuzzy-find a workspace file. Files open in the editor drawer, which uses the native macOS text system for selection and navigation, supports Command+S, and applies lightweight syntax highlighting for common source formats.
 
 There is no Git detail UI, tabs, or orchestration yet.
+
+## Third-party assets
+
+Rune's file icons use selected assets from
+[Phosphor Icons](https://phosphoricons.com/), distributed under the MIT License.
+The assets are vendored from
+[Phosphor Core revision 2b75f3a](https://github.com/phosphor-icons/core/tree/2b75f3ad12b420c9504ef05df8d2564a28f8500e).
+A copy of the license is included with the bundled icon assets.

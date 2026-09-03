@@ -52,8 +52,9 @@ struct FileEditorDrawer: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "doc.text")
+            FileIconView(url: fileURL, isDirectory: false)
                 .foregroundStyle(.secondary)
+                .frame(width: 14, height: 14)
 
             Text(fileURL.lastPathComponent)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))

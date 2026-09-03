@@ -93,10 +93,13 @@ private struct FileTreeContents: View {
                     .frame(width: 8)
             }
 
-            Image(systemName: FileTreeIcon.symbolName(for: url, isDirectory: isDirectory))
-                .font(.system(size: 10))
+            FileIconView(
+                url: url,
+                isDirectory: isDirectory,
+                isExpanded: isDirectory && expandedDirectories.contains(url)
+            )
                 .foregroundStyle(status?.color ?? Color.secondary)
-                .frame(width: 12)
+                .frame(width: 12, height: 12)
 
             Text(name)
                 .font(.system(size: 12, design: .monospaced))
@@ -232,48 +235,6 @@ private enum FileTreeStatus: Equatable {
             .yellow
         case .untracked:
             .green
-        }
-    }
-}
-
-enum FileTreeIcon {
-    static func symbolName(for url: URL, isDirectory: Bool) -> String {
-        if isDirectory {
-            return "folder.fill"
-        }
-
-        switch url.lastPathComponent.lowercased() {
-        case ".gitignore", ".gitattributes", ".gitmodules":
-            return "arrow.triangle.branch"
-        case "license", "license.md", "copying":
-            return "checkmark.seal"
-        case "makefile", "dockerfile":
-            return "hammer"
-        default:
-            break
-        }
-
-        switch url.pathExtension.lowercased() {
-        case "swift":
-            return "swift"
-        case "sh", "bash", "zsh", "fish":
-            return "terminal"
-        case "js", "jsx", "ts", "tsx", "c", "h", "cpp", "hpp", "m", "mm", "rs", "go", "rb", "py", "java", "kt":
-            return "chevron.left.forwardslash.chevron.right"
-        case "md", "markdown", "txt", "rtf":
-            return "doc.text"
-        case "json", "jsonc", "plist", "yaml", "yml", "toml", "xml":
-            return "curlybraces"
-        case "xcodeproj", "xcworkspace":
-            return "hammer.fill"
-        case "png", "jpg", "jpeg", "gif", "webp", "heic", "svg":
-            return "photo"
-        case "zip", "gz", "tar", "tgz", "bz2", "xz":
-            return "archivebox"
-        case "pdf":
-            return "doc.richtext"
-        default:
-            return "doc"
         }
     }
 }

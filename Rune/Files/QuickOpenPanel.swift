@@ -82,10 +82,9 @@ struct QuickOpenPanel: View {
 
     private func fileRow(_ file: WorkspaceFileIndex.Entry) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: FileTreeIcon.symbolName(for: file.url, isDirectory: false))
-                .font(.system(size: 10))
+            FileIconView(url: file.url, isDirectory: false)
                 .foregroundStyle(.secondary)
-                .frame(width: 12)
+                .frame(width: 12, height: 12)
 
             Text(file.relativePath)
                 .font(.system(size: 12, design: .monospaced))
