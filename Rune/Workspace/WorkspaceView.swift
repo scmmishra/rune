@@ -52,8 +52,15 @@ struct WorkspaceView: View {
                     }
                     .padding(.vertical, Layout.workspaceInset)
 
-                    Color.clear
-                        .frame(width: geometry.size.width * Layout.sidebarWidthRatio)
+                    Group {
+                        if let directoryURL {
+                            GitSidebarView(rootURL: directoryURL)
+                                .id(directoryURL)
+                        } else {
+                            Color.clear
+                        }
+                    }
+                    .frame(width: geometry.size.width * Layout.sidebarWidthRatio)
                 }
 
                 if let openFileURL {

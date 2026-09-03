@@ -7,11 +7,13 @@ final class WorkspaceWatcher: ObservableObject {
     @Published private(set) var revision = 0
 
     private let rootURL: URL
+    private let debounceDuration: Duration
     private var stream: FSEventStreamRef?
     private var refreshTask: Task<Void, Never>?
 
-    init(rootURL: URL) {
+    init(rootURL: URL, debounceDuration: Duration = .milliseconds(120)) {
         self.rootURL = rootURL
+        self.debounceDuration = debounceDuration
     }
 
     func start() {
@@ -74,9 +76,10 @@ final class WorkspaceWatcher: ObservableObject {
     private func scheduleRefresh() {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(120))
+            guard let self else { return }
+            try? await Task.sleep(for: debounceDuration)
             guard !Task.isCancelled else { return }
-            self?.revision &+= 1
+            revision &+= 1
         }
     }
 }
