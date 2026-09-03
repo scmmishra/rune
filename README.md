@@ -48,6 +48,10 @@ rune
 
 You can also open another directory with `rune path/to/project`. Rune keeps one window per canonical directory: invoking `rune` again for an open directory focuses its existing window, while a different directory opens in a new window.
 
+When the CLI is symlinked from this checkout, it prefers the Debug app built by
+`mise run relaunch`. Otherwise it opens the installed `Rune.app`. Set
+`RUNE_APP_PATH` to explicitly select another app bundle.
+
 ## Architecture
 
 ```text

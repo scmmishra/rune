@@ -8,6 +8,10 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000014 /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* GhosttyTerminal */; };
+		A10000000000000000000017 /* SwiftTreeSitter in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000021 /* SwiftTreeSitter */; };
+		A10000000000000000000018 /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000022 /* TreeSitterSwift */; };
+		A10000000000000000000019 /* TreeSitterRuby in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000023 /* TreeSitterRuby */; };
+		A1000000000000000000001A /* TreeSitterGo in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000024 /* TreeSitterGo */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +45,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000014 /* GhosttyTerminal in Frameworks */,
+				A10000000000000000000017 /* SwiftTreeSitter in Frameworks */,
+				A10000000000000000000018 /* TreeSitterSwift in Frameworks */,
+				A10000000000000000000019 /* TreeSitterRuby in Frameworks */,
+				A1000000000000000000001A /* TreeSitterGo in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +92,10 @@
 			name = Rune;
 			packageProductDependencies = (
 				A10000000000000000000016 /* GhosttyTerminal */,
+				A10000000000000000000021 /* SwiftTreeSitter */,
+				A10000000000000000000022 /* TreeSitterSwift */,
+				A10000000000000000000023 /* TreeSitterRuby */,
+				A10000000000000000000024 /* TreeSitterGo */,
 			);
 			productName = Rune;
 			productReference = A10000000000000000000004 /* Rune.app */;
@@ -115,6 +127,10 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A10000000000000000000015 /* XCRemoteSwiftPackageReference "libghostty-spm" */,
+				A1000000000000000000001C /* XCRemoteSwiftPackageReference "swift-tree-sitter" */,
+				A1000000000000000000001D /* XCRemoteSwiftPackageReference "tree-sitter-swift" */,
+				A1000000000000000000001E /* XCRemoteSwiftPackageReference "tree-sitter-ruby" */,
+				A1000000000000000000001F /* XCRemoteSwiftPackageReference "tree-sitter-go" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A10000000000000000000008 /* Products */;
@@ -155,6 +171,38 @@
 				version = 1.5.2;
 			};
 		};
+		A1000000000000000000001C /* XCRemoteSwiftPackageReference "swift-tree-sitter" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tree-sitter/swift-tree-sitter.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.25.0;
+			};
+		};
+		A1000000000000000000001D /* XCRemoteSwiftPackageReference "tree-sitter-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/alex-pinkus/tree-sitter-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = "0.7.3-with-generated-files";
+			};
+		};
+		A1000000000000000000001E /* XCRemoteSwiftPackageReference "tree-sitter-ruby" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tree-sitter/tree-sitter-ruby.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.23.1;
+			};
+		};
+		A1000000000000000000001F /* XCRemoteSwiftPackageReference "tree-sitter-go" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tree-sitter/tree-sitter-go.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.25.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -162,6 +210,26 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000015 /* XCRemoteSwiftPackageReference "libghostty-spm" */;
 			productName = GhosttyTerminal;
+		};
+		A10000000000000000000021 /* SwiftTreeSitter */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1000000000000000000001C /* XCRemoteSwiftPackageReference "swift-tree-sitter" */;
+			productName = SwiftTreeSitter;
+		};
+		A10000000000000000000022 /* TreeSitterSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1000000000000000000001D /* XCRemoteSwiftPackageReference "tree-sitter-swift" */;
+			productName = TreeSitterSwift;
+		};
+		A10000000000000000000023 /* TreeSitterRuby */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1000000000000000000001E /* XCRemoteSwiftPackageReference "tree-sitter-ruby" */;
+			productName = TreeSitterRuby;
+		};
+		A10000000000000000000024 /* TreeSitterGo */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1000000000000000000001F /* XCRemoteSwiftPackageReference "tree-sitter-go" */;
+			productName = TreeSitterGo;
 		};
 /* End XCSwiftPackageProductDependency section */
 

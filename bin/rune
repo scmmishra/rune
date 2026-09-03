@@ -10,4 +10,19 @@ if [ ! -d "$directory" ]; then
 fi
 
 directory=$(cd "$directory" && pwd -P)
-open -a "${RUNE_APP_PATH:-Rune}" "$directory"
+
+# Resolve the CLI symlink back to the checkout so development invocations use
+# the same DerivedData app that `mise run relaunch` builds.
+script_path=$(realpath "$0")
+repository_root=$(dirname "$(dirname "$script_path")")
+development_app="$repository_root/DerivedData/Build/Products/Debug/Rune.app"
+
+if [ -n "${RUNE_APP_PATH:-}" ]; then
+    app="$RUNE_APP_PATH"
+elif [ -d "$development_app" ]; then
+    app="$development_app"
+else
+    app=Rune
+fi
+
+open -a "$app" "$directory"
