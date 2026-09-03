@@ -19,6 +19,12 @@ From the command line:
 xcodebuild -project Rune.xcodeproj -scheme Rune -configuration Debug build CODE_SIGNING_ALLOWED=NO
 ```
 
+Build and relaunch a single development instance:
+
+```sh
+mise run relaunch
+```
+
 For an incremental rebuild and relaunch loop while developing:
 
 ```sh

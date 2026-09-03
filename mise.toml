@@ -22,31 +22,24 @@ watchexec \
   --exts swift,plist,pbxproj,xcscheme,resolved \
   --debounce 500ms \
   --on-busy-update restart \
-  -- mise run dev:reload
+  -- mise run relaunch
 """
 
-[tasks."dev:reload"]
-hide = true
+[tasks.relaunch]
+description = "Build and relaunch a single Rune development instance"
 run = """
-xcodebuild \
-  -project Rune.xcodeproj \
-  -scheme Rune \
-  -configuration Debug \
-  -derivedDataPath DerivedData \
-  build \
-  CODE_SIGNING_ALLOWED=NO
+mise run build
 
 app_executable="$PWD/DerivedData/Build/Products/Debug/Rune.app/Contents/MacOS/Rune"
 pid_file="$PWD/DerivedData/rune-dev.pid"
 
-if [ -f "$pid_file" ]; then
-  old_pid=$(cat "$pid_file")
-  old_command=$(ps -p "$old_pid" -o command= 2>/dev/null || true)
+killall Rune 2>/dev/null || true
 
-  case "$old_command" in
-    "$app_executable"*) kill "$old_pid" 2>/dev/null || true ;;
-  esac
-fi
+attempt=0
+while pgrep -x Rune >/dev/null && [ "$attempt" -lt 20 ]; do
+  sleep 0.05
+  attempt=$((attempt + 1))
+done
 
 nohup "$app_executable" "$PWD" >"$PWD/DerivedData/rune-dev.log" 2>&1 &
 echo "$!" >"$pid_file"

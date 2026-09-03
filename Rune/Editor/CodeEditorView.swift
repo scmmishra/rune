@@ -33,7 +33,7 @@ struct CodeEditorView: NSViewRepresentable {
         layoutManager.addTextContainer(textContainer)
         textContainer.widthTracksTextView = false
 
-        let textView = NSTextView(
+        let textView = RuneTextView(
             frame: NSRect(origin: .zero, size: scrollView.contentSize),
             textContainer: textContainer
         )
@@ -91,6 +91,10 @@ struct CodeEditorView: NSViewRepresentable {
             highlight(textView, fileURL: parent.fileURL)
         }
 
+        func textViewDidChangeSelection(_ notification: Notification) {
+            (notification.object as? RuneTextView)?.refreshCurrentLineHighlight()
+        }
+
         func render(_ text: String, in textView: NSTextView, fileURL: URL) {
             isRendering = true
             textView.string = text
@@ -112,7 +116,66 @@ struct CodeEditorView: NSViewRepresentable {
                 return NSValue(range: NSRange(location: location, length: length))
             }
             textView.typingAttributes = SyntaxHighlighter.baseAttributes
+            (textView as? RuneTextView)?.refreshCurrentLineHighlight()
             isRendering = false
         }
+    }
+}
+
+private final class RuneTextView: NSTextView {
+    // Draw the active line outside NSTextStorage so cursor movement does not alter
+    // syntax attributes or make the document appear edited.
+    // Source: https://developer.apple.com/documentation/appkit/nstextview/drawbackground(in:)
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+
+        guard let lineRect = currentLineRect, lineRect.intersects(rect) else { return }
+        NSColor.labelColor.withAlphaComponent(0.045).setFill()
+        lineRect.fill()
+    }
+
+    func refreshCurrentLineHighlight() {
+        setNeedsDisplay(visibleRect)
+    }
+
+    private var currentLineRect: NSRect? {
+        guard let layoutManager,
+              let textContainer else { return nil }
+
+        let text = string as NSString
+        let caretLocation = min(selectedRange().location, text.length)
+        let caretLineRange = text.lineRange(
+            for: NSRange(location: caretLocation, length: 0)
+        )
+        let fragmentRect: NSRect
+
+        if caretLineRange.location == text.length {
+            let extraLineRect = layoutManager.extraLineFragmentRect
+            if extraLineRect.isEmpty {
+                let usedRect = layoutManager.usedRect(for: textContainer)
+                fragmentRect = NSRect(
+                    x: 0,
+                    y: usedRect.maxY,
+                    width: bounds.width,
+                    height: layoutManager.defaultLineHeight(for: font ?? SyntaxHighlighter.editorFont)
+                )
+            } else {
+                fragmentRect = extraLineRect
+            }
+        } else {
+            let characterIndex = min(caretLocation, text.length - 1)
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: characterIndex)
+            fragmentRect = layoutManager.lineFragmentRect(
+                forGlyphAt: glyphIndex,
+                effectiveRange: nil
+            )
+        }
+
+        return NSRect(
+            x: bounds.minX,
+            y: textContainerOrigin.y + fragmentRect.minY,
+            width: bounds.width,
+            height: fragmentRect.height
+        )
     }
 }
