@@ -13,11 +13,13 @@ private struct FileTreeContents: View {
     let rootURL: URL
     @State private var items: [FileTreeItem]
     @State private var expandedDirectories: Set<URL>
+    @StateObject private var watcher: WorkspaceWatcher
 
     init(rootURL: URL) {
         self.rootURL = rootURL
         _items = State(initialValue: FileTreeItem.workspaceContents(of: rootURL))
         _expandedDirectories = State(initialValue: [])
+        _watcher = StateObject(wrappedValue: WorkspaceWatcher(rootURL: rootURL))
     }
 
     var body: some View {
@@ -36,6 +38,15 @@ private struct FileTreeContents: View {
             .padding(.horizontal, 4)
         }
         .padding(.top, 52)
+        .onAppear {
+            watcher.start()
+        }
+        .onDisappear {
+            watcher.stop()
+        }
+        .onChange(of: watcher.revision) {
+            items = FileTreeItem.workspaceContents(of: rootURL)
+        }
     }
 
     private var visibleItems: [VisibleFileTreeItem] {
@@ -238,6 +249,9 @@ private enum GitFileTree {
         process.arguments = ["-C", directoryURL.path] + arguments
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        var environment = ProcessInfo.processInfo.environment
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
+        process.environment = environment
 
         do {
             try process.run()
