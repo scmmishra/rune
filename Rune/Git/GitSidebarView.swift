@@ -2,13 +2,18 @@ import SwiftUI
 
 struct GitSidebarView: View {
     let rootURL: URL
+    let onOpenDiff: (GitChange, GitChange.Area) -> Void
 
     @StateObject private var model: GitSidebarModel
     @StateObject private var watcher: WorkspaceWatcher
     @State private var commitMessage = ""
 
-    init(rootURL: URL) {
+    init(
+        rootURL: URL,
+        onOpenDiff: @escaping (GitChange, GitChange.Area) -> Void
+    ) {
         self.rootURL = rootURL
+        self.onOpenDiff = onOpenDiff
         _model = StateObject(wrappedValue: GitSidebarModel(rootURL: rootURL))
         _watcher = StateObject(
             wrappedValue: WorkspaceWatcher(rootURL: rootURL, debounceDuration: .milliseconds(300))
@@ -22,11 +27,23 @@ struct GitSidebarView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if !model.snapshot.staged.isEmpty {
-                        section("STAGED", changes: model.snapshot.staged, area: .staged)
+                        section(
+                            "STAGED",
+                            changes: model.snapshot.staged,
+                            area: .staged,
+                            bulkActionTitle: "Unstage All",
+                            bulkAction: {
+                                Task { await model.unstageAll() }
+                            }
+                        )
                     }
 
                     if !model.snapshot.unstaged.isEmpty {
                         section("CHANGES", changes: model.snapshot.unstaged, area: .unstaged)
+                    }
+
+                    if !model.snapshot.untracked.isEmpty {
+                        section("UNTRACKED", changes: model.snapshot.untracked, area: .unstaged)
                     }
 
                     if model.snapshot.changes.isEmpty, model.errorMessage == nil {
@@ -72,12 +89,29 @@ struct GitSidebarView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if model.snapshot.additions > 0 || model.snapshot.deletions > 0 {
+            if model.snapshot.additions > 0 ||
+                model.snapshot.deletions > 0 ||
+                model.snapshot.hasUnstagedChanges {
                 HStack(spacing: 7) {
-                    Text("+\(model.snapshot.additions)")
-                        .foregroundStyle(.green)
-                    Text("−\(model.snapshot.deletions)")
-                        .foregroundStyle(.red)
+                    if model.snapshot.additions > 0 {
+                        Text("+\(model.snapshot.additions)")
+                            .foregroundStyle(.green)
+                    }
+                    if model.snapshot.deletions > 0 {
+                        Text("−\(model.snapshot.deletions)")
+                            .foregroundStyle(.red)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    if model.snapshot.hasUnstagedChanges {
+                        Button("Stage All") {
+                            Task { await model.stageAll() }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .disabled(model.isBusy)
+                    }
                 }
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
             }
@@ -91,20 +125,45 @@ struct GitSidebarView: View {
     private func section(
         _ title: String,
         changes: [GitChange],
-        area: GitChange.Area
+        area: GitChange.Area,
+        bulkActionTitle: String? = nil,
+        bulkAction: (() -> Void)? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(title)
                 Spacer()
-                Text("\(changes.count)")
+                if let bulkActionTitle, let bulkAction {
+                    Button(bulkActionTitle, action: bulkAction)
+                        .buttonStyle(.plain)
+                        .disabled(model.isBusy)
+                } else {
+                    Text("\(changes.count)")
+                }
             }
             .font(.system(size: 9, weight: .semibold, design: .monospaced))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 4)
 
             ForEach(changes) { change in
-                GitChangeRow(change: change, area: area)
+                GitChangeRow(
+                    change: change,
+                    area: area,
+                    isDisabled: model.isBusy,
+                    onOpen: {
+                        onOpenDiff(change, area)
+                    },
+                    onToggle: {
+                        Task {
+                            switch area {
+                            case .staged:
+                                await model.unstage(change)
+                            case .unstaged:
+                                await model.stage(change)
+                            }
+                        }
+                    }
+                )
             }
         }
     }
@@ -125,7 +184,6 @@ struct GitSidebarView: View {
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 7)
-                        .padding(.vertical, 8)
                         .allowsHitTesting(false)
                 }
 
@@ -160,7 +218,7 @@ struct GitSidebarView: View {
             .disabled(
                 commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                     model.snapshot.changes.isEmpty ||
-                    model.isCommitting ||
+                    model.isBusy ||
                     !model.snapshot.isRepository
             )
         }
@@ -171,6 +229,9 @@ struct GitSidebarView: View {
 private struct GitChangeRow: View {
     let change: GitChange
     let area: GitChange.Area
+    let isDisabled: Bool
+    let onOpen: () -> Void
+    let onToggle: () -> Void
 
     private var state: GitFileState {
         switch area {
@@ -192,31 +253,47 @@ private struct GitChangeRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(state.label)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(state.color)
-                .frame(width: 10)
+            Button(action: onOpen) {
+                HStack(spacing: 6) {
+                    Text(state.label)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(state.color)
+                        .frame(width: 10)
 
-            Text(change.path)
-                .font(.system(size: 11, design: .monospaced))
-                .lineLimit(1)
-                .truncationMode(.middle)
+                    Text(change.path)
+                        .font(.system(size: 11, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
 
-            Spacer(minLength: 4)
+                    Spacer(minLength: 4)
 
-            if let diff {
-                HStack(spacing: 4) {
-                    if let additions = diff.additions, additions > 0 {
-                        Text("+\(additions)")
-                            .foregroundStyle(.green)
-                    }
-                    if let deletions = diff.deletions, deletions > 0 {
-                        Text("−\(deletions)")
-                            .foregroundStyle(.red)
+                    if let diff {
+                        HStack(spacing: 4) {
+                            if let additions = diff.additions, additions > 0 {
+                                Text("+\(additions)")
+                                    .foregroundStyle(.green)
+                            }
+                            if let deletions = diff.deletions, deletions > 0 {
+                                Text("−\(deletions)")
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        .font(.system(size: 9, design: .monospaced))
                     }
                 }
-                .font(.system(size: 9, design: .monospaced))
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+
+            Button(action: onToggle) {
+                Image(systemName: area == .staged ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 11))
+                    .foregroundStyle(area == .staged ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(isDisabled)
+            .help(area == .staged ? "Unstage \(change.path)" : "Stage \(change.path)")
         }
         .padding(.horizontal, 4)
         .frame(height: 20)

@@ -2,8 +2,15 @@ import AppKit
 import SwiftUI
 
 struct CodeEditorView: NSViewRepresentable {
+    enum Presentation {
+        case source
+        case diff
+    }
+
     @Binding var text: String
     let fileURL: URL
+    var isEditable = true
+    var presentation: Presentation = .source
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -38,7 +45,7 @@ struct CodeEditorView: NSViewRepresentable {
             textContainer: textContainer
         )
         textView.delegate = context.coordinator
-        textView.isEditable = true
+        textView.isEditable = isEditable
         textView.isSelectable = true
         textView.isRichText = false
         textView.allowsUndo = true
@@ -67,6 +74,7 @@ struct CodeEditorView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
         context.coordinator.parent = self
+        textView.isEditable = isEditable
 
         if textView.string != text {
             context.coordinator.render(text, in: textView, fileURL: fileURL)
@@ -115,9 +123,13 @@ struct CodeEditorView: NSViewRepresentable {
 
             let selectedRanges = textView.selectedRanges
             isRendering = true
-            textStorage.setAttributedString(
+            let highlightedText = switch parent.presentation {
+            case .source:
                 syntaxHighlighter.highlight(textView.string)
-            )
+            case .diff:
+                DiffSyntaxHighlighter.highlight(textView.string)
+            }
+            textStorage.setAttributedString(highlightedText)
             textView.selectedRanges = selectedRanges.map { value in
                 let range = value.rangeValue
                 let location = min(range.location, textStorage.length)
@@ -138,7 +150,9 @@ private final class RuneTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
 
-        guard let lineRect = currentLineRect, lineRect.intersects(rect) else { return }
+        guard isEditable,
+              let lineRect = currentLineRect,
+              lineRect.intersects(rect) else { return }
         NSColor.labelColor.withAlphaComponent(0.045).setFill()
         lineRect.fill()
     }

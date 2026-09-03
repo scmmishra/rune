@@ -3,6 +3,7 @@ import SwiftUI
 struct WorkspaceView: View {
     let directoryURL: URL?
     @State private var openFileURL: URL?
+    @State private var openDiff: OpenGitDiff?
     @State private var isQuickOpenPresented = false
 
     private enum Layout {
@@ -19,6 +20,7 @@ struct WorkspaceView: View {
                         if let directoryURL {
                             FileTreeView(rootURL: directoryURL) { fileURL in
                                 withAnimation(.snappy(duration: 0.22)) {
+                                    openDiff = nil
                                     openFileURL = fileURL
                                 }
                             }
@@ -54,7 +56,12 @@ struct WorkspaceView: View {
 
                     Group {
                         if let directoryURL {
-                            GitSidebarView(rootURL: directoryURL)
+                            GitSidebarView(rootURL: directoryURL) { change, area in
+                                withAnimation(.snappy(duration: 0.22)) {
+                                    openFileURL = nil
+                                    openDiff = OpenGitDiff(change: change, area: area)
+                                }
+                            }
                                 .id(directoryURL)
                         } else {
                             Color.clear
@@ -67,6 +74,27 @@ struct WorkspaceView: View {
                     FileEditorDrawer(fileURL: openFileURL) {
                         withAnimation(.snappy(duration: 0.18)) {
                             self.openFileURL = nil
+                        }
+                    }
+                    .frame(
+                        width: min(
+                            max(480, geometry.size.width * 0.62),
+                            geometry.size.width * 0.78
+                        )
+                    )
+                    .padding(16)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .zIndex(1)
+                }
+
+                if let openDiff, let directoryURL {
+                    GitDiffDrawer(
+                        rootURL: directoryURL,
+                        change: openDiff.change,
+                        area: openDiff.area
+                    ) {
+                        withAnimation(.snappy(duration: 0.18)) {
+                            self.openDiff = nil
                         }
                     }
                     .frame(
@@ -111,9 +139,15 @@ struct WorkspaceView: View {
     private func open(_ fileURL: URL) {
         isQuickOpenPresented = false
         withAnimation(.snappy(duration: 0.22)) {
+            openDiff = nil
             openFileURL = fileURL
         }
     }
+}
+
+private struct OpenGitDiff {
+    let change: GitChange
+    let area: GitChange.Area
 }
 
 private struct WorkspacePlaceholder: View {

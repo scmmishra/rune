@@ -74,6 +74,47 @@ final class SyntaxHighlighter {
     }
 }
 
+enum DiffSyntaxHighlighter {
+    static func highlight(_ source: String) -> NSAttributedString {
+        let output = NSMutableAttributedString(
+            string: source,
+            attributes: SyntaxHighlighter.baseAttributes
+        )
+        let contents = source as NSString
+        var location = 0
+
+        while location < contents.length {
+            let range = contents.lineRange(for: NSRange(location: location, length: 0))
+            let line = contents.substring(with: range)
+            let colors = colors(for: line)
+            output.addAttribute(.foregroundColor, value: colors.foreground, range: range)
+            if let background = colors.background {
+                output.addAttribute(.backgroundColor, value: background, range: range)
+            }
+            location = NSMaxRange(range)
+        }
+
+        return output
+    }
+
+    private static func colors(for line: String) -> (foreground: NSColor, background: NSColor?) {
+        if line.hasPrefix("@@") {
+            return (.systemBlue, NSColor.systemBlue.withAlphaComponent(0.08))
+        }
+        if line.hasPrefix("+++") || line.hasPrefix("---") ||
+            line.hasPrefix("diff ") || line.hasPrefix("index ") {
+            return (.secondaryLabelColor, nil)
+        }
+        if line.hasPrefix("+") {
+            return (.systemGreen, NSColor.systemGreen.withAlphaComponent(0.08))
+        }
+        if line.hasPrefix("-") {
+            return (.systemRed, NSColor.systemRed.withAlphaComponent(0.08))
+        }
+        return (.labelColor, nil)
+    }
+}
+
 private final class TreeSitterSyntaxHighlighter {
     private let parser: Parser
     private let query: Query

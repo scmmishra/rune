@@ -5,15 +5,20 @@ import Foundation
 final class GitSidebarModel: ObservableObject {
     @Published private(set) var snapshot = GitSnapshot.empty
     @Published private(set) var isCommitting = false
+    @Published private(set) var isUpdatingIndex = false
     @Published private var repositoryErrorMessage: String?
-    @Published private var commitErrorMessage: String?
+    @Published private var actionErrorMessage: String?
 
     private let rootURL: URL
     private var refreshTask: Task<Void, Never>?
     private var refreshRequested = false
 
     var errorMessage: String? {
-        commitErrorMessage ?? repositoryErrorMessage
+        actionErrorMessage ?? repositoryErrorMessage
+    }
+
+    var isBusy: Bool {
+        isCommitting || isUpdatingIndex
     }
 
     init(rootURL: URL) {
@@ -21,7 +26,7 @@ final class GitSidebarModel: ObservableObject {
     }
 
     func refresh() {
-        guard !isCommitting, refreshTask == nil else {
+        guard !isBusy, refreshTask == nil else {
             refreshRequested = true
             return
         }
@@ -54,11 +59,11 @@ final class GitSidebarModel: ObservableObject {
 
     func commitAll(message: String) async -> Bool {
         let message = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty, !isCommitting else { return false }
+        guard !message.isEmpty, !isBusy else { return false }
 
         cancelRefresh()
         isCommitting = true
-        commitErrorMessage = nil
+        actionErrorMessage = nil
 
         let rootURL = rootURL
         let result = await Task.detached(priority: .userInitiated) {
@@ -66,8 +71,41 @@ final class GitSidebarModel: ObservableObject {
         }.value
 
         isCommitting = false
-        commitErrorMessage = result.errorMessage
+        actionErrorMessage = result.errorMessage
         refresh()
         return result.succeeded
+    }
+
+    func stage(_ change: GitChange) async {
+        await updateIndex(.stage(paths: change.paths))
+    }
+
+    func unstage(_ change: GitChange) async {
+        await updateIndex(.unstage(paths: change.paths))
+    }
+
+    func stageAll() async {
+        await updateIndex(.stageAll)
+    }
+
+    func unstageAll() async {
+        await updateIndex(.unstageAll)
+    }
+
+    private func updateIndex(_ action: GitRepository.IndexAction) async {
+        guard !isBusy else { return }
+
+        cancelRefresh()
+        isUpdatingIndex = true
+        actionErrorMessage = nil
+
+        let rootURL = rootURL
+        let result = await Task.detached(priority: .userInitiated) {
+            GitRepository.updateIndex(action, at: rootURL)
+        }.value
+
+        isUpdatingIndex = false
+        actionErrorMessage = result.errorMessage
+        refresh()
     }
 }

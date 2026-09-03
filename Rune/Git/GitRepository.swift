@@ -1,6 +1,13 @@
 import Foundation
 
 nonisolated enum GitRepository {
+    enum IndexAction: Sendable {
+        case stage(paths: [String])
+        case unstage(paths: [String])
+        case stageAll
+        case unstageAll
+    }
+
     struct SnapshotResult: Sendable {
         let snapshot: GitSnapshot
         let errorMessage: String?
@@ -8,6 +15,11 @@ nonisolated enum GitRepository {
 
     struct CommitResult: Sendable {
         let succeeded: Bool
+        let errorMessage: String?
+    }
+
+    struct DiffResult: Sendable {
+        let contents: String
         let errorMessage: String?
     }
 
@@ -52,6 +64,63 @@ nonisolated enum GitRepository {
             return CommitResult(succeeded: false, errorMessage: errorMessage(from: commitResult.data))
         }
         return CommitResult(succeeded: true, errorMessage: nil)
+    }
+
+    static func updateIndex(_ action: IndexAction, at rootURL: URL) -> CommitResult {
+        let arguments: [String]
+
+        switch action {
+        case let .stage(paths):
+            arguments = ["add", "--"] + paths
+        case .stageAll:
+            arguments = ["add", "--all"]
+        case let .unstage(paths):
+            arguments = unstageArguments(paths: paths, at: rootURL)
+        case .unstageAll:
+            arguments = unstageArguments(paths: [":/"], at: rootURL)
+        }
+
+        let result = runGit(arguments, at: rootURL, readOnly: false)
+        guard result.status == 0 else {
+            return CommitResult(succeeded: false, errorMessage: errorMessage(from: result.data))
+        }
+        return CommitResult(succeeded: true, errorMessage: nil)
+    }
+
+    static func diff(
+        for change: GitChange,
+        area: GitChange.Area,
+        at rootURL: URL
+    ) -> DiffResult {
+        let arguments: [String]
+        let acceptsDifferenceStatus: Bool
+
+        if area == .unstaged, change.unstagedState == .untracked {
+            arguments = [
+                "diff", "--no-index", "--no-ext-diff", "--no-color", "--unified=3",
+                "--", "/dev/null", change.path
+            ]
+            acceptsDifferenceStatus = true
+        } else {
+            arguments = [
+                "diff"
+            ] + (area == .staged ? ["--cached"] : []) + [
+                "--no-ext-diff", "--no-color", "--unified=3", "--"
+            ] + change.paths
+            acceptsDifferenceStatus = false
+        }
+
+        let result = runGit(arguments, at: rootURL, readOnly: true)
+        let succeeded = result.status == 0 || (acceptsDifferenceStatus && result.status == 1)
+        guard succeeded else {
+            return DiffResult(contents: "", errorMessage: errorMessage(from: result.data))
+        }
+
+        let contents = String(data: result.data, encoding: .utf8) ?? ""
+        return DiffResult(
+            contents: contents.isEmpty ? "No diff available." : contents,
+            errorMessage: nil
+        )
     }
 
     private static func parseStatus(_ data: Data) -> (branch: String, changes: [GitChange]) {
@@ -137,6 +206,17 @@ nonisolated enum GitRepository {
         return GitDiffCount.combining(current, previous)
     }
 
+    private static func unstageArguments(paths: [String], at rootURL: URL) -> [String] {
+        let hasHead = runGit(["rev-parse", "--verify", "HEAD"], at: rootURL, readOnly: true).status == 0
+        if hasHead {
+            return ["restore", "--staged", "--"] + paths
+        }
+
+        // `restore --staged` requires HEAD. An unborn repository must remove
+        // paths directly from the index while leaving working files untouched.
+        return ["rm", "--cached", "--recursive", "--quiet", "--ignore-unmatch", "--"] + paths
+    }
+
     private static func runGit(
         _ arguments: [String],
         at rootURL: URL,
@@ -190,7 +270,17 @@ nonisolated struct GitSnapshot: Sendable {
     }
 
     var unstaged: [GitChange] {
-        changes.filter { $0.unstagedState != nil }
+        changes.filter { change in
+            change.unstagedState != nil && change.unstagedState != .untracked
+        }
+    }
+
+    var untracked: [GitChange] {
+        changes.filter { $0.unstagedState == .untracked }
+    }
+
+    var hasUnstagedChanges: Bool {
+        changes.contains { $0.unstagedState != nil }
     }
 
     var additions: Int {
@@ -209,7 +299,7 @@ nonisolated struct GitSnapshot: Sendable {
 }
 
 nonisolated struct GitChange: Identifiable, Sendable {
-    enum Area {
+    enum Area: Equatable, Sendable {
         case staged
         case unstaged
     }
@@ -222,9 +312,13 @@ nonisolated struct GitChange: Identifiable, Sendable {
     var unstagedDiff: GitDiffCount?
 
     var id: String { path }
+
+    var paths: [String] {
+        [path] + (previousPath.map { [$0] } ?? [])
+    }
 }
 
-nonisolated enum GitFileState: Sendable {
+nonisolated enum GitFileState: Sendable, Equatable {
     case modified
     case added
     case deleted
