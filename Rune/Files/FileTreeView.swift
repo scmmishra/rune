@@ -93,11 +93,7 @@ private struct FileTreeContents: View {
                     .frame(width: 8)
             }
 
-            FileIconView(
-                url: url,
-                isDirectory: isDirectory,
-                isExpanded: isDirectory && expandedDirectories.contains(url)
-            )
+            FileIconView(url: url, isDirectory: isDirectory)
                 .foregroundStyle(status?.color ?? Color.secondary)
                 .frame(width: 12, height: 12)
 

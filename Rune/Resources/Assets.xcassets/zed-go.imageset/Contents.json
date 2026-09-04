@@ -1,0 +1,11 @@
+{
+  "images" : [
+    { "filename" : "go_light.svg", "idiom" : "universal" },
+    {
+      "appearances" : [{ "appearance" : "luminosity", "value" : "dark" }],
+      "filename" : "go_dark.svg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}

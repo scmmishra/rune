@@ -73,8 +73,8 @@ There is no Git detail UI, tabs, or orchestration yet.
 
 ## Third-party assets
 
-Rune's file icons use selected assets from
-[Phosphor Icons](https://phosphoricons.com/), distributed under the MIT License.
+Rune's colored file icons use selected light and dark assets from the
+[Colored Zed Icons Theme](https://github.com/TheRedXD/zed-icons-colored-theme).
 The assets are vendored from
-[Phosphor Core revision 2b75f3a](https://github.com/phosphor-icons/core/tree/2b75f3ad12b420c9504ef05df8d2564a28f8500e).
-A copy of the license is included with the bundled icon assets.
+[revision af356cf](https://github.com/TheRedXD/zed-icons-colored-theme/tree/af356cf3d9546928a272a05a08a9aa0dd4b6556e)
+and retain their original license notice in the app bundle.

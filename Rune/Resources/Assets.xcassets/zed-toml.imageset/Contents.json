@@ -1,0 +1,11 @@
+{
+  "images" : [
+    { "filename" : "toml_light.svg", "idiom" : "universal" },
+    {
+      "appearances" : [{ "appearance" : "luminosity", "value" : "dark" }],
+      "filename" : "toml_dark.svg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}
