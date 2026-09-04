@@ -5,11 +5,14 @@ struct WorkspaceView: View {
     @State private var openFileURL: URL?
     @State private var openDiff: OpenGitDiff?
     @State private var isQuickOpenPresented = false
+    @State private var isDrawerVisible = false
+    @State private var drawerCleanupTask: Task<Void, Never>?
 
     private enum Layout {
         static let sidebarWidthRatio: CGFloat = 0.20
         static let workspaceInset: CGFloat = 16
         static let workspaceCornerRadius: CGFloat = 14
+        static let drawerCloseDuration = Duration.milliseconds(90)
     }
 
     var body: some View {
@@ -18,12 +21,7 @@ struct WorkspaceView: View {
                 HStack(spacing: 0) {
                     Group {
                         if let directoryURL {
-                            FileTreeView(rootURL: directoryURL) { fileURL in
-                                withAnimation(.snappy(duration: 0.22)) {
-                                    openDiff = nil
-                                    openFileURL = fileURL
-                                }
-                            }
+                            FileTreeView(rootURL: directoryURL, onOpenFile: open)
                         } else {
                             Color.clear
                         }
@@ -60,10 +58,7 @@ struct WorkspaceView: View {
                                 rootURL: directoryURL,
                                 onOpenFile: open,
                                 onOpenDiff: { change, area in
-                                    withAnimation(.snappy(duration: 0.22)) {
-                                        openFileURL = nil
-                                        openDiff = OpenGitDiff(change: change, area: area)
-                                    }
+                                    showDiff(change, area: area)
                                 }
                             )
                             .id(directoryURL)
@@ -76,9 +71,7 @@ struct WorkspaceView: View {
 
                 if let openFileURL {
                     FileEditorDrawer(fileURL: openFileURL) {
-                        withAnimation(.snappy(duration: 0.18)) {
-                            self.openFileURL = nil
-                        }
+                        closeDrawer()
                     }
                     .frame(
                         width: min(
@@ -87,6 +80,9 @@ struct WorkspaceView: View {
                         )
                     )
                     .padding(16)
+                    .offset(x: isDrawerVisible ? 0 : geometry.size.width)
+                    .opacity(isDrawerVisible ? 1 : 0)
+                    .allowsHitTesting(isDrawerVisible)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .zIndex(1)
                 }
@@ -97,9 +93,7 @@ struct WorkspaceView: View {
                         change: openDiff.change,
                         area: openDiff.area
                     ) {
-                        withAnimation(.snappy(duration: 0.18)) {
-                            self.openDiff = nil
-                        }
+                        closeDrawer()
                     }
                     .frame(
                         width: min(
@@ -108,6 +102,9 @@ struct WorkspaceView: View {
                         )
                     )
                     .padding(16)
+                    .offset(x: isDrawerVisible ? 0 : geometry.size.width)
+                    .opacity(isDrawerVisible ? 1 : 0)
+                    .allowsHitTesting(isDrawerVisible)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .zIndex(1)
                 }
@@ -142,9 +139,34 @@ struct WorkspaceView: View {
 
     private func open(_ fileURL: URL) {
         isQuickOpenPresented = false
+        drawerCleanupTask?.cancel()
         withAnimation(.snappy(duration: 0.22)) {
             openDiff = nil
             openFileURL = fileURL
+            isDrawerVisible = true
+        }
+    }
+
+    private func showDiff(_ change: GitChange, area: GitChange.Area) {
+        drawerCleanupTask?.cancel()
+        withAnimation(.snappy(duration: 0.22)) {
+            openFileURL = nil
+            openDiff = OpenGitDiff(change: change, area: area)
+            isDrawerVisible = true
+        }
+    }
+
+    private func closeDrawer() {
+        drawerCleanupTask?.cancel()
+        withAnimation(.easeOut(duration: 0.09)) {
+            isDrawerVisible = false
+        }
+
+        drawerCleanupTask = Task {
+            try? await Task.sleep(for: Layout.drawerCloseDuration)
+            guard !Task.isCancelled else { return }
+            openFileURL = nil
+            openDiff = nil
         }
     }
 }
