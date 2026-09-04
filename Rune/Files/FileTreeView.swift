@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct FileTreeView: View {
@@ -11,12 +12,18 @@ struct FileTreeView: View {
 }
 
 private struct FileTreeContents: View {
+    private enum Layout {
+        static let windowedTopPadding: CGFloat = 38
+        static let fullScreenTopPadding: CGFloat = 16
+    }
+
     let rootURL: URL
     let onOpenFile: (URL) -> Void
     @State private var items: [FileTreeItem] = []
     @State private var expandedDirectories: Set<URL>
     @State private var selectedURL: URL?
     @StateObject private var watcher: WorkspaceWatcher
+    @State private var isFullScreen = false
     @FocusState private var hasKeyboardFocus: Bool
 
     init(rootURL: URL, onOpenFile: @escaping (URL) -> Void) {
@@ -41,7 +48,13 @@ private struct FileTreeContents: View {
             }
             .padding(.horizontal, 4)
         }
-        .padding(.top, 38)
+        .padding(
+            .top,
+            isFullScreen ? Layout.fullScreenTopPadding : Layout.windowedTopPadding
+        )
+        .background {
+            WindowFullScreenObserver(isFullScreen: $isFullScreen)
+        }
         .focusable()
         .focusEffectDisabled()
         .focused($hasKeyboardFocus)
@@ -165,6 +178,84 @@ private struct FileTreeContents: View {
         } else {
             onOpenFile(url)
         }
+    }
+}
+
+// SwiftUI does not expose the containing macOS window's full-screen state, so
+// observe that specific NSWindow rather than global application notifications.
+private struct WindowFullScreenObserver: NSViewRepresentable {
+    @Binding var isFullScreen: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isFullScreen: $isFullScreen)
+    }
+
+    func makeNSView(context: Context) -> WindowTrackingView {
+        let view = WindowTrackingView()
+        view.onWindowChange = { [weak coordinator = context.coordinator] window in
+            coordinator?.observe(window)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: WindowTrackingView, context: Context) {
+        context.coordinator.isFullScreen = $isFullScreen
+    }
+
+    static func dismantleNSView(_ view: WindowTrackingView, coordinator: Coordinator) {
+        coordinator.stopObserving()
+        view.onWindowChange = nil
+    }
+
+    @MainActor
+    final class Coordinator {
+        var isFullScreen: Binding<Bool>
+
+        private weak var window: NSWindow?
+        private var observers: [NSObjectProtocol] = []
+
+        init(isFullScreen: Binding<Bool>) {
+            self.isFullScreen = isFullScreen
+        }
+
+        func observe(_ window: NSWindow?) {
+            guard self.window !== window else { return }
+            stopObserving()
+            self.window = window
+
+            guard let window else { return }
+            let center = NotificationCenter.default
+            for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+                observers.append(
+                    center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                        MainActor.assumeIsolated {
+                            self?.updateState()
+                        }
+                    }
+                )
+            }
+            updateState()
+        }
+
+        func stopObserving() {
+            let center = NotificationCenter.default
+            observers.forEach(center.removeObserver)
+            observers.removeAll()
+            window = nil
+        }
+
+        private func updateState() {
+            isFullScreen.wrappedValue = window?.styleMask.contains(.fullScreen) == true
+        }
+    }
+}
+
+private final class WindowTrackingView: NSView {
+    var onWindowChange: ((NSWindow?) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowChange?(window)
     }
 }
 
