@@ -16,13 +16,63 @@ directory=$(cd "$directory" && pwd -P)
 script_path=$(realpath "$0")
 repository_root=$(dirname "$(dirname "$script_path")")
 development_app="$repository_root/DerivedData/Build/Products/Debug/Rune.app"
+installed_app="/Applications/Rune.app"
+
+newer_app() {
+    first=$1
+    second=$2
+
+    if [ ! -x "$first/Contents/MacOS/Rune" ]; then
+        printf '%s\n' "$second"
+    elif [ ! -x "$second/Contents/MacOS/Rune" ]; then
+        printf '%s\n' "$first"
+    elif [ "$(stat -f %m "$first/Contents/MacOS/Rune")" -ge "$(stat -f %m "$second/Contents/MacOS/Rune")" ]; then
+        printf '%s\n' "$first"
+    else
+        printf '%s\n' "$second"
+    fi
+}
 
 if [ -n "${RUNE_APP_PATH:-}" ]; then
     app="$RUNE_APP_PATH"
-elif [ -d "$development_app" ]; then
-    app="$development_app"
+elif [ -d "$development_app" ] || [ -d "$installed_app" ]; then
+    app=$(newer_app "$development_app" "$installed_app")
 else
     app=Rune
+fi
+
+if [ "$app" != Rune ] && [ ! -x "$app/Contents/MacOS/Rune" ]; then
+    echo "rune: app executable not found: $app/Contents/MacOS/Rune" >&2
+    exit 1
+fi
+
+if [ "$app" != Rune ]; then
+    app=$(realpath "$app")
+    selected_executable="$app/Contents/MacOS/Rune"
+    retired_pids=""
+
+    # Launch Services may route a document to an older running bundle with the
+    # same identifier, so retire only Rune processes launched from another app.
+    for pid in $(pgrep -x Rune 2>/dev/null || true); do
+        running_executable=$(ps -p "$pid" -o comm= 2>/dev/null || true)
+        if [ -n "$running_executable" ] && [ "$running_executable" != "$selected_executable" ]; then
+            kill "$pid" 2>/dev/null || true
+            retired_pids="$retired_pids $pid"
+        fi
+    done
+
+    attempts=0
+    while [ -n "$retired_pids" ] && [ "$attempts" -lt 20 ]; do
+        remaining_pids=""
+        for pid in $retired_pids; do
+            if kill -0 "$pid" 2>/dev/null; then
+                remaining_pids="$remaining_pids $pid"
+            fi
+        done
+        retired_pids=$remaining_pids
+        [ -z "$retired_pids" ] || sleep 0.05
+        attempts=$((attempts + 1))
+    done
 fi
 
 open -a "$app" "$directory"
