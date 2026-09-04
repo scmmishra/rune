@@ -1,3 +1,5 @@
+import AppKit
+import QuickLook
 import SwiftUI
 
 struct GitSidebarView: View {
@@ -7,6 +9,8 @@ struct GitSidebarView: View {
     @StateObject private var model: GitSidebarModel
     @StateObject private var watcher: WorkspaceWatcher
     @State private var commitMessage = ""
+    @State private var previewURL: URL?
+    @State private var pendingDiscard: GitChange?
 
     init(
         rootURL: URL,
@@ -24,41 +28,19 @@ struct GitSidebarView: View {
         VStack(spacing: 0) {
             header
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    if !model.snapshot.staged.isEmpty {
-                        section(
-                            "STAGED",
-                            changes: model.snapshot.staged,
-                            area: .staged,
-                            bulkActionTitle: "Unstage All",
-                            bulkAction: {
-                                Task { await model.unstageAll() }
-                            }
-                        )
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    VStack(spacing: 0) {
+                        changesList
+                        commitArea
                     }
+                    .frame(height: geometry.size.height * 2 / 3)
 
-                    if !model.snapshot.unstaged.isEmpty {
-                        section("CHANGES", changes: model.snapshot.unstaged, area: .unstaged)
-                    }
+                    Divider()
 
-                    if !model.snapshot.untracked.isEmpty {
-                        section("UNTRACKED", changes: model.snapshot.untracked, area: .unstaged)
-                    }
-
-                    if model.snapshot.changes.isEmpty, model.errorMessage == nil {
-                        Text("Working tree clean")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.tertiary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 24)
-                    }
+                    historyArea
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
             }
-
-            commitArea
         }
         .onAppear {
             watcher.start()
@@ -70,6 +52,61 @@ struct GitSidebarView: View {
         }
         .onChange(of: watcher.revision) {
             model.refresh()
+        }
+        .quickLookPreview($previewURL)
+        .confirmationDialog(
+            "Discard changes to \(pendingDiscard?.path ?? "this file")?",
+            isPresented: Binding(
+                get: { pendingDiscard != nil },
+                set: { if !$0 { pendingDiscard = nil } }
+            )
+        ) {
+            Button("Discard Changes", role: .destructive) {
+                guard let change = pendingDiscard else { return }
+                pendingDiscard = nil
+                Task { await model.discard(change) }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDiscard = nil
+            }
+        } message: {
+            Text("Tracked edits cannot be recovered. Untracked files are moved to Trash.")
+        }
+    }
+
+    private var changesList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                if !model.snapshot.staged.isEmpty {
+                    section(
+                        "STAGED",
+                        changes: model.snapshot.staged,
+                        area: .staged,
+                        bulkActionTitle: "Unstage All",
+                        bulkAction: {
+                            Task { await model.unstageAll() }
+                        }
+                    )
+                }
+
+                if !model.snapshot.unstaged.isEmpty {
+                    section("CHANGES", changes: model.snapshot.unstaged, area: .unstaged)
+                }
+
+                if !model.snapshot.untracked.isEmpty {
+                    section("UNTRACKED", changes: model.snapshot.untracked, area: .unstaged)
+                }
+
+                if model.snapshot.changes.isEmpty, model.errorMessage == nil {
+                    Text("Working tree clean")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 24)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
         }
     }
 
@@ -164,8 +201,64 @@ struct GitSidebarView: View {
                         }
                     }
                 )
+                .contextMenu {
+                    changeContextMenu(for: change, area: area)
+                }
             }
         }
+    }
+
+    @ViewBuilder
+    private func changeContextMenu(for change: GitChange, area: GitChange.Area) -> some View {
+        let fileURL = rootURL.appending(path: change.path).standardizedFileURL
+        let fileExists = FileManager.default.fileExists(atPath: fileURL.path)
+        let canDiscard = change.unstagedState != .untracked || fileExists
+
+        Button {
+            previewURL = fileURL
+        } label: {
+            Label("Preview File", systemImage: "eye")
+        }
+        .disabled(!fileExists)
+
+        Button {
+            onOpenDiff(change, area)
+        } label: {
+            Label("Preview Diff", systemImage: "doc.text.magnifyingglass")
+        }
+
+        Divider()
+
+        Button("Copy Path") {
+            copyToPasteboard(fileURL.path)
+        }
+
+        Button("Copy Relative Path") {
+            copyToPasteboard(change.path)
+        }
+
+        Divider()
+
+        if area == .unstaged {
+            Button(role: .destructive) {
+                pendingDiscard = change
+            } label: {
+                Label("Discard Changes", systemImage: "arrow.uturn.backward")
+            }
+            .disabled(!canDiscard || model.isBusy)
+        }
+
+        Button(role: .destructive) {
+            Task { await model.trash(change) }
+        } label: {
+            Label("Move to Trash", systemImage: "trash")
+        }
+        .disabled(!fileExists || model.isBusy)
+    }
+
+    private func copyToPasteboard(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
     }
 
     private var commitArea: some View {
@@ -184,6 +277,7 @@ struct GitSidebarView: View {
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 7)
+                        .padding(.top, 6)
                         .allowsHitTesting(false)
                 }
 
@@ -191,6 +285,7 @@ struct GitSidebarView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 2)
+                    .padding(.top, 4)
                     .frame(minHeight: 54, maxHeight: 72)
             }
             .background {
@@ -223,6 +318,63 @@ struct GitSidebarView: View {
             )
         }
         .padding(10)
+    }
+
+    private var historyArea: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("HISTORY")
+                Spacer()
+                Text("\(model.snapshot.commits.count)")
+            }
+            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+
+            if model.snapshot.commits.isEmpty {
+                Text(model.snapshot.isRepository ? "No commits yet" : "Not a Git repository")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 16)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(model.snapshot.commits) { commit in
+                            GitCommitRow(commit: commit)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+                }
+            }
+        }
+    }
+}
+
+private struct GitCommitRow: View {
+    let commit: GitCommit
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(commit.subject)
+                .font(.system(size: 11, design: .monospaced))
+                .lineLimit(1)
+
+            HStack(spacing: 6) {
+                Text(commit.shortHash)
+                    .foregroundStyle(.secondary)
+                Text(commit.author)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text(commit.relativeDate)
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.system(size: 9, design: .monospaced))
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
     }
 }
 

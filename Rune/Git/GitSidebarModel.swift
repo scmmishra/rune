@@ -6,6 +6,8 @@ final class GitSidebarModel: ObservableObject {
     @Published private(set) var snapshot = GitSnapshot.empty
     @Published private(set) var isCommitting = false
     @Published private(set) var isUpdatingIndex = false
+    @Published private(set) var isTrashing = false
+    @Published private(set) var isDiscarding = false
     @Published private var repositoryErrorMessage: String?
     @Published private var actionErrorMessage: String?
 
@@ -18,7 +20,7 @@ final class GitSidebarModel: ObservableObject {
     }
 
     var isBusy: Bool {
-        isCommitting || isUpdatingIndex
+        isCommitting || isUpdatingIndex || isTrashing || isDiscarding
     }
 
     init(rootURL: URL) {
@@ -90,6 +92,56 @@ final class GitSidebarModel: ObservableObject {
 
     func unstageAll() async {
         await updateIndex(.unstageAll)
+    }
+
+    func trash(_ change: GitChange) async {
+        guard !isBusy else { return }
+
+        let rootURL = rootURL.standardizedFileURL
+        let fileURL = rootURL.appending(path: change.path).standardizedFileURL
+        guard fileURL.path.hasPrefix(rootURL.path + "/") else {
+            actionErrorMessage = "Cannot trash a file outside the workspace"
+            return
+        }
+
+        cancelRefresh()
+        isTrashing = true
+        actionErrorMessage = nil
+
+        let errorMessage = await Task.detached(priority: .userInitiated) {
+            do {
+                try FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
+                return nil as String?
+            } catch {
+                return error.localizedDescription
+            }
+        }.value
+
+        isTrashing = false
+        actionErrorMessage = errorMessage
+        refresh()
+    }
+
+    func discard(_ change: GitChange) async {
+        guard !isBusy else { return }
+
+        if change.unstagedState == .untracked {
+            await trash(change)
+            return
+        }
+
+        cancelRefresh()
+        isDiscarding = true
+        actionErrorMessage = nil
+
+        let rootURL = rootURL
+        let result = await Task.detached(priority: .userInitiated) {
+            GitRepository.discardChanges(for: change, at: rootURL)
+        }.value
+
+        isDiscarding = false
+        actionErrorMessage = result.errorMessage
+        refresh()
     }
 
     private func updateIndex(_ action: GitRepository.IndexAction) async {

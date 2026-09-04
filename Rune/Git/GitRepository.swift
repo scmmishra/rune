@@ -40,6 +40,7 @@ nonisolated enum GitRepository {
             from: runGit(["diff", "--numstat", "-z", "--no-renames"], at: rootURL, readOnly: true).data
         )
         let parsedStatus = parseStatus(statusResult.data)
+        let commits = commitHistory(at: rootURL)
         let changes = parsedStatus.changes.map { change in
             var change = change
             change.stagedDiff = combinedDiff(for: change, in: stagedDiffs)
@@ -48,9 +49,38 @@ nonisolated enum GitRepository {
         }
 
         return SnapshotResult(
-            snapshot: GitSnapshot(branch: parsedStatus.branch, changes: changes, isRepository: true),
+            snapshot: GitSnapshot(
+                branch: parsedStatus.branch,
+                changes: changes,
+                commits: commits,
+                isRepository: true
+            ),
             errorMessage: nil
         )
+    }
+
+    private static func commitHistory(at rootURL: URL) -> [GitCommit] {
+        let result = runGit(
+            [
+                "log", "--max-count=50", "-z",
+                "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%s"
+            ],
+            at: rootURL,
+            readOnly: true
+        )
+        guard result.status == 0 else { return [] }
+
+        return result.data.split(separator: 0).compactMap { record in
+            let fields = record.split(separator: 31, maxSplits: 4, omittingEmptySubsequences: false)
+            guard fields.count == 5 else { return nil }
+            return GitCommit(
+                id: String(decoding: fields[0], as: UTF8.self),
+                shortHash: String(decoding: fields[1], as: UTF8.self),
+                author: String(decoding: fields[2], as: UTF8.self),
+                relativeDate: String(decoding: fields[3], as: UTF8.self),
+                subject: String(decoding: fields[4], as: UTF8.self)
+            )
+        }
     }
 
     static func commitAll(message: String, at rootURL: URL) -> CommitResult {
@@ -81,6 +111,18 @@ nonisolated enum GitRepository {
         }
 
         let result = runGit(arguments, at: rootURL, readOnly: false)
+        guard result.status == 0 else {
+            return CommitResult(succeeded: false, errorMessage: errorMessage(from: result.data))
+        }
+        return CommitResult(succeeded: true, errorMessage: nil)
+    }
+
+    static func discardChanges(for change: GitChange, at rootURL: URL) -> CommitResult {
+        let result = runGit(
+            ["restore", "--worktree", "--"] + change.paths,
+            at: rootURL,
+            readOnly: false
+        )
         guard result.status == 0 else {
             return CommitResult(succeeded: false, errorMessage: errorMessage(from: result.data))
         }
@@ -260,10 +302,11 @@ nonisolated enum GitRepository {
 nonisolated struct GitSnapshot: Sendable {
     let branch: String
     let changes: [GitChange]
+    let commits: [GitCommit]
     let isRepository: Bool
 
-    static let empty = GitSnapshot(branch: "Git", changes: [], isRepository: true)
-    static let notRepository = GitSnapshot(branch: "Git", changes: [], isRepository: false)
+    static let empty = GitSnapshot(branch: "Git", changes: [], commits: [], isRepository: true)
+    static let notRepository = GitSnapshot(branch: "Git", changes: [], commits: [], isRepository: false)
 
     var staged: [GitChange] {
         changes.filter { $0.stagedState != nil }
@@ -296,6 +339,14 @@ nonisolated struct GitSnapshot: Sendable {
             total += change.unstagedDiff?.deletions ?? 0
         }
     }
+}
+
+nonisolated struct GitCommit: Identifiable, Sendable {
+    let id: String
+    let shortHash: String
+    let author: String
+    let relativeDate: String
+    let subject: String
 }
 
 nonisolated struct GitChange: Identifiable, Sendable {
