@@ -10,6 +10,7 @@ struct GitCommitDrawer: View {
     @State private var isTruncated = false
     @State private var loadError: String?
     @State private var isLoading = true
+    @Environment(\.runeTypography) private var typography
 
     private static let minimumDiffHeight: CGFloat = 84
     private static let maximumDiffHeight: CGFloat = 320
@@ -70,7 +71,7 @@ struct GitCommitDrawer: View {
                             .frame(width: 14, height: 14)
 
                             Text(file.path)
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .runeFont(size: 11, weight: .medium)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
 
@@ -82,7 +83,7 @@ struct GitCommitDrawer: View {
                                 Text("−\(file.deletions)")
                                     .foregroundStyle(.red)
                             }
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .runeFont(size: 10, weight: .medium)
                         }
 
                         CodeEditorView(
@@ -103,7 +104,7 @@ struct GitCommitDrawer: View {
 
                 if isTruncated {
                     Text("Commit diff truncated after 5 MB.")
-                        .font(.system(size: 10, design: .monospaced))
+                        .runeFont(size: 10)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
                 }
@@ -120,7 +121,7 @@ struct GitCommitDrawer: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(commit.subject)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .runeFont(size: 12, weight: .medium)
                     .lineLimit(1)
 
                 HStack(spacing: 5) {
@@ -128,14 +129,14 @@ struct GitCommitDrawer: View {
                     Text("•")
                     Text(commit.relativeDate)
                 }
-                .font(.system(size: 9, design: .monospaced))
+                .runeFont(size: 9)
                 .foregroundStyle(.secondary)
             }
 
             Spacer(minLength: 8)
 
             Text(commit.shortHash)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .runeFont(size: 9, weight: .medium)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
@@ -172,7 +173,12 @@ struct GitCommitDrawer: View {
         let lineCount = patch.reduce(1) { count, character in
             character == "\n" ? count + 1 : count
         }
-        let naturalHeight = CGFloat(lineCount) * Self.approximateLineHeight + Self.editorVerticalPadding
-        return min(max(naturalHeight, Self.minimumDiffHeight), Self.maximumDiffHeight)
+        let scale = typography.size(relativeTo: 1)
+        let naturalHeight = CGFloat(lineCount) * Self.approximateLineHeight * scale
+            + Self.editorVerticalPadding
+        return min(
+            max(naturalHeight, Self.minimumDiffHeight * scale),
+            Self.maximumDiffHeight * scale
+        )
     }
 }

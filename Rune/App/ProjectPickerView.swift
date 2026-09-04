@@ -8,6 +8,7 @@ struct ProjectPickerView: View {
     @State private var query = ""
     @State private var selectedPath: String?
     @FocusState private var isSearchFocused: Bool
+    @Environment(\.runeTypography) private var typography
 
     private let dialogWidth: CGFloat = 520
     private let dialogHeight: CGFloat = 400
@@ -49,9 +50,9 @@ struct ProjectPickerView: View {
     private var title: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Open a project")
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .runeFont(size: 16, weight: .semibold)
             Text("Choose a recent project to start Rune.")
-                .font(.system(size: 11, design: .monospaced))
+                .runeFont(size: 11)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -67,7 +68,7 @@ struct ProjectPickerView: View {
 
             TextField("Search recent projects", text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12, design: .monospaced))
+                .runeFont(size: 12)
                 .focused($isSearchFocused)
                 .onSubmit(openSelection)
         }
@@ -114,13 +115,13 @@ struct ProjectPickerView: View {
     private var footer: some View {
         HStack {
             Text("↑↓ Select  ↩ Open")
-                .font(.system(size: 9, design: .monospaced))
+                .runeFont(size: 9)
                 .foregroundStyle(.tertiary)
 
             Spacer()
 
             Button("Open Other…", action: chooseFolder)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .runeFont(size: 11, weight: .medium)
         }
         .padding(.horizontal, 12)
         .frame(height: 44)
@@ -159,10 +160,10 @@ struct ProjectPickerView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(workspace.name)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .runeFont(size: 12, weight: .medium)
                         .foregroundStyle(.primary)
                     Text(workspace.path)
-                        .font(.system(size: 9, design: .monospaced))
+                        .runeFont(size: 9)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -171,7 +172,7 @@ struct ProjectPickerView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 9)
-            .frame(height: 42)
+            .frame(minHeight: max(42, typography.size(relativeTo: 42)))
             .contentShape(Rectangle())
             .background {
                 if selectedPath == workspace.path {

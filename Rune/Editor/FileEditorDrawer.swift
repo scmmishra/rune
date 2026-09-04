@@ -57,7 +57,7 @@ struct FileEditorDrawer: View {
                 .frame(width: 14, height: 14)
 
             Text(fileURL.lastPathComponent)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .runeFont(size: 12, weight: .medium)
                 .lineLimit(1)
 
             if isDirty {
@@ -75,7 +75,7 @@ struct FileEditorDrawer: View {
             .buttonStyle(.plain)
             .help("Close")
         }
-        .font(.system(size: 11, weight: .semibold))
+        .runeFont(size: 11, weight: .semibold)
         .padding(.horizontal, 12)
         .frame(height: 38)
     }

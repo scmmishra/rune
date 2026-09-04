@@ -5,25 +5,28 @@ import TreeSitterRuby
 import TreeSitterSwift
 
 final class SyntaxHighlighter {
-    static let editorFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-
-    static var baseAttributes: [NSAttributedString.Key: Any] {
+    static func baseAttributes(font: NSFont) -> [NSAttributedString.Key: Any] {
         [
-            .font: editorFont,
+            .font: font,
             .foregroundColor: NSColor.labelColor
         ]
     }
 
     private let fileURL: URL
+    private let font: NSFont
     private let treeSitterHighlighter: TreeSitterSyntaxHighlighter?
 
-    init(fileURL: URL) {
+    init(fileURL: URL, font: NSFont) {
         self.fileURL = fileURL
+        self.font = font
         treeSitterHighlighter = TreeSitterSyntaxHighlighter(fileURL: fileURL)
     }
 
     func highlight(_ source: String) -> NSAttributedString {
-        let output = NSMutableAttributedString(string: source, attributes: Self.baseAttributes)
+        let output = NSMutableAttributedString(
+            string: source,
+            attributes: Self.baseAttributes(font: font)
+        )
 
         if treeSitterHighlighter?.apply(to: output, source: source) == true {
             return output
@@ -75,10 +78,10 @@ final class SyntaxHighlighter {
 }
 
 enum DiffSyntaxHighlighter {
-    static func highlight(_ source: String) -> NSAttributedString {
+    static func highlight(_ source: String, font: NSFont) -> NSAttributedString {
         let output = NSMutableAttributedString(
             string: source,
-            attributes: SyntaxHighlighter.baseAttributes
+            attributes: SyntaxHighlighter.baseAttributes(font: font)
         )
         let contents = source as NSString
         var location = 0

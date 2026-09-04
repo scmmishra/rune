@@ -3,6 +3,7 @@ import GhosttyTerminal
 
 struct TerminalPane: View {
     @StateObject private var terminal: TerminalViewState
+    @Environment(\.runeTypography) private var typography
 
     init(workingDirectory: URL?) {
         let terminal = TerminalViewState(
@@ -30,5 +31,25 @@ struct TerminalPane: View {
     var body: some View {
         TerminalSurfaceView(context: terminal)
             .accessibilityLabel("Terminal")
+            .onAppear(perform: applyTypography)
+            .onChange(of: typography) {
+                applyTypography()
+            }
+    }
+
+    private func applyTypography() {
+        var surfaceConfiguration = terminal.configuration
+        surfaceConfiguration.fontSize = Float(typography.size(relativeTo: 12))
+        terminal.configuration = surfaceConfiguration
+
+        terminal.setTerminalConfiguration(
+            TerminalConfiguration { builder in
+                builder.withWindowPaddingX(12)
+                builder.withWindowPaddingY(10)
+                if let fontFamily = typography.resolvedFamily {
+                    builder.withFontFamily(fontFamily)
+                }
+            }
+        )
     }
 }

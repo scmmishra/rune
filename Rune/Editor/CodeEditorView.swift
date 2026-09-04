@@ -8,6 +8,7 @@ struct CodeEditorView: NSViewRepresentable {
     }
 
     @Binding var text: String
+    @Environment(\.runeTypography) private var typography
     let fileURL: URL
     var isEditable = true
     var presentation: Presentation = .source
@@ -67,7 +68,12 @@ struct CodeEditorView: NSViewRepresentable {
         textView.autoresizingMask = [.width, .height]
         scrollView.documentView = textView
 
-        context.coordinator.render(text, in: textView, fileURL: fileURL)
+        context.coordinator.render(
+            text,
+            in: textView,
+            fileURL: fileURL,
+            typography: typography
+        )
         return scrollView
     }
 
@@ -76,14 +82,20 @@ struct CodeEditorView: NSViewRepresentable {
         context.coordinator.parent = self
         textView.isEditable = isEditable
 
-        if textView.string != text {
-            context.coordinator.render(text, in: textView, fileURL: fileURL)
+        if textView.string != text || context.coordinator.typography != typography {
+            context.coordinator.render(
+                text,
+                in: textView,
+                fileURL: fileURL,
+                typography: typography
+            )
         }
     }
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CodeEditorView
+        var typography: RuneTypography
         let textStorage = NSTextStorage()
         private var isRendering = false
         private var syntaxHighlighter: SyntaxHighlighter?
@@ -91,9 +103,13 @@ struct CodeEditorView: NSViewRepresentable {
 
         init(parent: CodeEditorView) {
             self.parent = parent
+            typography = parent.typography
             if parent.presentation == .source {
                 syntaxFileURL = parent.fileURL
-                syntaxHighlighter = SyntaxHighlighter(fileURL: parent.fileURL)
+                syntaxHighlighter = SyntaxHighlighter(
+                    fileURL: parent.fileURL,
+                    font: parent.typography.nsFont(size: 12)
+                )
             }
         }
 
@@ -102,30 +118,45 @@ struct CodeEditorView: NSViewRepresentable {
                   let textView = notification.object as? NSTextView else { return }
 
             parent.text = textView.string
-            highlight(textView, fileURL: parent.fileURL)
+            highlight(textView, fileURL: parent.fileURL, typography: typography)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
             (notification.object as? RuneTextView)?.refreshCurrentLineHighlight()
         }
 
-        func render(_ text: String, in textView: NSTextView, fileURL: URL) {
+        func render(
+            _ text: String,
+            in textView: NSTextView,
+            fileURL: URL,
+            typography: RuneTypography
+        ) {
             isRendering = true
+            if self.typography != typography {
+                self.typography = typography
+                syntaxHighlighter = nil
+                syntaxFileURL = nil
+            }
             textView.string = text
-            highlight(textView, fileURL: fileURL)
+            highlight(textView, fileURL: fileURL, typography: typography)
             isRendering = false
         }
 
-        private func highlight(_ textView: NSTextView, fileURL: URL) {
+        private func highlight(
+            _ textView: NSTextView,
+            fileURL: URL,
+            typography: RuneTypography
+        ) {
             guard let textStorage = textView.textStorage else { return }
 
             let selectedRanges = textView.selectedRanges
+            let font = typography.nsFont(size: 12)
             isRendering = true
             let highlightedText = switch parent.presentation {
             case .source:
-                sourceHighlight(textView.string, fileURL: fileURL)
+                sourceHighlight(textView.string, fileURL: fileURL, font: font)
             case .diff:
-                DiffSyntaxHighlighter.highlight(textView.string)
+                DiffSyntaxHighlighter.highlight(textView.string, font: font)
             }
             textStorage.setAttributedString(highlightedText)
             textView.selectedRanges = selectedRanges.map { value in
@@ -134,17 +165,21 @@ struct CodeEditorView: NSViewRepresentable {
                 let length = min(range.length, textStorage.length - location)
                 return NSValue(range: NSRange(location: location, length: length))
             }
-            textView.typingAttributes = SyntaxHighlighter.baseAttributes
+            textView.typingAttributes = SyntaxHighlighter.baseAttributes(font: font)
             (textView as? RuneTextView)?.refreshCurrentLineHighlight()
             isRendering = false
         }
 
-        private func sourceHighlight(_ source: String, fileURL: URL) -> NSAttributedString {
+        private func sourceHighlight(
+            _ source: String,
+            fileURL: URL,
+            font: NSFont
+        ) -> NSAttributedString {
             if let syntaxHighlighter, syntaxFileURL == fileURL {
                 return syntaxHighlighter.highlight(source)
             }
 
-            let syntaxHighlighter = SyntaxHighlighter(fileURL: fileURL)
+            let syntaxHighlighter = SyntaxHighlighter(fileURL: fileURL, font: font)
             syntaxFileURL = fileURL
             self.syntaxHighlighter = syntaxHighlighter
             return syntaxHighlighter.highlight(source)
@@ -189,7 +224,9 @@ private final class RuneTextView: NSTextView {
                     x: 0,
                     y: usedRect.maxY,
                     width: bounds.width,
-                    height: layoutManager.defaultLineHeight(for: font ?? SyntaxHighlighter.editorFont)
+                    height: layoutManager.defaultLineHeight(
+                        for: font ?? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+                    )
                 )
             } else {
                 fragmentRect = extraLineRect

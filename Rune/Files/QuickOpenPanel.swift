@@ -12,6 +12,7 @@ struct QuickOpenPanel: View {
     @State private var selectedURL: URL?
     @State private var searchTask: Task<Void, Never>?
     @FocusState private var isSearchFocused: Bool
+    @Environment(\.runeTypography) private var typography
 
     // Bound SwiftUI diffing while still keeping far more results than the panel can display.
     private let resultLimit = 200
@@ -24,7 +25,7 @@ struct QuickOpenPanel: View {
 
                 TextField("Open file", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13, design: .monospaced))
+                    .runeFont(size: 13)
                     .focused($isSearchFocused)
                     .onSubmit(openSelection)
             }
@@ -87,14 +88,14 @@ struct QuickOpenPanel: View {
                 .frame(width: 12, height: 12)
 
             Text(file.relativePath)
-                .font(.system(size: 12, design: .monospaced))
+                .runeFont(size: 12)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
-        .frame(height: 25)
+        .frame(minHeight: max(25, typography.size(relativeTo: 25)))
         .background {
             if selectedURL == file.url {
                 RoundedRectangle(cornerRadius: 5)

@@ -102,7 +102,7 @@ struct GitSidebarView: View {
 
                 if model.snapshot.changes.isEmpty, model.errorMessage == nil {
                     Text("Working tree clean")
-                        .font(.system(size: 11, design: .monospaced))
+                        .runeFont(size: 11)
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 24)
@@ -147,7 +147,7 @@ struct GitSidebarView: View {
                     Text("\(changes.count)")
                 }
             }
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .runeFont(size: 9, weight: .semibold)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 4)
 
@@ -236,7 +236,7 @@ struct GitSidebarView: View {
         return VStack(spacing: 8) {
             if let errorMessage = model.errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 10, design: .monospaced))
+                    .runeFont(size: 10)
                     .foregroundStyle(.red)
                     .lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -245,7 +245,7 @@ struct GitSidebarView: View {
             ZStack(alignment: .topLeading) {
                 if commitMessage.isEmpty {
                     Text("Commit message")
-                        .font(.system(size: 11, design: .monospaced))
+                        .runeFont(size: 11)
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 7)
                         .padding(.top, 6)
@@ -253,7 +253,7 @@ struct GitSidebarView: View {
                 }
 
                 TextEditor(text: $commitMessage)
-                    .font(.system(size: 11, design: .monospaced))
+                    .runeFont(size: 11)
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 2)
                     .padding(.top, 8)
@@ -279,7 +279,7 @@ struct GitSidebarView: View {
                     Text(model.isCommitting ? "Committing…" : "Commit Staged")
                         .frame(maxWidth: .infinity)
                 }
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .runeFont(size: 11, weight: .medium)
                 .foregroundStyle(hasCommitMessage ? Color.primary : Color.secondary)
                 .padding(.vertical, 4)
                 .background {
@@ -375,10 +375,10 @@ private struct GitSidebarHeader: View, Equatable {
                             .disabled(isDisabled)
                     }
                 }
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .runeFont(size: 10, weight: .medium)
             }
         }
-        .font(.system(size: 12, weight: .medium, design: .monospaced))
+        .runeFont(size: 12, weight: .medium)
         .padding(.horizontal, 12)
         .padding(.top, 14)
         .padding(.bottom, 8)
@@ -402,14 +402,14 @@ private struct GitHistoryView: View, Equatable {
                 Spacer()
                 Text("\(commits.count)")
             }
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .runeFont(size: 9, weight: .semibold)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
 
             if commits.isEmpty {
                 Text(isRepository ? "No commits yet" : "Not a Git repository")
-                    .font(.system(size: 11, design: .monospaced))
+                    .runeFont(size: 11)
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .padding(.top, 16)
@@ -443,7 +443,7 @@ private struct GitCommitRow: View {
         Button(action: handleOpen) {
             VStack(alignment: .leading, spacing: 3) {
                 commitSubject
-                    .font(.system(size: 11, design: .monospaced))
+                    .runeFont(size: 11)
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
@@ -455,7 +455,7 @@ private struct GitCommitRow: View {
                     Text(commit.relativeDate)
                         .foregroundStyle(.tertiary)
                 }
-                .font(.system(size: 9, design: .monospaced))
+                .runeFont(size: 9)
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 6)
@@ -552,6 +552,7 @@ private struct GitChangeRow: View {
     let isDisabled: Bool
     let onOpen: () -> Void
     let onToggle: () -> Void
+    @Environment(\.runeTypography) private var typography
 
     private var state: GitFileState {
         switch area {
@@ -576,12 +577,12 @@ private struct GitChangeRow: View {
             Button(action: onOpen) {
                 HStack(spacing: 6) {
                     Text(state.label)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .runeFont(size: 10, weight: .bold)
                         .foregroundStyle(state.color)
                         .frame(width: 10)
 
                     Text(change.path)
-                        .font(.system(size: 11, design: .monospaced))
+                        .runeFont(size: 11)
                         .lineLimit(1)
                         .truncationMode(.middle)
 
@@ -598,7 +599,7 @@ private struct GitChangeRow: View {
                                     .foregroundStyle(.red)
                             }
                         }
-                        .font(.system(size: 9, design: .monospaced))
+                        .runeFont(size: 9)
                     }
                 }
                 .contentShape(Rectangle())
@@ -616,7 +617,7 @@ private struct GitChangeRow: View {
             .help(area == .staged ? "Unstage \(change.path)" : "Stage \(change.path)")
         }
         .padding(.horizontal, 4)
-        .frame(height: 20)
+        .frame(minHeight: max(20, typography.size(relativeTo: 20)))
         .contentShape(Rectangle())
     }
 }

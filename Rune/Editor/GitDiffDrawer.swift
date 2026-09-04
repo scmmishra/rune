@@ -68,12 +68,12 @@ struct GitDiffDrawer: View {
                 .frame(width: 14, height: 14)
 
             Text(change.path)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .runeFont(size: 12, weight: .medium)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
             Text(area == .staged ? "Staged" : "Working Tree")
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .runeFont(size: 9, weight: .medium)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)

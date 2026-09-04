@@ -25,6 +25,7 @@ private struct FileTreeContents: View {
     @StateObject private var watcher: WorkspaceWatcher
     @State private var isFullScreen = false
     @FocusState private var hasKeyboardFocus: Bool
+    @Environment(\.runeTypography) private var typography
 
     init(rootURL: URL, onOpenFile: @escaping (URL) -> Void) {
         self.rootURL = rootURL
@@ -116,7 +117,7 @@ private struct FileTreeContents: View {
                 .frame(width: 12, height: 12)
 
             Text(name)
-                .font(.system(size: 12, design: .monospaced))
+                .runeFont(size: 12)
                 .foregroundStyle(status?.color ?? Color.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -124,7 +125,11 @@ private struct FileTreeContents: View {
             Spacer(minLength: 0)
         }
         .padding(.leading, CGFloat(depth) * 10)
-        .frame(maxWidth: .infinity, minHeight: 17, maxHeight: 17, alignment: .leading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: max(17, typography.size(relativeTo: 17)),
+            alignment: .leading
+        )
         .background {
             if selectedURL == url {
                 RoundedRectangle(cornerRadius: 3)

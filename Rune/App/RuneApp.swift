@@ -5,11 +5,17 @@ struct RuneApp: App {
     var body: some Scene {
         WindowGroup("Rune", id: "workspace", for: WorkspaceIdentity.self) { $workspace in
             WorkspaceWindow(workspace: $workspace)
+                .runeTypographyPreferences()
         }
         .defaultSize(width: 1_200, height: 760)
         .windowStyle(.hiddenTitleBar)
         .commands {
             QuickOpenCommands()
+        }
+
+        Settings {
+            SettingsView()
+                .runeTypographyPreferences()
         }
     }
 }
