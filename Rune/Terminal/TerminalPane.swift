@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import GhosttyTerminal
 
@@ -25,6 +26,9 @@ struct TerminalPane: View {
             fontSize: 12,
             workingDirectory: workingDirectory?.path
         )
+        terminal.makePlatformView = {
+            RuneTerminalView(frame: .zero)
+        }
         _terminal = StateObject(wrappedValue: terminal)
     }
 
@@ -54,5 +58,21 @@ struct TerminalPane: View {
                 }
             }
         )
+    }
+}
+
+private final class RuneTerminalView: TerminalView {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+        // Ghostty treats Command-Q as a terminal binding before AppKit can route
+        // it to the application menu. Leave this equivalent for macOS to handle.
+        if event.type == .keyDown,
+           modifiers == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "q" {
+            return false
+        }
+
+        return super.performKeyEquivalent(with: event)
     }
 }
