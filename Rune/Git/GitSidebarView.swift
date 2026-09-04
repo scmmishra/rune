@@ -52,7 +52,7 @@ struct GitSidebarView: View {
             model.cancelRefresh()
         }
         .onChange(of: watcher.revision) {
-            model.refresh()
+            model.refreshFromWatcher()
         }
         .confirmationDialog(
             "Discard changes to \(pendingDiscard?.path ?? "this file")?",
@@ -111,52 +111,18 @@ struct GitSidebarView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 10, weight: .semibold))
-
-                Text(model.snapshot.branch)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                Spacer(minLength: 4)
-
-                Text("\(model.snapshot.changes.count)")
-                    .foregroundStyle(.secondary)
+        GitSidebarHeader(
+            branch: model.snapshot.branch,
+            changeCount: model.snapshot.changes.count,
+            additions: model.snapshot.additions,
+            deletions: model.snapshot.deletions,
+            hasUnstagedChanges: model.snapshot.hasUnstagedChanges,
+            isDisabled: model.isBusy,
+            onStageAll: {
+                Task { await model.stageAll() }
             }
-
-            if model.snapshot.additions > 0 ||
-                model.snapshot.deletions > 0 ||
-                model.snapshot.hasUnstagedChanges {
-                HStack(spacing: 7) {
-                    if model.snapshot.additions > 0 {
-                        Text("+\(model.snapshot.additions)")
-                            .foregroundStyle(.green)
-                    }
-                    if model.snapshot.deletions > 0 {
-                        Text("−\(model.snapshot.deletions)")
-                            .foregroundStyle(.red)
-                    }
-
-                    Spacer(minLength: 4)
-
-                    if model.snapshot.hasUnstagedChanges {
-                        Button("Stage All") {
-                            Task { await model.stageAll() }
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .disabled(model.isBusy)
-                    }
-                }
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-            }
-        }
-        .font(.system(size: 12, weight: .medium, design: .monospaced))
-        .padding(.horizontal, 12)
-        .padding(.top, 14)
-        .padding(.bottom, 8)
+        )
+        .equatable()
     }
 
     private func section(
@@ -330,19 +296,96 @@ struct GitSidebarView: View {
     }
 
     private var historyArea: some View {
+        GitHistoryView(
+            commits: model.snapshot.commits,
+            isRepository: model.snapshot.isRepository
+        )
+        .equatable()
+    }
+}
+
+private struct GitSidebarHeader: View, Equatable {
+    let branch: String
+    let changeCount: Int
+    let additions: Int
+    let deletions: Int
+    let hasUnstagedChanges: Bool
+    let isDisabled: Bool
+    let onStageAll: () -> Void
+
+    static func == (lhs: GitSidebarHeader, rhs: GitSidebarHeader) -> Bool {
+        lhs.branch == rhs.branch &&
+            lhs.changeCount == rhs.changeCount &&
+            lhs.additions == rhs.additions &&
+            lhs.deletions == rhs.deletions &&
+            lhs.hasUnstagedChanges == rhs.hasUnstagedChanges &&
+            lhs.isDisabled == rhs.isDisabled
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 10, weight: .semibold))
+
+                Text(branch)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer(minLength: 4)
+
+                Text("\(changeCount)")
+                    .foregroundStyle(.secondary)
+            }
+
+            if additions > 0 || deletions > 0 || hasUnstagedChanges {
+                HStack(spacing: 7) {
+                    if additions > 0 {
+                        Text("+\(additions)")
+                            .foregroundStyle(.green)
+                    }
+                    if deletions > 0 {
+                        Text("−\(deletions)")
+                            .foregroundStyle(.red)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    if hasUnstagedChanges {
+                        Button("Stage All", action: onStageAll)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .disabled(isDisabled)
+                    }
+                }
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+            }
+        }
+        .font(.system(size: 12, weight: .medium, design: .monospaced))
+        .padding(.horizontal, 12)
+        .padding(.top, 14)
+        .padding(.bottom, 8)
+    }
+}
+
+private struct GitHistoryView: View, Equatable {
+    let commits: [GitCommit]
+    let isRepository: Bool
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("HISTORY")
                 Spacer()
-                Text("\(model.snapshot.commits.count)")
+                Text("\(commits.count)")
             }
             .font(.system(size: 9, weight: .semibold, design: .monospaced))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
 
-            if model.snapshot.commits.isEmpty {
-                Text(model.snapshot.isRepository ? "No commits yet" : "Not a Git repository")
+            if commits.isEmpty {
+                Text(isRepository ? "No commits yet" : "Not a Git repository")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -350,7 +393,7 @@ struct GitSidebarView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(model.snapshot.commits) { commit in
+                        ForEach(commits) { commit in
                             GitCommitRow(commit: commit)
                         }
                     }

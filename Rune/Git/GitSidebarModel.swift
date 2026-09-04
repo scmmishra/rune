@@ -3,9 +3,10 @@ import Foundation
 
 @MainActor
 final class GitSidebarModel: ObservableObject {
+    private static let indexRefreshFallbackDelay = Duration.milliseconds(750)
+
     @Published private(set) var snapshot = GitSnapshot.empty
     @Published private(set) var isCommitting = false
-    @Published private(set) var isUpdatingIndex = false
     @Published private(set) var isTrashing = false
     @Published private(set) var isDiscarding = false
     @Published private var repositoryErrorMessage: String?
@@ -13,14 +14,20 @@ final class GitSidebarModel: ObservableObject {
 
     private let rootURL: URL
     private var refreshTask: Task<Void, Never>?
+    private var indexRefreshTask: Task<Void, Never>?
     private var refreshRequested = false
+    private var isUpdatingIndex = false
 
     var errorMessage: String? {
         actionErrorMessage ?? repositoryErrorMessage
     }
 
     var isBusy: Bool {
-        isCommitting || isUpdatingIndex || isTrashing || isDiscarding
+        isCommitting || isTrashing || isDiscarding
+    }
+
+    private var isPerformingAction: Bool {
+        isBusy || isUpdatingIndex
     }
 
     init(rootURL: URL) {
@@ -28,7 +35,7 @@ final class GitSidebarModel: ObservableObject {
     }
 
     func refresh() {
-        guard !isBusy, refreshTask == nil else {
+        guard !isPerformingAction, refreshTask == nil else {
             refreshRequested = true
             return
         }
@@ -42,8 +49,12 @@ final class GitSidebarModel: ObservableObject {
             }.value
 
             guard !Task.isCancelled else { return }
-            snapshot = result.snapshot
-            repositoryErrorMessage = result.errorMessage
+            if snapshot != result.snapshot {
+                snapshot = result.snapshot
+            }
+            if repositoryErrorMessage != result.errorMessage {
+                repositoryErrorMessage = result.errorMessage
+            }
             refreshTask = nil
 
             if refreshRequested {
@@ -56,12 +67,20 @@ final class GitSidebarModel: ObservableObject {
     func cancelRefresh() {
         refreshTask?.cancel()
         refreshTask = nil
+        indexRefreshTask?.cancel()
+        indexRefreshTask = nil
         refreshRequested = false
+    }
+
+    func refreshFromWatcher() {
+        indexRefreshTask?.cancel()
+        indexRefreshTask = nil
+        refresh()
     }
 
     func commitStaged(message: String) async -> Bool {
         let message = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty, !isBusy else { return false }
+        guard !message.isEmpty, !isPerformingAction else { return false }
 
         cancelRefresh()
         isCommitting = true
@@ -95,7 +114,7 @@ final class GitSidebarModel: ObservableObject {
     }
 
     func trash(_ change: GitChange) async {
-        guard !isBusy else { return }
+        guard !isPerformingAction else { return }
 
         let rootURL = rootURL.standardizedFileURL
         let fileURL = rootURL.appending(path: change.path).standardizedFileURL
@@ -123,7 +142,7 @@ final class GitSidebarModel: ObservableObject {
     }
 
     func discard(_ change: GitChange) async {
-        guard !isBusy else { return }
+        guard !isPerformingAction else { return }
 
         if change.unstagedState == .untracked {
             await trash(change)
@@ -145,11 +164,20 @@ final class GitSidebarModel: ObservableObject {
     }
 
     private func updateIndex(_ action: GitRepository.IndexAction) async {
-        guard !isBusy else { return }
+        guard !isPerformingAction else { return }
 
         cancelRefresh()
+        let previousSnapshot = snapshot
+        if actionErrorMessage != nil {
+            actionErrorMessage = nil
+        }
+        // Move rows immediately while Git updates the index. The authoritative
+        // refresh reconciles partial staging and rename edge cases afterward.
+        let optimisticSnapshot = snapshot.applying(action)
+        if snapshot != optimisticSnapshot {
+            snapshot = optimisticSnapshot
+        }
         isUpdatingIndex = true
-        actionErrorMessage = nil
 
         let rootURL = rootURL
         let result = await Task.detached(priority: .userInitiated) {
@@ -157,7 +185,24 @@ final class GitSidebarModel: ObservableObject {
         }.value
 
         isUpdatingIndex = false
-        actionErrorMessage = result.errorMessage
-        refresh()
+        if actionErrorMessage != result.errorMessage {
+            actionErrorMessage = result.errorMessage
+        }
+        guard result.succeeded else {
+            snapshot = previousSnapshot
+            return
+        }
+
+        scheduleIndexRefresh()
+    }
+
+    private func scheduleIndexRefresh() {
+        indexRefreshTask?.cancel()
+        indexRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.indexRefreshFallbackDelay)
+            guard !Task.isCancelled, let self else { return }
+            indexRefreshTask = nil
+            refresh()
+        }
     }
 }

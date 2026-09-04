@@ -294,7 +294,7 @@ nonisolated enum GitRepository {
     }
 }
 
-nonisolated struct GitSnapshot: Sendable {
+nonisolated struct GitSnapshot: Sendable, Equatable {
     let branch: String
     let changes: [GitChange]
     let commits: [GitCommit]
@@ -334,9 +334,31 @@ nonisolated struct GitSnapshot: Sendable {
             total += change.unstagedDiff?.deletions ?? 0
         }
     }
+
+    func applying(_ action: GitRepository.IndexAction) -> GitSnapshot {
+        let updatedChanges = changes.map { change in
+            switch action {
+            case let .stage(paths):
+                paths.contains { change.paths.contains($0) } ? change.staging() : change
+            case .stageAll:
+                change.staging()
+            case let .unstage(paths):
+                paths.contains { change.paths.contains($0) } ? change.unstaging() : change
+            case .unstageAll:
+                change.unstaging()
+            }
+        }
+
+        return GitSnapshot(
+            branch: branch,
+            changes: updatedChanges,
+            commits: commits,
+            isRepository: isRepository
+        )
+    }
 }
 
-nonisolated struct GitCommit: Identifiable, Sendable {
+nonisolated struct GitCommit: Identifiable, Sendable, Equatable {
     let id: String
     let shortHash: String
     let author: String
@@ -344,7 +366,7 @@ nonisolated struct GitCommit: Identifiable, Sendable {
     let subject: String
 }
 
-nonisolated struct GitChange: Identifiable, Sendable {
+nonisolated struct GitChange: Identifiable, Sendable, Equatable {
     enum Area: Equatable, Sendable {
         case staged
         case unstaged
@@ -361,6 +383,30 @@ nonisolated struct GitChange: Identifiable, Sendable {
 
     var paths: [String] {
         [path] + (previousPath.map { [$0] } ?? [])
+    }
+
+    fileprivate func staging() -> GitChange {
+        guard let unstagedState else { return self }
+        return GitChange(
+            path: path,
+            previousPath: previousPath,
+            stagedState: stagedState ?? (unstagedState == .untracked ? .added : unstagedState),
+            unstagedState: nil,
+            stagedDiff: GitDiffCount.combining(stagedDiff, unstagedDiff),
+            unstagedDiff: nil
+        )
+    }
+
+    fileprivate func unstaging() -> GitChange {
+        guard let stagedState else { return self }
+        return GitChange(
+            path: path,
+            previousPath: previousPath,
+            stagedState: nil,
+            unstagedState: stagedState == .added ? .untracked : (unstagedState ?? stagedState),
+            stagedDiff: nil,
+            unstagedDiff: GitDiffCount.combining(stagedDiff, unstagedDiff)
+        )
     }
 }
 
@@ -402,7 +448,7 @@ nonisolated enum GitFileState: Sendable, Equatable {
     }
 }
 
-nonisolated struct GitDiffCount: Sendable {
+nonisolated struct GitDiffCount: Sendable, Equatable {
     let additions: Int?
     let deletions: Int?
 
