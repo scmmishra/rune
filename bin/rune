@@ -62,4 +62,6 @@ if [ "$app" != Rune ]; then
     done
 fi
 
-open -a "$app" "$directory"
+# Tooling that launches Rune may set NO_COLOR for its own output. Do not leak
+# that preference into Rune's interactive terminal sessions.
+env -u NO_COLOR open -a "$app" "$directory"
