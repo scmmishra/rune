@@ -34,3 +34,21 @@ struct WorkspaceIdentity: Codable, Hashable {
             .first
     }
 }
+
+enum RecentWorkspaces {
+    private static let defaultsKey = "recentWorkspacePaths"
+    private static let maximumCount = 20
+
+    static func load() -> [WorkspaceIdentity] {
+        let paths = UserDefaults.standard.stringArray(forKey: defaultsKey) ?? []
+        return paths.compactMap { path in
+            WorkspaceIdentity(url: URL(fileURLWithPath: path, isDirectory: true))
+        }
+    }
+
+    static func record(_ workspace: WorkspaceIdentity) {
+        let existingPaths = load().map(\.path)
+        let paths = [workspace.path] + existingPaths.filter { $0 != workspace.path }
+        UserDefaults.standard.set(Array(paths.prefix(maximumCount)), forKey: defaultsKey)
+    }
+}

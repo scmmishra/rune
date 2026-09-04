@@ -19,9 +19,21 @@ private struct WorkspaceWindow: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @State private var routedCommandLineDirectory = false
+    @State private var recentWorkspaces = RecentWorkspaces.load()
 
     var body: some View {
-        WorkspaceView(directoryURL: workspace?.directoryURL)
+        Group {
+            if let workspace {
+                WorkspaceView(directoryURL: workspace.directoryURL)
+            } else if routedCommandLineDirectory {
+                ProjectPickerView(
+                    workspaces: recentWorkspaces,
+                    onOpen: open
+                )
+            } else {
+                Color(nsColor: .windowBackgroundColor)
+            }
+        }
             .navigationTitle(workspace?.name ?? "Rune")
             .onAppear {
                 guard !routedCommandLineDirectory, workspace == nil else { return }
@@ -29,6 +41,8 @@ private struct WorkspaceWindow: View {
 
                 if let directory = WorkspaceIdentity.commandLineDirectory {
                     open(directory)
+                } else {
+                    recentWorkspaces = RecentWorkspaces.load()
                 }
             }
             .onOpenURL { url in
@@ -38,6 +52,8 @@ private struct WorkspaceWindow: View {
     }
 
     private func open(_ directory: WorkspaceIdentity) {
+        RecentWorkspaces.record(directory)
+        recentWorkspaces = RecentWorkspaces.load()
         openWindow(id: "workspace", value: directory)
 
         if workspace == nil {
