@@ -1,22 +1,23 @@
 import AppKit
-import QuickLook
 import SwiftUI
 
 struct GitSidebarView: View {
     let rootURL: URL
+    let onOpenFile: (URL) -> Void
     let onOpenDiff: (GitChange, GitChange.Area) -> Void
 
     @StateObject private var model: GitSidebarModel
     @StateObject private var watcher: WorkspaceWatcher
     @State private var commitMessage = ""
-    @State private var previewURL: URL?
     @State private var pendingDiscard: GitChange?
 
     init(
         rootURL: URL,
+        onOpenFile: @escaping (URL) -> Void,
         onOpenDiff: @escaping (GitChange, GitChange.Area) -> Void
     ) {
         self.rootURL = rootURL
+        self.onOpenFile = onOpenFile
         self.onOpenDiff = onOpenDiff
         _model = StateObject(wrappedValue: GitSidebarModel(rootURL: rootURL))
         _watcher = StateObject(
@@ -53,7 +54,6 @@ struct GitSidebarView: View {
         .onChange(of: watcher.revision) {
             model.refresh()
         }
-        .quickLookPreview($previewURL)
         .confirmationDialog(
             "Discard changes to \(pendingDiscard?.path ?? "this file")?",
             isPresented: Binding(
@@ -215,7 +215,7 @@ struct GitSidebarView: View {
         let canDiscard = change.unstagedState != .untracked || fileExists
 
         Button {
-            previewURL = fileURL
+            onOpenFile(fileURL)
         } label: {
             Label("Preview File", systemImage: "eye")
         }

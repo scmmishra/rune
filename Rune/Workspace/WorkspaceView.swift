@@ -56,13 +56,17 @@ struct WorkspaceView: View {
 
                     Group {
                         if let directoryURL {
-                            GitSidebarView(rootURL: directoryURL) { change, area in
-                                withAnimation(.snappy(duration: 0.22)) {
-                                    openFileURL = nil
-                                    openDiff = OpenGitDiff(change: change, area: area)
+                            GitSidebarView(
+                                rootURL: directoryURL,
+                                onOpenFile: open,
+                                onOpenDiff: { change, area in
+                                    withAnimation(.snappy(duration: 0.22)) {
+                                        openFileURL = nil
+                                        openDiff = OpenGitDiff(change: change, area: area)
+                                    }
                                 }
-                            }
-                                .id(directoryURL)
+                            )
+                            .id(directoryURL)
                         } else {
                             Color.clear
                         }
