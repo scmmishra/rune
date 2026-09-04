@@ -25,6 +25,12 @@ nonisolated enum GitRepository {
         let errorMessage: String?
     }
 
+    struct CommitDiffResult: Sendable {
+        let files: [GitCommitFileDiff]
+        let isTruncated: Bool
+        let errorMessage: String?
+    }
+
     static func snapshot(at rootURL: URL) -> SnapshotResult {
         let statusResult = runGit(
             ["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all"],
@@ -186,24 +192,113 @@ nonisolated enum GitRepository {
         )
     }
 
-    static func diff(for commitID: String, at rootURL: URL) -> DiffResult {
+    static func diff(for commitID: String, at rootURL: URL) -> CommitDiffResult {
         let result = runGit(
             [
-                "show", "--no-ext-diff", "--no-color", "--find-renames",
-                "--format=", "--stat", "--patch", commitID, "--"
+                "-c", "core.quotePath=false", "show", "--no-ext-diff", "--no-color",
+                "--find-renames", "--first-parent", "-m", "--format=", "--patch", commitID, "--"
             ],
             at: rootURL,
             readOnly: true
         )
         guard result.status == 0 else {
-            return DiffResult(contents: "", errorMessage: errorMessage(from: result.data))
+            return CommitDiffResult(
+                files: [],
+                isTruncated: false,
+                errorMessage: errorMessage(from: result.data)
+            )
         }
 
-        let contents = String(data: result.data, encoding: .utf8) ?? ""
-        return DiffResult(
-            contents: contents.isEmpty ? "No changes in this commit." : contents,
+        let isTruncated = result.data.count > maximumRenderedCommitDiffBytes
+        let contents = String(
+            decoding: result.data.prefix(maximumRenderedCommitDiffBytes),
+            as: UTF8.self
+        )
+        return CommitDiffResult(
+            files: parseCommitDiff(contents),
+            isTruncated: isTruncated,
             errorMessage: nil
         )
+    }
+
+    private static func parseCommitDiff(_ contents: String) -> [GitCommitFileDiff] {
+        struct FileBuilder {
+            var path: String?
+            var fallbackPath: String?
+            var lines: [String] = []
+            var additions = 0
+            var deletions = 0
+        }
+
+        var files: [GitCommitFileDiff] = []
+        var current: FileBuilder?
+
+        func finish(_ builder: FileBuilder?) {
+            guard let builder, let path = builder.path ?? builder.fallbackPath else { return }
+            let patch = builder.lines.joined(separator: "\n")
+                .trimmingCharacters(in: .newlines)
+            files.append(
+                GitCommitFileDiff(
+                    path: path,
+                    patch: patch.isEmpty ? "No textual changes." : patch,
+                    additions: builder.additions,
+                    deletions: builder.deletions
+                )
+            )
+        }
+
+        for line in contents.components(separatedBy: "\n") {
+            if line.hasPrefix("diff --git ") {
+                finish(current)
+                current = FileBuilder(
+                    path: nil,
+                    fallbackPath: fallbackPath(fromDiffHeader: line)
+                )
+                continue
+            }
+
+            guard current != nil else { continue }
+
+            if line.hasPrefix("+++ ") {
+                if let path = diffPath(String(line.dropFirst(4))) {
+                    current?.path = path
+                }
+                continue
+            }
+            if line.hasPrefix("--- ") {
+                if current?.path == nil, let path = diffPath(String(line.dropFirst(4))) {
+                    current?.path = path
+                }
+                continue
+            }
+            if line.hasPrefix("rename to ") {
+                current?.path = String(line.dropFirst("rename to ".count))
+            }
+            if line.hasPrefix("index ") { continue }
+
+            if line.hasPrefix("+") {
+                current?.additions += 1
+            } else if line.hasPrefix("-") {
+                current?.deletions += 1
+            }
+            current?.lines.append(line)
+        }
+
+        finish(current)
+        return files
+    }
+
+    private static func diffPath(_ value: String) -> String? {
+        guard value != "/dev/null" else { return nil }
+        if value.hasPrefix("a/") || value.hasPrefix("b/") {
+            return String(value.dropFirst(2))
+        }
+        return value
+    }
+
+    private static func fallbackPath(fromDiffHeader header: String) -> String? {
+        guard let destination = header.range(of: " b/", options: .backwards) else { return nil }
+        return String(header[destination.upperBound...])
     }
 
     private static func parseStatus(_ data: Data) -> (branch: String, changes: [GitChange]) {
@@ -469,6 +564,15 @@ nonisolated struct GitCommit: Identifiable, Sendable, Equatable {
     let author: String
     let relativeDate: String
     let subject: String
+}
+
+nonisolated struct GitCommitFileDiff: Identifiable, Sendable, Equatable {
+    let path: String
+    let patch: String
+    let additions: Int
+    let deletions: Int
+
+    var id: String { path }
 }
 
 nonisolated struct GitChange: Identifiable, Sendable, Equatable {

@@ -6,13 +6,15 @@ struct GitCommitDrawer: View {
     let commit: GitCommit
     let onClose: () -> Void
 
-    @State private var contents = ""
+    @State private var files: [GitCommitFileDiff] = []
+    @State private var isTruncated = false
     @State private var loadError: String?
     @State private var isLoading = true
 
-    private var diffURL: URL {
-        rootURL.appending(path: "\(commit.shortHash).diff")
-    }
+    private static let minimumDiffHeight: CGFloat = 84
+    private static let maximumDiffHeight: CGFloat = 320
+    private static let approximateLineHeight: CGFloat = 15
+    private static let editorVerticalPadding: CGFloat = 20
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,15 +32,14 @@ struct GitCommitDrawer: View {
                     systemImage: "exclamationmark.triangle",
                     description: Text(loadError)
                 )
-            } else {
-                CodeEditorView(
-                    text: $contents,
-                    fileURL: diffURL,
-                    isEditable: false,
-                    presentation: .diff
+            } else if files.isEmpty {
+                ContentUnavailableView(
+                    "No Changes",
+                    systemImage: "doc",
+                    description: Text("No changes in this commit.")
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
+            } else {
+                commitFiles
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -53,6 +54,61 @@ struct GitCommitDrawer: View {
         }
         .task(id: commit.id) {
             await load()
+        }
+    }
+
+    private var commitFiles: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                ForEach(files) { file in
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(spacing: 7) {
+                            FileIconView(
+                                url: rootURL.appending(path: file.path),
+                                isDirectory: false
+                            )
+                            .frame(width: 14, height: 14)
+
+                            Text(file.path)
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+
+                            Spacer(minLength: 8)
+
+                            HStack(spacing: 6) {
+                                Text("+\(file.additions)")
+                                    .foregroundStyle(.green)
+                                Text("−\(file.deletions)")
+                                    .foregroundStyle(.red)
+                            }
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        }
+
+                        CodeEditorView(
+                            text: .constant(file.patch),
+                            fileURL: rootURL.appending(path: file.path),
+                            isEditable: false,
+                            presentation: .diff
+                        )
+                        .frame(height: diffHeight(for: file.patch))
+                        .background(Color.primary.opacity(0.025))
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(Color.primary.opacity(0.11), lineWidth: 1)
+                        }
+                    }
+                }
+
+                if isTruncated {
+                    Text("Commit diff truncated after 5 MB.")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+            }
+            .padding(12)
         }
     }
 
@@ -106,8 +162,17 @@ struct GitCommitDrawer: View {
         }.value
 
         guard !Task.isCancelled else { return }
-        contents = result.contents
+        files = result.files
+        isTruncated = result.isTruncated
         loadError = result.errorMessage
         isLoading = false
+    }
+
+    private func diffHeight(for patch: String) -> CGFloat {
+        let lineCount = patch.reduce(1) { count, character in
+            character == "\n" ? count + 1 : count
+        }
+        let naturalHeight = CGFloat(lineCount) * Self.approximateLineHeight + Self.editorVerticalPadding
+        return min(max(naturalHeight, Self.minimumDiffHeight), Self.maximumDiffHeight)
     }
 }

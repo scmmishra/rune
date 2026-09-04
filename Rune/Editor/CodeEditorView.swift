@@ -86,13 +86,15 @@ struct CodeEditorView: NSViewRepresentable {
         var parent: CodeEditorView
         let textStorage = NSTextStorage()
         private var isRendering = false
-        private var syntaxHighlighter: SyntaxHighlighter
-        private var syntaxFileURL: URL
+        private var syntaxHighlighter: SyntaxHighlighter?
+        private var syntaxFileURL: URL?
 
         init(parent: CodeEditorView) {
             self.parent = parent
-            syntaxFileURL = parent.fileURL
-            syntaxHighlighter = SyntaxHighlighter(fileURL: parent.fileURL)
+            if parent.presentation == .source {
+                syntaxFileURL = parent.fileURL
+                syntaxHighlighter = SyntaxHighlighter(fileURL: parent.fileURL)
+            }
         }
 
         func textDidChange(_ notification: Notification) {
@@ -116,16 +118,12 @@ struct CodeEditorView: NSViewRepresentable {
 
         private func highlight(_ textView: NSTextView, fileURL: URL) {
             guard let textStorage = textView.textStorage else { return }
-            if syntaxFileURL != fileURL {
-                syntaxFileURL = fileURL
-                syntaxHighlighter = SyntaxHighlighter(fileURL: fileURL)
-            }
 
             let selectedRanges = textView.selectedRanges
             isRendering = true
             let highlightedText = switch parent.presentation {
             case .source:
-                syntaxHighlighter.highlight(textView.string)
+                sourceHighlight(textView.string, fileURL: fileURL)
             case .diff:
                 DiffSyntaxHighlighter.highlight(textView.string)
             }
@@ -139,6 +137,17 @@ struct CodeEditorView: NSViewRepresentable {
             textView.typingAttributes = SyntaxHighlighter.baseAttributes
             (textView as? RuneTextView)?.refreshCurrentLineHighlight()
             isRendering = false
+        }
+
+        private func sourceHighlight(_ source: String, fileURL: URL) -> NSAttributedString {
+            if let syntaxHighlighter, syntaxFileURL == fileURL {
+                return syntaxHighlighter.highlight(source)
+            }
+
+            let syntaxHighlighter = SyntaxHighlighter(fileURL: fileURL)
+            syntaxFileURL = fileURL
+            self.syntaxHighlighter = syntaxHighlighter
+            return syntaxHighlighter.highlight(source)
         }
     }
 }
