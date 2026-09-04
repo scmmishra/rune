@@ -38,12 +38,15 @@ struct TerminalPane: View {
     }
 
     private func applyTypography() {
+        let fontSize = Float(typography.size(relativeTo: 12))
         var surfaceConfiguration = terminal.configuration
-        surfaceConfiguration.fontSize = Float(typography.size(relativeTo: 12))
+        surfaceConfiguration.fontSize = fontSize
         terminal.configuration = surfaceConfiguration
 
         terminal.setTerminalConfiguration(
             TerminalConfiguration { builder in
+                // Keep Ghostty's Command-0 reset target aligned with Rune's saved size.
+                builder.withFontSize(fontSize)
                 builder.withWindowPaddingX(12)
                 builder.withWindowPaddingY(10)
                 if let fontFamily = typography.resolvedFamily {
