@@ -5,6 +5,7 @@ struct GitSidebarView: View {
     let rootURL: URL
     let onOpenFile: (URL) -> Void
     let onOpenDiff: (GitChange, GitChange.Area) -> Void
+    let onOpenCommit: (GitCommit) -> Void
 
     @StateObject private var model: GitSidebarModel
     @StateObject private var watcher: WorkspaceWatcher
@@ -14,11 +15,13 @@ struct GitSidebarView: View {
     init(
         rootURL: URL,
         onOpenFile: @escaping (URL) -> Void,
-        onOpenDiff: @escaping (GitChange, GitChange.Area) -> Void
+        onOpenDiff: @escaping (GitChange, GitChange.Area) -> Void,
+        onOpenCommit: @escaping (GitCommit) -> Void
     ) {
         self.rootURL = rootURL
         self.onOpenFile = onOpenFile
         self.onOpenDiff = onOpenDiff
+        self.onOpenCommit = onOpenCommit
         _model = StateObject(wrappedValue: GitSidebarModel(rootURL: rootURL))
         _watcher = StateObject(
             wrappedValue: WorkspaceWatcher(rootURL: rootURL, debounceDuration: .milliseconds(300))
@@ -298,7 +301,8 @@ struct GitSidebarView: View {
     private var historyArea: some View {
         GitHistoryView(
             commits: model.snapshot.commits,
-            isRepository: model.snapshot.isRepository
+            isRepository: model.snapshot.isRepository,
+            onOpenCommit: onOpenCommit
         )
         .equatable()
     }
@@ -371,6 +375,11 @@ private struct GitSidebarHeader: View, Equatable {
 private struct GitHistoryView: View, Equatable {
     let commits: [GitCommit]
     let isRepository: Bool
+    let onOpenCommit: (GitCommit) -> Void
+
+    static func == (lhs: GitHistoryView, rhs: GitHistoryView) -> Bool {
+        lhs.commits == rhs.commits && lhs.isRepository == rhs.isRepository
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -394,7 +403,9 @@ private struct GitHistoryView: View, Equatable {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(commits) { commit in
-                            GitCommitRow(commit: commit)
+                            GitCommitRow(commit: commit) {
+                                onOpenCommit(commit)
+                            }
                         }
                     }
                     .padding(.horizontal, 10)
@@ -407,26 +418,39 @@ private struct GitHistoryView: View, Equatable {
 
 private struct GitCommitRow: View {
     let commit: GitCommit
+    let onOpen: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(commit.subject)
-                .font(.system(size: 11, design: .monospaced))
-                .lineLimit(1)
-
-            HStack(spacing: 6) {
-                Text(commit.shortHash)
-                    .foregroundStyle(.secondary)
-                Text(commit.author)
+        Button(action: onOpen) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(commit.subject)
+                    .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1)
-                Spacer(minLength: 4)
-                Text(commit.relativeDate)
-                    .foregroundStyle(.tertiary)
+
+                HStack(spacing: 6) {
+                    Text(commit.shortHash)
+                        .foregroundStyle(.secondary)
+                    Text(commit.author)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(commit.relativeDate)
+                        .foregroundStyle(.tertiary)
+                }
+                .font(.system(size: 9, design: .monospaced))
             }
-            .font(.system(size: 9, design: .monospaced))
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
+        .buttonStyle(.plain)
+        .background(
+            Color.primary.opacity(isHovered ? 0.055 : 0),
+            in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+        )
+        .onHover { isHovered = $0 }
+        .help("Preview commit \(commit.shortHash)")
     }
 }
 

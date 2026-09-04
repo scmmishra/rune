@@ -2,8 +2,7 @@ import SwiftUI
 
 struct WorkspaceView: View {
     let directoryURL: URL?
-    @State private var openFileURL: URL?
-    @State private var openDiff: OpenGitDiff?
+    @State private var openDrawer: WorkspaceDrawer?
     @State private var isQuickOpenPresented = false
     @State private var isDrawerVisible = false
     @State private var drawerCleanupTask: Task<Void, Never>?
@@ -59,6 +58,9 @@ struct WorkspaceView: View {
                                 onOpenFile: open,
                                 onOpenDiff: { change, area in
                                     showDiff(change, area: area)
+                                },
+                                onOpenCommit: { commit in
+                                    showCommit(commit)
                                 }
                             )
                             .id(directoryURL)
@@ -69,32 +71,8 @@ struct WorkspaceView: View {
                     .frame(width: geometry.size.width * Layout.sidebarWidthRatio)
                 }
 
-                if let openFileURL {
-                    FileEditorDrawer(fileURL: openFileURL) {
-                        closeDrawer()
-                    }
-                    .frame(
-                        width: min(
-                            max(480, geometry.size.width * 0.62),
-                            geometry.size.width * 0.78
-                        )
-                    )
-                    .padding(16)
-                    .offset(x: isDrawerVisible ? 0 : geometry.size.width)
-                    .opacity(isDrawerVisible ? 1 : 0)
-                    .allowsHitTesting(isDrawerVisible)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                    .zIndex(1)
-                }
-
-                if let openDiff, let directoryURL {
-                    GitDiffDrawer(
-                        rootURL: directoryURL,
-                        change: openDiff.change,
-                        area: openDiff.area
-                    ) {
-                        closeDrawer()
-                    }
+                if let openDrawer, let directoryURL {
+                    drawer(openDrawer, rootURL: directoryURL)
                     .frame(
                         width: min(
                             max(480, geometry.size.width * 0.62),
@@ -141,8 +119,7 @@ struct WorkspaceView: View {
         isQuickOpenPresented = false
         drawerCleanupTask?.cancel()
         withAnimation(.snappy(duration: 0.22)) {
-            openDiff = nil
-            openFileURL = fileURL
+            openDrawer = .file(fileURL)
             isDrawerVisible = true
         }
     }
@@ -150,9 +127,33 @@ struct WorkspaceView: View {
     private func showDiff(_ change: GitChange, area: GitChange.Area) {
         drawerCleanupTask?.cancel()
         withAnimation(.snappy(duration: 0.22)) {
-            openFileURL = nil
-            openDiff = OpenGitDiff(change: change, area: area)
+            openDrawer = .diff(change, area)
             isDrawerVisible = true
+        }
+    }
+
+    private func showCommit(_ commit: GitCommit) {
+        drawerCleanupTask?.cancel()
+        withAnimation(.snappy(duration: 0.22)) {
+            openDrawer = .commit(commit)
+            isDrawerVisible = true
+        }
+    }
+
+    @ViewBuilder
+    private func drawer(_ drawer: WorkspaceDrawer, rootURL: URL) -> some View {
+        switch drawer {
+        case let .file(fileURL):
+            FileEditorDrawer(fileURL: fileURL, onClose: closeDrawer)
+        case let .diff(change, area):
+            GitDiffDrawer(
+                rootURL: rootURL,
+                change: change,
+                area: area,
+                onClose: closeDrawer
+            )
+        case let .commit(commit):
+            GitCommitDrawer(rootURL: rootURL, commit: commit, onClose: closeDrawer)
         }
     }
 
@@ -165,15 +166,15 @@ struct WorkspaceView: View {
         drawerCleanupTask = Task {
             try? await Task.sleep(for: Layout.drawerCloseDuration)
             guard !Task.isCancelled else { return }
-            openFileURL = nil
-            openDiff = nil
+            openDrawer = nil
         }
     }
 }
 
-private struct OpenGitDiff {
-    let change: GitChange
-    let area: GitChange.Area
+private enum WorkspaceDrawer {
+    case file(URL)
+    case diff(GitChange, GitChange.Area)
+    case commit(GitCommit)
 }
 
 private struct WorkspacePlaceholder: View {

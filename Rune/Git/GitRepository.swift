@@ -1,6 +1,8 @@
 import Foundation
 
 nonisolated enum GitRepository {
+    private static let maximumRenderedCommitDiffBytes = 5_000_000
+
     enum IndexAction: Sendable {
         case stage(paths: [String])
         case unstage(paths: [String])
@@ -153,9 +155,36 @@ nonisolated enum GitRepository {
             return DiffResult(contents: "", errorMessage: errorMessage(from: result.data))
         }
 
-        let contents = String(data: result.data, encoding: .utf8) ?? ""
+        let isTruncated = result.data.count > maximumRenderedCommitDiffBytes
+        var contents = String(
+            decoding: result.data.prefix(maximumRenderedCommitDiffBytes),
+            as: UTF8.self
+        )
+        if isTruncated {
+            contents += "\n\nCommit diff truncated after 5 MB."
+        }
         return DiffResult(
             contents: contents.isEmpty ? "No diff available." : contents,
+            errorMessage: nil
+        )
+    }
+
+    static func diff(for commitID: String, at rootURL: URL) -> DiffResult {
+        let result = runGit(
+            [
+                "show", "--no-ext-diff", "--no-color", "--find-renames",
+                "--format=", "--stat", "--patch", commitID, "--"
+            ],
+            at: rootURL,
+            readOnly: true
+        )
+        guard result.status == 0 else {
+            return DiffResult(contents: "", errorMessage: errorMessage(from: result.data))
+        }
+
+        let contents = String(data: result.data, encoding: .utf8) ?? ""
+        return DiffResult(
+            contents: contents.isEmpty ? "No changes in this commit." : contents,
             errorMessage: nil
         )
     }

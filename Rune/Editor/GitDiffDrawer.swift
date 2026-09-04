@@ -54,7 +54,7 @@ struct GitDiffDrawer: View {
         }
         .shadow(color: .black.opacity(0.22), radius: 24, y: 8)
         .background {
-            GitDiffEscapeMonitor(onEscape: onClose)
+            GitPreviewEscapeMonitor(onEscape: onClose)
         }
         .task(id: requestID) {
             await load()
@@ -109,7 +109,7 @@ struct GitDiffDrawer: View {
     }
 }
 
-private struct GitDiffEscapeMonitor: NSViewRepresentable {
+struct GitPreviewEscapeMonitor: NSViewRepresentable {
     let onEscape: () -> Void
 
     func makeCoordinator() -> Coordinator {
