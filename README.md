@@ -19,7 +19,7 @@ From the command line:
 xcodebuild -project Rune.xcodeproj -scheme Rune -configuration Debug build CODE_SIGNING_ALLOWED=NO
 ```
 
-Build and relaunch a single development instance:
+Build, install to `/Applications`, and relaunch a single development instance:
 
 ```sh
 mise run relaunch
@@ -31,8 +31,10 @@ For an incremental rebuild and relaunch loop while developing:
 mise run dev
 ```
 
-The task watches the app sources and Xcode project. A successful build replaces the
-previous development process, while a failed build leaves the running app open.
+The task watches the app sources and Xcode project. A successful build updates
+`/Applications/Rune.app` and replaces the previous development process, while a
+failed build leaves the running app open. This keeps Finder, Dock, Spotlight, and
+CLI launches on the same build.
 
 Install `Rune.app` in `/Applications`, then add the CLI to your path:
 
@@ -48,11 +50,11 @@ rune
 
 You can also open another directory with `rune path/to/project`. Rune keeps one window per canonical directory: invoking `rune` again for an open directory focuses its existing window, while a different directory opens in a new window.
 
-When the CLI is symlinked from this checkout, it compares the Debug app built by
-`mise run relaunch` with `/Applications/Rune.app` and opens whichever executable
-was built most recently. If another Rune bundle is already running, the CLI
-replaces that process before opening the directory. Set `RUNE_APP_PATH` to
-explicitly select another app bundle.
+The CLI opens `/Applications/Rune.app`, which `mise run relaunch` keeps synchronized
+with the latest development build. It falls back to the checkout's Debug app when
+Rune is not installed. If another Rune bundle is already running, the CLI replaces
+that process before opening the directory. Set `RUNE_APP_PATH` to explicitly select
+another app bundle.
 
 ## Architecture
 

@@ -18,25 +18,12 @@ repository_root=$(dirname "$(dirname "$script_path")")
 development_app="$repository_root/DerivedData/Build/Products/Debug/Rune.app"
 installed_app="/Applications/Rune.app"
 
-newer_app() {
-    first=$1
-    second=$2
-
-    if [ ! -x "$first/Contents/MacOS/Rune" ]; then
-        printf '%s\n' "$second"
-    elif [ ! -x "$second/Contents/MacOS/Rune" ]; then
-        printf '%s\n' "$first"
-    elif [ "$(stat -f %m "$first/Contents/MacOS/Rune")" -ge "$(stat -f %m "$second/Contents/MacOS/Rune")" ]; then
-        printf '%s\n' "$first"
-    else
-        printf '%s\n' "$second"
-    fi
-}
-
 if [ -n "${RUNE_APP_PATH:-}" ]; then
     app="$RUNE_APP_PATH"
-elif [ -d "$development_app" ] || [ -d "$installed_app" ]; then
-    app=$(newer_app "$development_app" "$installed_app")
+elif [ -d "$installed_app" ]; then
+    app="$installed_app"
+elif [ -d "$development_app" ]; then
+    app="$development_app"
 else
     app=Rune
 fi

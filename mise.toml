@@ -26,12 +26,12 @@ watchexec \
 """
 
 [tasks.relaunch]
-description = "Build and relaunch a single Rune development instance"
+description = "Build, install, and relaunch a single Rune development instance"
 run = """
 mise run build
 
-app_executable="$PWD/DerivedData/Build/Products/Debug/Rune.app/Contents/MacOS/Rune"
-pid_file="$PWD/DerivedData/rune-dev.pid"
+built_app="$PWD/DerivedData/Build/Products/Debug/Rune.app"
+installed_app="/Applications/Rune.app"
 
 killall Rune 2>/dev/null || true
 
@@ -41,6 +41,9 @@ while pgrep -x Rune >/dev/null && [ "$attempt" -lt 20 ]; do
   attempt=$((attempt + 1))
 done
 
-nohup "$app_executable" "$PWD" >"$PWD/DerivedData/rune-dev.log" 2>&1 &
-echo "$!" >"$pid_file"
+# Keep the app opened from Finder, Dock, Spotlight, and the CLI identical to
+# the latest development build, including resources outside the executable.
+rsync -a --delete "$built_app/" "$installed_app/"
+
+open -a "$installed_app" "$PWD"
 """
