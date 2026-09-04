@@ -13,7 +13,7 @@ struct FileTreeView: View {
 private struct FileTreeContents: View {
     let rootURL: URL
     let onOpenFile: (URL) -> Void
-    @State private var items: [FileTreeItem]
+    @State private var items: [FileTreeItem] = []
     @State private var expandedDirectories: Set<URL>
     @State private var selectedURL: URL?
     @StateObject private var watcher: WorkspaceWatcher
@@ -22,7 +22,6 @@ private struct FileTreeContents: View {
     init(rootURL: URL, onOpenFile: @escaping (URL) -> Void) {
         self.rootURL = rootURL
         self.onOpenFile = onOpenFile
-        _items = State(initialValue: FileTreeItem.workspaceContents(of: rootURL))
         _expandedDirectories = State(initialValue: [])
         _watcher = StateObject(wrappedValue: WorkspaceWatcher(rootURL: rootURL))
     }
@@ -55,8 +54,14 @@ private struct FileTreeContents: View {
         .onDisappear {
             watcher.stop()
         }
-        .onChange(of: watcher.revision) {
-            items = FileTreeItem.workspaceContents(of: rootURL)
+        .task(id: watcher.revision) {
+            let rootURL = rootURL
+            let refreshedItems = await Task.detached(priority: .userInitiated) {
+                FileTreeItem.workspaceContents(of: rootURL)
+            }.value
+
+            guard !Task.isCancelled else { return }
+            items = refreshedItems
         }
     }
 
@@ -170,7 +175,7 @@ private struct VisibleFileTreeItem: Identifiable {
     var id: URL { item.id }
 }
 
-private final class FileTreeItem: Identifiable {
+nonisolated private final class FileTreeItem: Identifiable, @unchecked Sendable {
     let url: URL
     let isDirectory: Bool
     let status: FileTreeStatus?
@@ -178,7 +183,9 @@ private final class FileTreeItem: Identifiable {
 
     var id: URL { url }
     var name: String { url.lastPathComponent }
-    lazy var children: [FileTreeItem]? = loadChildren?()
+    // The tree crosses from its background build task once, then SwiftUI expands
+    // lazy directory children exclusively on the main actor.
+    nonisolated(unsafe) lazy var children: [FileTreeItem]? = loadChildren?()
 
     init(url: URL, isDirectory: Bool, status: FileTreeStatus? = nil) {
         self.url = url
@@ -221,7 +228,7 @@ private final class FileTreeItem: Identifiable {
     }
 }
 
-private enum FileTreeStatus: Equatable {
+nonisolated private enum FileTreeStatus: Equatable, Sendable {
     case modified
     case untracked
 
@@ -235,7 +242,7 @@ private enum FileTreeStatus: Equatable {
     }
 }
 
-private enum GitFileTree {
+nonisolated private enum GitFileTree {
     static func contents(of directoryURL: URL) -> [FileTreeItem]? {
         guard let paths = filePaths(in: directoryURL) else {
             return nil
