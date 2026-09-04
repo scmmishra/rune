@@ -93,6 +93,23 @@ nonisolated enum GitRepository {
         return CommitResult(succeeded: true, errorMessage: nil)
     }
 
+    static func githubURL(for commitID: String, at rootURL: URL) -> URL? {
+        for remoteName in preferredRemoteNames(at: rootURL) {
+            let result = runGit(["remote", "get-url", remoteName], at: rootURL, readOnly: true)
+            guard result.status == 0,
+                  let remoteURL = String(data: result.data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                  let repositoryURL = githubRepositoryURL(from: remoteURL)
+            else { continue }
+
+            return repositoryURL
+                .appending(path: "commit")
+                .appending(path: commitID)
+        }
+
+        return nil
+    }
+
     static func updateIndex(_ action: IndexAction, at rootURL: URL) -> CommitResult {
         let arguments: [String]
 
@@ -281,6 +298,65 @@ nonisolated enum GitRepository {
         // `restore --staged` requires HEAD. An unborn repository must remove
         // paths directly from the index while leaving working files untouched.
         return ["rm", "--cached", "--recursive", "--quiet", "--ignore-unmatch", "--"] + paths
+    }
+
+    private static func preferredRemoteNames(at rootURL: URL) -> [String] {
+        var names = ["origin"]
+        let branchResult = runGit(["branch", "--show-current"], at: rootURL, readOnly: true)
+        let branch = String(data: branchResult.data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if branchResult.status == 0, let branch, !branch.isEmpty {
+            names.append(contentsOf: [
+                gitConfig("branch.\(branch).pushRemote", at: rootURL),
+                gitConfig("branch.\(branch).remote", at: rootURL)
+            ].compactMap { $0 })
+        }
+
+        if let pushDefault = gitConfig("remote.pushDefault", at: rootURL) {
+            names.append(pushDefault)
+        }
+
+        let remoteResult = runGit(["remote"], at: rootURL, readOnly: true)
+        if remoteResult.status == 0, let output = String(data: remoteResult.data, encoding: .utf8) {
+            names.append(contentsOf: output.split(whereSeparator: \.isNewline).map(String.init))
+        }
+
+        return names.reduce(into: []) { uniqueNames, name in
+            guard name != ".", !uniqueNames.contains(name) else { return }
+            uniqueNames.append(name)
+        }
+    }
+
+    private static func gitConfig(_ key: String, at rootURL: URL) -> String? {
+        let result = runGit(["config", "--get", key], at: rootURL, readOnly: true)
+        guard result.status == 0 else { return nil }
+        return String(data: result.data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func githubRepositoryURL(from remoteURL: String) -> URL? {
+        let normalizedURL: String
+        if remoteURL.hasPrefix("git@github.com:") {
+            normalizedURL = "https://github.com/" + remoteURL.dropFirst("git@github.com:".count)
+        } else {
+            normalizedURL = remoteURL
+        }
+
+        guard var components = URLComponents(string: normalizedURL),
+              components.host?.lowercased() == "github.com"
+        else { return nil }
+
+        components.scheme = "https"
+        components.user = nil
+        components.password = nil
+        components.port = nil
+        components.query = nil
+        components.fragment = nil
+        components.path = components.path.hasSuffix(".git")
+            ? String(components.path.dropLast(4))
+            : components.path
+        return components.url
     }
 
     private static func runGit(

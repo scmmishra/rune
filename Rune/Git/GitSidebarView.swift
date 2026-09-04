@@ -302,9 +302,22 @@ struct GitSidebarView: View {
         GitHistoryView(
             commits: model.snapshot.commits,
             isRepository: model.snapshot.isRepository,
-            onOpenCommit: onOpenCommit
+            onOpenCommit: onOpenCommit,
+            onOpenCommitInGitHub: openCommitInGitHub
         )
         .equatable()
+    }
+
+    private func openCommitInGitHub(_ commit: GitCommit) {
+        Task {
+            let rootURL = rootURL
+            let commitURL = await Task.detached(priority: .userInitiated) {
+                GitRepository.githubURL(for: commit.id, at: rootURL)
+            }.value
+
+            guard let commitURL else { return }
+            NSWorkspace.shared.open(commitURL)
+        }
     }
 }
 
@@ -376,6 +389,7 @@ private struct GitHistoryView: View, Equatable {
     let commits: [GitCommit]
     let isRepository: Bool
     let onOpenCommit: (GitCommit) -> Void
+    let onOpenCommitInGitHub: (GitCommit) -> Void
 
     static func == (lhs: GitHistoryView, rhs: GitHistoryView) -> Bool {
         lhs.commits == rhs.commits && lhs.isRepository == rhs.isRepository
@@ -403,9 +417,11 @@ private struct GitHistoryView: View, Equatable {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(commits) { commit in
-                            GitCommitRow(commit: commit) {
-                                onOpenCommit(commit)
-                            }
+                            GitCommitRow(
+                                commit: commit,
+                                onOpen: { onOpenCommit(commit) },
+                                onOpenInGitHub: { onOpenCommitInGitHub(commit) }
+                            )
                         }
                     }
                     .padding(.horizontal, 10)
@@ -419,12 +435,14 @@ private struct GitHistoryView: View, Equatable {
 private struct GitCommitRow: View {
     let commit: GitCommit
     let onOpen: () -> Void
+    let onOpenInGitHub: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: onOpen) {
+        Button(action: handleOpen) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(commit.subject)
+                commitSubject
                     .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1)
 
@@ -450,7 +468,81 @@ private struct GitCommitRow: View {
             in: RoundedRectangle(cornerRadius: 5, style: .continuous)
         )
         .onHover { isHovered = $0 }
-        .help("Preview commit \(commit.shortHash)")
+        .help("Preview commit \(commit.shortHash). Command-click to open on GitHub.")
+    }
+
+    private func handleOpen() {
+        if NSEvent.modifierFlags.contains(.command) {
+            onOpenInGitHub()
+        } else {
+            onOpen()
+        }
+    }
+
+    private var commitSubject: Text {
+        guard let prefix = ConventionalCommitPrefix(subject: commit.subject) else {
+            return Text(commit.subject)
+        }
+
+        return Text(prefix.type)
+            .foregroundColor(prefix.color(for: colorScheme))
+            .fontWeight(.semibold) + Text(prefix.remainder)
+    }
+}
+
+private struct ConventionalCommitPrefix {
+    let type: String
+    let remainder: String
+
+    private static let supportedTypes: Set<String> = [
+        "build", "chore", "ci", "docs", "feat", "fix", "perf",
+        "refactor", "revert", "style", "test"
+    ]
+
+    init?(subject: String) {
+        guard let colon = subject.firstIndex(of: ":") else { return nil }
+        let header = subject[..<colon]
+        guard let typeEnd = header.firstIndex(where: { $0 == "(" || $0 == "!" }) else {
+            let type = String(header)
+            guard Self.supportedTypes.contains(type) else { return nil }
+            self.type = type
+            remainder = String(subject[header.endIndex...])
+            return
+        }
+
+        let type = String(header[..<typeEnd])
+        let suffix = header[typeEnd...]
+        guard Self.supportedTypes.contains(type), Self.isValidSuffix(suffix) else { return nil }
+        self.type = type
+        remainder = String(subject[typeEnd...])
+    }
+
+    func color(for colorScheme: ColorScheme) -> Color {
+        let isDark = colorScheme == .dark
+        return switch type {
+        case "feat":
+            Color(red: isDark ? 0.48 : 0.20, green: isDark ? 0.72 : 0.48, blue: isDark ? 0.55 : 0.28)
+        case "fix", "revert":
+            Color(red: isDark ? 0.82 : 0.65, green: isDark ? 0.48 : 0.24, blue: isDark ? 0.44 : 0.20)
+        case "perf":
+            Color(red: isDark ? 0.65 : 0.43, green: isDark ? 0.54 : 0.30, blue: isDark ? 0.82 : 0.65)
+        case "refactor":
+            Color(red: isDark ? 0.47 : 0.20, green: isDark ? 0.64 : 0.40, blue: isDark ? 0.82 : 0.62)
+        case "docs", "test":
+            Color(red: isDark ? 0.42 : 0.12, green: isDark ? 0.70 : 0.48, blue: isDark ? 0.74 : 0.52)
+        default:
+            Color(white: isDark ? 0.62 : 0.38)
+        }
+    }
+
+    private static func isValidSuffix(_ suffix: Substring) -> Bool {
+        if suffix == "!" { return true }
+        guard suffix.first == "(", let closingParenthesis = suffix.lastIndex(of: ")") else {
+            return false
+        }
+        let scope = suffix[suffix.index(after: suffix.startIndex)..<closingParenthesis]
+        let trailing = suffix[suffix.index(after: closingParenthesis)...]
+        return !scope.isEmpty && (trailing.isEmpty || trailing == "!")
     }
 }
 
