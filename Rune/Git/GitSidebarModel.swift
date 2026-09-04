@@ -59,7 +59,7 @@ final class GitSidebarModel: ObservableObject {
         refreshRequested = false
     }
 
-    func commitAll(message: String) async -> Bool {
+    func commitStaged(message: String) async -> Bool {
         let message = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty, !isBusy else { return false }
 
@@ -69,7 +69,7 @@ final class GitSidebarModel: ObservableObject {
 
         let rootURL = rootURL
         let result = await Task.detached(priority: .userInitiated) {
-            GitRepository.commitAll(message: message, at: rootURL)
+            GitRepository.commitStaged(message: message, at: rootURL)
         }.value
 
         isCommitting = false

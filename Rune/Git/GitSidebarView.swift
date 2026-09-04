@@ -262,7 +262,9 @@ struct GitSidebarView: View {
     }
 
     private var commitArea: some View {
-        VStack(spacing: 8) {
+        let hasCommitMessage = !commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return VStack(spacing: 8) {
             if let errorMessage = model.errorMessage {
                 Text(errorMessage)
                     .font(.system(size: 10, design: .monospaced))
@@ -285,7 +287,7 @@ struct GitSidebarView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 2)
-                    .padding(.top, 4)
+                    .padding(.top, 8)
                     .frame(minHeight: 54, maxHeight: 72)
             }
             .background {
@@ -295,7 +297,7 @@ struct GitSidebarView: View {
 
             Button {
                 Task {
-                    if await model.commitAll(message: commitMessage) {
+                    if await model.commitStaged(message: commitMessage) {
                         commitMessage = ""
                     }
                 }
@@ -305,14 +307,21 @@ struct GitSidebarView: View {
                         ProgressView()
                             .controlSize(.small)
                     }
-                    Text(model.isCommitting ? "Committing…" : "Commit All")
+                    Text(model.isCommitting ? "Committing…" : "Commit Staged")
                         .frame(maxWidth: .infinity)
                 }
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(hasCommitMessage ? Color.primary : Color.secondary)
+                .padding(.vertical, 4)
+                .background {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(hasCommitMessage ? 0.12 : 0.055))
+                }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
             .disabled(
-                commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    model.snapshot.changes.isEmpty ||
+                !hasCommitMessage ||
+                    model.snapshot.staged.isEmpty ||
                     model.isBusy ||
                     !model.snapshot.isRepository
             )

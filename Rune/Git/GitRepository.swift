@@ -83,12 +83,7 @@ nonisolated enum GitRepository {
         }
     }
 
-    static func commitAll(message: String, at rootURL: URL) -> CommitResult {
-        let addResult = runGit(["add", "--all"], at: rootURL, readOnly: false)
-        guard addResult.status == 0 else {
-            return CommitResult(succeeded: false, errorMessage: errorMessage(from: addResult.data))
-        }
-
+    static func commitStaged(message: String, at rootURL: URL) -> CommitResult {
         let commitResult = runGit(["commit", "-m", message], at: rootURL, readOnly: false)
         guard commitResult.status == 0 else {
             return CommitResult(succeeded: false, errorMessage: errorMessage(from: commitResult.data))
