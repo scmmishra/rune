@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
@@ -178,22 +179,17 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
     let onClose: () -> Void
     let onSelect: (Item) -> Void
     @ViewBuilder let row: (Item) -> Row
-    @FocusState private var isSearchFocused: Bool
     @Environment(\.runeTypography) private var typography
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField(placeholder, text: $query)
-                    .textFieldStyle(.plain)
-                    .runeFont(size: 13)
-                    .focused($isSearchFocused)
-                    .disabled(isBusy)
-                    .onSubmit {
+                PaletteSearchField(placeholder: placeholder, text: $query, isEnabled: !isBusy,
+                    onMove: moveSelection, onClose: onClose, onSubmit: {
                         guard !isBusy, let item = items.first(where: { $0.id == selection }) else { return }
                         onSelect(item)
-                    }
+                    })
             }
             .padding(.horizontal, 12)
             .frame(height: 42)
@@ -252,16 +248,108 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
                 .stroke(Color.primary.opacity(0.14), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.28), radius: 28, y: 10)
-        .onAppear { isSearchFocused = true }
-        .onChange(of: isBusy) { if !isBusy { isSearchFocused = true } }
-        .onKeyPress(keys: [.upArrow, .downArrow, .escape], phases: [.down, .repeat]) { event in
-            guard !isBusy else { return .handled }
-            if event.key == .escape { onClose(); return .handled }
-            guard !items.isEmpty else { return .ignored }
-            let index = selection.flatMap { selected in items.firstIndex { $0.id == selected } }
-            let next = event.key == .upArrow ? max(0, (index ?? 1) - 1) : min(items.count - 1, (index ?? -1) + 1)
-            selection = items[next].id
-            return .handled
+    }
+
+    private func moveSelection(_ direction: Int) {
+        guard !isBusy, !items.isEmpty else { return }
+        let index = selection.flatMap { selected in items.firstIndex { $0.id == selected } }
+        let next = direction < 0 ? max(0, (index ?? 1) - 1) : min(items.count - 1, (index ?? -1) + 1)
+        selection = items[next].id
+    }
+}
+
+private struct PaletteSearchField: NSViewRepresentable {
+    let placeholder: String
+    @Binding var text: String
+    let isEnabled: Bool
+    let onMove: (Int) -> Void
+    let onClose: () -> Void
+    let onSubmit: () -> Void
+    @Environment(\.runeTypography) private var typography
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    func makeNSView(context: Context) -> SearchField {
+        let field = SearchField()
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.delegate = context.coordinator
+        context.coordinator.install(for: field)
+        return field
+    }
+
+    func updateNSView(_ field: SearchField, context: Context) {
+        context.coordinator.parent = self
+        field.placeholderString = placeholder
+        field.font = typography.nsFont(size: 13)
+        if field.stringValue != text { field.stringValue = text }
+        let wasEnabled = field.isEnabled
+        field.isEnabled = isEnabled
+        if !wasEnabled, isEnabled { field.window?.makeFirstResponder(field) }
+    }
+
+    static func dismantleNSView(_ field: SearchField, coordinator: Coordinator) {
+        if let monitor = coordinator.monitor { NSEvent.removeMonitor(monitor) }
+        coordinator.monitor = nil
+        field.delegate = nil
+    }
+
+    final class SearchField: NSTextField {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isEnabled else { return }
+                self.window?.makeFirstResponder(self)
+            }
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: PaletteSearchField
+        var monitor: Any?
+        private var consumedEscape = false
+
+        init(parent: PaletteSearchField) { self.parent = parent }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            parent.text = field.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy command: Selector) -> Bool {
+            guard command == #selector(NSResponder.insertNewline(_:)) else { return false }
+            if parent.isEnabled { parent.onSubmit() }
+            return true
+        }
+
+        func install(for field: NSTextField) {
+            // The field editor can swallow SwiftUI repeat events. Consume native key-downs,
+            // including auto-repeat, only while this palette's search field owns focus.
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self, weak field] event in
+                guard let self, let field, let window = field.window,
+                      event.window === window, let editor = field.currentEditor(),
+                      window.firstResponder === editor,
+                      event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
+                else { return event }
+
+                switch event.keyCode {
+                case 125, 126:
+                    if event.type == .keyDown, self.parent.isEnabled {
+                        self.parent.onMove(event.keyCode == 126 ? -1 : 1)
+                    }
+                    return nil
+                case 53:
+                    if event.type == .keyDown { self.consumedEscape = true }
+                    if event.type == .keyUp, self.consumedEscape {
+                        self.consumedEscape = false
+                        if self.parent.isEnabled { self.parent.onClose() }
+                    }
+                    return nil
+                default: return event
+                }
+            }
         }
     }
 }
