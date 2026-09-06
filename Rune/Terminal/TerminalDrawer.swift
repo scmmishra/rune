@@ -16,7 +16,7 @@ struct TerminalDrawer: View {
                     Text("Exited").runeFont(size: 11).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(action: onClose) { Image(systemName: "xmark") }
+                Button(action: onClose) { Image(systemName: "chevron.right") }
                     .buttonStyle(WorkspaceButtonStyle())
                     .help("Hide Terminal (session keeps running)")
                     .accessibilityLabel("Hide terminal")
