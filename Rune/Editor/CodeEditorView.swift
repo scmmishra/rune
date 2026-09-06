@@ -110,12 +110,17 @@ struct NativeCodeEditorView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let scrollView = EditorScrollView()
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
+        // Preview headers are outside this scroll view; let only the ruler
+        // contribute insets instead of also compensating for the window title bar.
+        // Source: https://developer.apple.com/documentation/appkit/nsscrollview/contentinsets
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsetsZero
 
         // Syntax highlighting edits NSTextStorage directly, so keep the editor on one
         // predictable TextKit 1 stack instead of entering compatibility mode lazily.
@@ -160,6 +165,11 @@ struct NativeCodeEditorView: NSViewRepresentable {
         textView.isHorizontallyResizable = true
         textView.autoresizingMask = [.width, .height]
         scrollView.documentView = textView
+        scrollView.verticalRulerView = LineNumberRulerView(
+            scrollView: scrollView, textView: textView, isDiff: presentation == .diff
+        )
+        scrollView.hasVerticalRuler = true
+        scrollView.rulersVisible = true
 
         context.coordinator.render(
             text,
@@ -229,6 +239,8 @@ struct NativeCodeEditorView: NSViewRepresentable {
                   let textView = notification.object as? NSTextView else { return }
 
             parent.text = textView.string
+            (textView.enclosingScrollView?.verticalRulerView as? LineNumberRulerView)?
+                .reload(font: typography.nsFont(size: 12))
             highlight(textView, fileURL: parent.fileURL, typography: typography, debounce: true)
         }
 
@@ -249,6 +261,8 @@ struct NativeCodeEditorView: NSViewRepresentable {
             textView.string = text
             textView.textStorage?.setAttributes(SyntaxHighlighter.baseAttributes(font: typography.nsFont(size: 12)),
                                                range: NSRange(location: 0, length: (text as NSString).length))
+            (textView.enclosingScrollView?.verticalRulerView as? LineNumberRulerView)?
+                .reload(font: typography.nsFont(size: 12))
             highlight(textView, fileURL: fileURL, typography: typography)
             isRendering = false
         }
@@ -285,9 +299,27 @@ struct NativeCodeEditorView: NSViewRepresentable {
                 for (range, attributes) in changes { storage.setAttributes(attributes, range: range) }
                 storage.endEditing()
                 textView.typingAttributes = SyntaxHighlighter.baseAttributes(font: font)
+                textView.enclosingScrollView?.verticalRulerView?.needsDisplay = true
                 self.isRendering = false
             }
         }
+    }
+}
+
+private final class EditorScrollView: NSScrollView {
+    private var needsInitialScrollPosition = true
+
+    override func tile() {
+        super.tile()
+        guard needsInitialScrollPosition, bounds.width > 0, bounds.height > 0,
+              documentView != nil, let ruler = verticalRulerView else { return }
+        needsInitialScrollPosition = false
+        // SwiftUI supplies the real viewport after makeNSView. Wait for that first
+        // tiling before revealing the document's start beside the overlay ruler.
+        var initialBounds = contentView.bounds
+        initialBounds.origin.x = -ruler.ruleThickness
+        contentView.scroll(to: contentView.constrainBoundsRect(initialBounds).origin)
+        reflectScrolledClipView(contentView)
     }
 }
 
