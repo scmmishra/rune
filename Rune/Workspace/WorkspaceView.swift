@@ -25,6 +25,7 @@ struct WorkspaceView: View {
     @State private var fileSidebarWidth: CGFloat = 240
     @State private var gitSidebarWidth: CGFloat = 240
     @State private var dragStart: CGFloat?
+    @State private var terminalFocusRequest = 0
 
     private var selectedDiff: GitDiffSelection? {
         guard isDrawerVisible, case let .diff(change, area) = openDrawer else { return nil }
@@ -53,7 +54,7 @@ struct WorkspaceView: View {
 
                     Group {
                         if let directoryURL {
-                            TerminalPane(workingDirectory: directoryURL)
+                            TerminalPane(workingDirectory: directoryURL, focusRequest: terminalFocusRequest)
                                 .id(directoryURL)
                         } else {
                             WorkspacePlaceholder()
@@ -81,9 +82,10 @@ struct WorkspaceView: View {
                             GitSidebarView(
                                 rootURL: directoryURL,
                                 onOpenBranches: {
+                                    let shouldPresent = !isBranchPickerPresented
                                     isCommandPalettePresented = false
                                     isQuickOpenPresented = false
-                                    isBranchPickerPresented = true
+                                    isBranchPickerPresented = shouldPresent
                                 },
                                 selectedDiff: selectedDiff,
                                 onSelectionsChange: { diffSelections = $0 },
@@ -164,9 +166,10 @@ struct WorkspaceView: View {
         }
         .focusedSceneValue(\.presentCommandPalette) {
             guard !repository.isSwitchingBranch else { return }
+            let shouldPresent = !isCommandPalettePresented
             isQuickOpenPresented = false
             isBranchPickerPresented = false
-            isCommandPalettePresented = true
+            isCommandPalettePresented = shouldPresent
         }
     }
 
@@ -248,6 +251,7 @@ struct WorkspaceView: View {
             try? await Task.sleep(for: Layout.drawerCloseDuration)
             guard !Task.isCancelled else { return }
             openDrawer = nil
+            terminalFocusRequest += 1
         }
     }
 

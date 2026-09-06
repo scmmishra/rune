@@ -3,10 +3,13 @@ import SwiftUI
 import GhosttyTerminal
 
 struct TerminalPane: View {
+    var focusRequest: Int = 0
+    @FocusState private var isFocused: Bool
     @StateObject private var terminal: TerminalViewState
     @Environment(\.runeTypography) private var typography
 
-    init(workingDirectory: URL?) {
+    init(workingDirectory: URL?, focusRequest: Int = 0) {
+        self.focusRequest = focusRequest
         let terminal = TerminalViewState(
             theme: TerminalTheme(
                 light: TerminalConfiguration(startingFrom: .alabaster) { builder in
@@ -34,6 +37,8 @@ struct TerminalPane: View {
 
     var body: some View {
         TerminalSurfaceView(context: terminal)
+            .terminalFocused($isFocused)
+            .onChange(of: focusRequest) { isFocused = true }
             .accessibilityLabel("Terminal")
             .onAppear(perform: applyTypography)
             .onChange(of: typography) {

@@ -58,6 +58,7 @@ private struct FileTreeContents: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(visibleItems) { visibleItem in
@@ -68,6 +69,7 @@ private struct FileTreeContents: View {
                         status: visibleItem.item.status,
                         depth: visibleItem.depth
                     )
+                    .id(visibleItem.item.url)
                 }
             }
             .padding(.horizontal, 4)
@@ -75,7 +77,10 @@ private struct FileTreeContents: View {
         .focusable()
         .focusEffectDisabled()
         .focused($hasKeyboardFocus)
-        .onKeyPress(keys: [.upArrow, .downArrow, .return]) { keyPress in
+        .onChange(of: selectedURL) { _, selected in
+            if let selected { proxy.scrollTo(selected) }
+        }
+        .onKeyPress(keys: [.upArrow, .downArrow, .return], phases: [.down, .repeat]) { keyPress in
             handleKeyPress(keyPress.key)
         }
         .onChange(of: expandedDirectories) {
@@ -101,6 +106,7 @@ private struct FileTreeContents: View {
             guard !Task.isCancelled else { return }
             items = refreshedItems
             visibleItems = flattened(refreshedItems, depth: 0)
+        }
         }
     }
 

@@ -72,6 +72,7 @@ struct GitSidebarView: View {
     }
 
     private var changesList: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if !model.snapshot.staged.isEmpty {
@@ -105,6 +106,18 @@ struct GitSidebarView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
+        .onChange(of: selectedDiffID) { _, selected in
+            if let selected { proxy.scrollTo(selected) }
+        }
+        }
+    }
+
+    private var selectedDiffID: String? {
+        selectedDiff.map { rowID(path: $0.change.path, area: $0.area) }
+    }
+
+    private func rowID(path: String, area: GitChange.Area) -> String {
+        (area == .staged ? "staged:" : "unstaged:") + path
     }
 
     private var diffSelections: [GitDiffSelection] {
@@ -180,6 +193,7 @@ struct GitSidebarView: View {
                 .contextMenu {
                     changeContextMenu(for: change, area: area)
                 }
+                .id(rowID(path: change.path, area: area))
             }
         }
     }

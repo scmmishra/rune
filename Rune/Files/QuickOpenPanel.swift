@@ -290,17 +290,43 @@ private struct PaletteSearchField: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ field: SearchField, coordinator: Coordinator) {
+        field.restorePreviousFocus()
         if let monitor = coordinator.monitor { NSEvent.removeMonitor(monitor) }
         coordinator.monitor = nil
         field.delegate = nil
     }
 
     final class SearchField: NSTextField {
+        private weak var previousResponder: NSView?
+        private var previousSelection: NSRange?
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.isEnabled else { return }
-                self.window?.makeFirstResponder(self)
+                guard let window = self.window else { return }
+                // AppKit reuses one field editor across text fields. Save its owner,
+                // not the editor itself, so dismissal restores the correct control.
+                if let editor = window.firstResponder as? NSTextView, editor.isFieldEditor {
+                    self.previousResponder = editor.delegate as? NSView
+                    self.previousSelection = editor.selectedRange()
+                } else {
+                    self.previousResponder = window.firstResponder as? NSView
+                }
+                window.makeFirstResponder(self)
+            }
+        }
+
+        func restorePreviousFocus() {
+            guard let window, let previousResponder,
+                  previousResponder.window === window,
+                  window.firstResponder === currentEditor() || window.firstResponder === self
+            else { return }
+            // Do not steal focus if the user has already clicked another control.
+            if window.makeFirstResponder(previousResponder),
+               let selection = previousSelection,
+               let editor = (previousResponder as? NSTextField)?.currentEditor() as? NSTextView {
+                editor.setSelectedRange(selection)
             }
         }
     }

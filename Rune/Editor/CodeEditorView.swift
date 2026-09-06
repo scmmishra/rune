@@ -42,6 +42,17 @@ struct CodeEditorView: View {
 
 enum PreviewAction { case find, previousHunk, nextHunk }
 
+// Find is the innermost preview layer: Escape dismisses it before the drawer.
+func dismissPreviewFindBar(in view: NSView?) -> Bool {
+    guard let view else { return false }
+    if let scroll = view as? NSScrollView, scroll.isFindBarVisible {
+        scroll.isFindBarVisible = false
+        scroll.window?.makeFirstResponder(scroll.documentView)
+        return true
+    }
+    return view.subviews.contains { dismissPreviewFindBar(in: $0) }
+}
+
 // Only immutable copies cross the actor boundary; mutable parser state stays in the worker.
 nonisolated struct HighlightedText: @unchecked Sendable {
     let value: NSAttributedString

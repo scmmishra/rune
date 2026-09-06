@@ -159,6 +159,7 @@ private struct DrawerEscapeMonitor: NSViewRepresentable {
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
                 guard let self,
                       self.isEnabled,
+                      self.view?.window?.attachedSheet == nil,
                       event.window === self.view?.window,
                       event.charactersIgnoringModifiers == "\u{1B}" else { return event }
 
@@ -166,7 +167,9 @@ private struct DrawerEscapeMonitor: NSViewRepresentable {
                 if event.type == .keyUp {
                     guard self.didConsumeEscape else { return event }
                     self.didConsumeEscape = false
-                    self.onEscape()
+                    if !dismissPreviewFindBar(in: self.view?.window?.contentView) {
+                        self.onEscape()
+                    }
                 }
                 return nil
             }

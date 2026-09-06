@@ -203,14 +203,17 @@ struct GitPreviewEscapeMonitor: NSViewRepresentable {
             // Consume both halves of Escape so closing a diff cannot also exit
             // a full-screen workspace after the drawer leaves the view tree.
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
-                guard let self, self.isEnabled, event.window === self.view?.window else { return event }
+                guard let self, self.isEnabled, event.window === self.view?.window,
+                      self.view?.window?.attachedSheet == nil else { return event }
 
                 if event.charactersIgnoringModifiers == "\u{1B}" {
                     if event.type == .keyDown { self.didConsumeEscape = true }
                     if event.type == .keyUp {
                         guard self.didConsumeEscape else { return event }
                         self.didConsumeEscape = false
-                        self.onEscape()
+                        if !dismissPreviewFindBar(in: self.view?.window?.contentView) {
+                            self.onEscape()
+                        }
                     }
                     return nil
                 }
