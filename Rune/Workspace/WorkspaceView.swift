@@ -26,6 +26,7 @@ struct WorkspaceView: View {
     @State private var gitSidebarWidth: CGFloat = 240
     @State private var dragStart: CGFloat?
     @State private var terminalFocusRequest = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var selectedDiff: GitDiffSelection? {
         guard isDrawerVisible, case let .diff(change, area) = openDrawer else { return nil }
@@ -149,6 +150,7 @@ struct WorkspaceView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .transaction { if reduceMotion { $0.animation = nil } }
         .environmentObject(repository)
         .onAppear { if directoryURL != nil { repository.start() } }
         .onDisappear { repository.stop() }

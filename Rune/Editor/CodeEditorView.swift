@@ -15,6 +15,7 @@ struct CodeEditorView: View {
             HStack {
                 Button { perform(.find) } label: { Label("Find", systemImage: "magnifyingglass") }
                     .keyboardShortcut("f", modifiers: .command)
+                    .help("Find in Preview (⌘F)")
                 Spacer()
                 if presentation == .diff {
                     Button { perform(.previousHunk) } label: { Image(systemName: "chevron.up") }
@@ -25,7 +26,7 @@ struct CodeEditorView: View {
                         .help("Next Hunk (⌥⌘↓)")
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(WorkspaceButtonStyle())
             .runeFont(size: 11)
             .padding(.horizontal, 12)
             .frame(height: 28)

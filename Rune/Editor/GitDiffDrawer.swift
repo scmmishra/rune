@@ -102,8 +102,9 @@ struct GitDiffDrawer: View {
             Button(action: onClose) {
                 Image(systemName: "xmark")
             }
-            .buttonStyle(.plain)
-            .help("Close")
+            .buttonStyle(WorkspaceButtonStyle())
+            .help("Close Preview (Esc)")
+            .accessibilityLabel("Close preview")
         }
         .padding(.horizontal, 12)
         .frame(height: 38)

@@ -25,7 +25,7 @@ struct FileTreeView: View {
                 .frame(height: 28)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(WorkspaceButtonStyle())
             .help("Switch Project (⇧⌘O)\n" + rootURL.path)
             .accessibilityLabel("Switch project, " + rootURL.lastPathComponent)
             .padding(.horizontal, 12)
@@ -46,6 +46,7 @@ private struct FileTreeContents: View {
     @State private var visibleItems: [VisibleFileTreeItem] = []
     @State private var expandedDirectories: Set<URL>
     @State private var selectedURL: URL?
+    @State private var hoveredURL: URL?
     @EnvironmentObject private var repository: GitSidebarModel
     @FocusState private var hasKeyboardFocus: Bool
     @Environment(\.runeTypography) private var typography
@@ -161,8 +162,13 @@ private struct FileTreeContents: View {
             if selectedURL == url {
                 RoundedRectangle(cornerRadius: 3)
                     .fill(Color.accentColor.opacity(hasKeyboardFocus ? 0.20 : 0.10))
+            } else if hoveredURL == url {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.primary.opacity(0.04))
             }
         }
+        .onHover { hoveredURL = $0 ? url : nil }
+        .help(url.path)
         .contentShape(Rectangle())
         .onTapGesture {
             selectedURL = url

@@ -180,6 +180,7 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
     let onSelect: (Item) -> Void
     @ViewBuilder let row: (Item) -> Row
     @Environment(\.runeTypography) private var typography
+    @State private var hoveredItem: Item.ID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -211,8 +212,12 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
                                         if selection == item.id {
                                             RoundedRectangle(cornerRadius: 5)
                                                 .fill(Color.accentColor.opacity(0.20))
+                                        } else if hoveredItem == item.id {
+                                            RoundedRectangle(cornerRadius: 5)
+                                                .fill(Color.primary.opacity(0.05))
                                         }
                                     }
+                                    .onHover { hoveredItem = $0 ? item.id : nil }
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -223,14 +228,30 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
                     .padding(6)
                 }
                 .overlay {
-                    if isLoading || isBusy {
-                        ProgressView().controlSize(.small)
+                    if items.isEmpty, !isLoading, !isBusy, error == nil {
+                        Text(query.isEmpty ? "Nothing to show yet" : "No results for “\(query)”")
+                            .runeFont(size: 12)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(20)
                     }
+                    QuietProgressView(isActive: isLoading || isBusy)
                 }
                 .onChange(of: selection) { _, selected in
                     if let selected { proxy.scrollTo(selected, anchor: .center) }
                 }
             }
+            Divider()
+            HStack {
+                Text("↑↓ Navigate")
+                Spacer()
+                Text("↩ Select")
+                Text("esc Close")
+            }
+            .runeFont(size: 10)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
             if let error {
                 Divider()
                 Text(error)

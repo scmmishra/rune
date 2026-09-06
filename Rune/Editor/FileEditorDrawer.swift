@@ -74,8 +74,9 @@ struct FileEditorDrawer: View {
             Button(action: onClose) {
                 Image(systemName: "xmark")
             }
-            .buttonStyle(.plain)
-            .help("Close")
+            .buttonStyle(WorkspaceButtonStyle())
+            .help("Close Preview (Esc)")
+            .accessibilityLabel("Close preview")
         }
         .runeFont(size: 11, weight: .semibold)
         .padding(.horizontal, 12)

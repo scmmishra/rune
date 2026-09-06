@@ -95,7 +95,7 @@ struct GitSidebarView: View {
                     section("UNTRACKED", changes: model.snapshot.untracked, area: .unstaged)
                 }
 
-                if model.snapshot.changes.isEmpty, model.errorMessage == nil {
+                if model.hasLoaded, model.snapshot.changes.isEmpty, model.errorMessage == nil {
                     Text("Working tree clean")
                         .runeFont(size: 11)
                         .foregroundStyle(.tertiary)
@@ -106,6 +106,7 @@ struct GitSidebarView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
+        .overlay { QuietProgressView(isActive: !model.hasLoaded) }
         .onChange(of: selectedDiffID) { _, selected in
             if let selected { proxy.scrollTo(selected) }
         }
@@ -455,7 +456,7 @@ private struct GitSidebarHeader: View, Equatable {
                     .frame(height: 28)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(WorkspaceButtonStyle())
                 .keyboardShortcut("b", modifiers: [.command, .shift])
                 .disabled(!canSwitchBranch)
                 .help("Switch Branch (⇧⌘B)")
@@ -664,6 +665,7 @@ private struct GitChangeRow: View {
     let isDisabled: Bool
     let onOpen: () -> Void
     let onToggle: () -> Void
+    @State private var isHovered = false
     @Environment(\.runeTypography) private var typography
 
     private var state: GitFileState {
@@ -718,18 +720,21 @@ private struct GitChangeRow: View {
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity)
+            .help(change.path)
 
             Button(action: onToggle) {
                 Image(systemName: area == .staged ? "checkmark.square.fill" : "square")
                     .font(.system(size: 11))
                     .foregroundStyle(area == .staged ? Color.accentColor : Color.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(WorkspaceButtonStyle())
             .disabled(isDisabled)
             .help(area == .staged ? "Unstage \(change.path)" : "Stage \(change.path)")
         }
         .padding(.horizontal, 4)
         .frame(minHeight: max(20, typography.size(relativeTo: 20)))
+        .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(isHovered ? 0.04 : 0)))
+        .onHover { isHovered = $0 }
         .contentShape(Rectangle())
     }
 }
