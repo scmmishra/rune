@@ -6,6 +6,7 @@ struct WorkspaceView: View {
     @State private var isQuickOpenPresented = false
     @State private var isDrawerVisible = false
     @State private var drawerCleanupTask: Task<Void, Never>?
+    @State private var diffSelections: [GitDiffSelection] = []
 
     private enum Layout {
         static let sidebarWidthRatio: CGFloat = 0.20
@@ -56,8 +57,8 @@ struct WorkspaceView: View {
                             GitSidebarView(
                                 rootURL: directoryURL,
                                 onOpenFile: open,
-                                onOpenDiff: { change, area in
-                                    showDiff(change, area: area)
+                                onOpenDiff: { selection, selections in
+                                    showDiff(selection, among: selections)
                                 },
                                 onOpenCommit: { commit in
                                     showCommit(commit)
@@ -124,10 +125,14 @@ struct WorkspaceView: View {
         }
     }
 
-    private func showDiff(_ change: GitChange, area: GitChange.Area) {
+    private func showDiff(
+        _ selection: GitDiffSelection,
+        among selections: [GitDiffSelection]
+    ) {
         drawerCleanupTask?.cancel()
+        diffSelections = selections
         withAnimation(.snappy(duration: 0.22)) {
-            openDrawer = .diff(change, area)
+            openDrawer = .diff(selection.change, selection.area)
             isDrawerVisible = true
         }
     }
@@ -150,7 +155,8 @@ struct WorkspaceView: View {
                 rootURL: rootURL,
                 change: change,
                 area: area,
-                onClose: closeDrawer
+                onClose: closeDrawer,
+                onNavigate: navigateDiff
             )
         case let .commit(commit):
             GitCommitDrawer(rootURL: rootURL, commit: commit, onClose: closeDrawer)
@@ -168,6 +174,23 @@ struct WorkspaceView: View {
             guard !Task.isCancelled else { return }
             openDrawer = nil
         }
+    }
+
+    private func navigateDiff(_ navigation: GitDiffNavigation) {
+        guard case let .diff(change, area) = openDrawer,
+              let currentIndex = diffSelections.firstIndex(where: {
+                  $0.change.path == change.path && $0.area == area
+              })
+        else { return }
+
+        let nextIndex = switch navigation {
+        case .previous: currentIndex - 1
+        case .next: currentIndex + 1
+        }
+        guard diffSelections.indices.contains(nextIndex) else { return }
+
+        let selection = diffSelections[nextIndex]
+        openDrawer = .diff(selection.change, selection.area)
     }
 }
 

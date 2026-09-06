@@ -4,7 +4,7 @@ import SwiftUI
 struct GitSidebarView: View {
     let rootURL: URL
     let onOpenFile: (URL) -> Void
-    let onOpenDiff: (GitChange, GitChange.Area) -> Void
+    let onOpenDiff: (GitDiffSelection, [GitDiffSelection]) -> Void
     let onOpenCommit: (GitCommit) -> Void
 
     @StateObject private var model: GitSidebarModel
@@ -15,7 +15,7 @@ struct GitSidebarView: View {
     init(
         rootURL: URL,
         onOpenFile: @escaping (URL) -> Void,
-        onOpenDiff: @escaping (GitChange, GitChange.Area) -> Void,
+        onOpenDiff: @escaping (GitDiffSelection, [GitDiffSelection]) -> Void,
         onOpenCommit: @escaping (GitCommit) -> Void
     ) {
         self.rootURL = rootURL
@@ -113,6 +113,12 @@ struct GitSidebarView: View {
         }
     }
 
+    private var diffSelections: [GitDiffSelection] {
+        model.snapshot.staged.map { GitDiffSelection(change: $0, area: .staged) }
+            + model.snapshot.unstaged.map { GitDiffSelection(change: $0, area: .unstaged) }
+            + model.snapshot.untracked.map { GitDiffSelection(change: $0, area: .unstaged) }
+    }
+
     private var header: some View {
         GitSidebarHeader(
             branch: model.snapshot.branch,
@@ -157,7 +163,7 @@ struct GitSidebarView: View {
                     area: area,
                     isDisabled: model.isBusy,
                     onOpen: {
-                        onOpenDiff(change, area)
+                        openDiff(change, area: area)
                     },
                     onToggle: {
                         Task {
@@ -191,7 +197,7 @@ struct GitSidebarView: View {
         .disabled(!fileExists)
 
         Button {
-            onOpenDiff(change, area)
+            openDiff(change, area: area)
         } label: {
             Label("Preview Diff", systemImage: "doc.text.magnifyingglass")
         }
@@ -228,6 +234,13 @@ struct GitSidebarView: View {
     private func copyToPasteboard(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func openDiff(_ change: GitChange, area: GitChange.Area) {
+        onOpenDiff(
+            GitDiffSelection(change: change, area: area),
+            diffSelections
+        )
     }
 
     private var commitArea: some View {

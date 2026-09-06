@@ -1,11 +1,22 @@
 import AppKit
 import SwiftUI
 
+struct GitDiffSelection: Equatable, Sendable {
+    let change: GitChange
+    let area: GitChange.Area
+}
+
+enum GitDiffNavigation {
+    case previous
+    case next
+}
+
 struct GitDiffDrawer: View {
     let rootURL: URL
     let change: GitChange
     let area: GitChange.Area
     let onClose: () -> Void
+    let onNavigate: (GitDiffNavigation) -> Void
 
     @State private var contents = ""
     @State private var loadError: String?
@@ -54,7 +65,7 @@ struct GitDiffDrawer: View {
         }
         .shadow(color: .black.opacity(0.22), radius: 24, y: 8)
         .background {
-            GitPreviewEscapeMonitor(onEscape: onClose)
+            GitPreviewEscapeMonitor(onEscape: onClose, onNavigate: onNavigate)
         }
         .task(id: requestID) {
             await load()
@@ -111,9 +122,18 @@ struct GitDiffDrawer: View {
 
 struct GitPreviewEscapeMonitor: NSViewRepresentable {
     let onEscape: () -> Void
+    var onNavigate: ((GitDiffNavigation) -> Void)?
+
+    init(
+        onEscape: @escaping () -> Void,
+        onNavigate: ((GitDiffNavigation) -> Void)? = nil
+    ) {
+        self.onEscape = onEscape
+        self.onNavigate = onNavigate
+    }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onEscape: onEscape)
+        Coordinator(onEscape: onEscape, onNavigate: onNavigate)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -124,6 +144,7 @@ struct GitPreviewEscapeMonitor: NSViewRepresentable {
 
     func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.onEscape = onEscape
+        context.coordinator.onNavigate = onNavigate
     }
 
     static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
@@ -133,12 +154,19 @@ struct GitPreviewEscapeMonitor: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         var onEscape: () -> Void
+        var onNavigate: ((GitDiffNavigation) -> Void)?
 
         private weak var view: NSView?
         private var monitor: Any?
+        private static let upArrowKeyCode: UInt16 = 126
+        private static let downArrowKeyCode: UInt16 = 125
 
-        init(onEscape: @escaping () -> Void) {
+        init(
+            onEscape: @escaping () -> Void,
+            onNavigate: ((GitDiffNavigation) -> Void)?
+        ) {
             self.onEscape = onEscape
+            self.onNavigate = onNavigate
         }
 
         func install(for view: NSView) {
@@ -147,15 +175,36 @@ struct GitPreviewEscapeMonitor: NSViewRepresentable {
             // Consume both halves of Escape so closing a diff cannot also exit
             // a full-screen workspace after the drawer leaves the view tree.
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
-                guard let self,
-                      event.window === self.view?.window,
-                      event.charactersIgnoringModifiers == "\u{1B}" else { return event }
+                guard let self, event.window === self.view?.window else { return event }
 
-                if event.type == .keyUp {
-                    self.onEscape()
+                if event.charactersIgnoringModifiers == "\u{1B}" {
+                    if event.type == .keyUp {
+                        self.onEscape()
+                    }
+                    return nil
+                }
+
+                guard let onNavigate = self.onNavigate,
+                      !self.isTextEditorFocused,
+                      event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+                else { return event }
+
+                let navigation: GitDiffNavigation? = switch event.keyCode {
+                case Self.upArrowKeyCode: GitDiffNavigation.previous
+                case Self.downArrowKeyCode: GitDiffNavigation.next
+                default: nil
+                }
+                guard let navigation else { return event }
+
+                if event.type == .keyDown {
+                    onNavigate(navigation)
                 }
                 return nil
             }
+        }
+
+        private var isTextEditorFocused: Bool {
+            view?.window?.firstResponder is NSTextView
         }
 
         func uninstall() {
