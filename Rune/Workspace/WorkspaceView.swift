@@ -4,13 +4,13 @@ import SwiftUI
 struct WorkspaceView: View {
     let directoryURL: URL?
     let onOpenProject: () -> Void
-    let onOpenProjects: () -> Void
+    let onOpenWorkspace: (WorkspaceIdentity) -> Void
     @StateObject private var repository: GitSidebarModel
 
-    init(directoryURL: URL?, onOpenProject: @escaping () -> Void, onOpenProjects: @escaping () -> Void) {
+    init(directoryURL: URL?, onOpenProject: @escaping () -> Void, onOpenWorkspace: @escaping (WorkspaceIdentity) -> Void) {
         self.directoryURL = directoryURL
         self.onOpenProject = onOpenProject
-        self.onOpenProjects = onOpenProjects
+        self.onOpenWorkspace = onOpenWorkspace
         _repository = StateObject(wrappedValue: GitSidebarModel(
             rootURL: directoryURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         ))
@@ -19,6 +19,12 @@ struct WorkspaceView: View {
     @State private var isQuickOpenPresented = false
     @State private var isBranchPickerPresented = false
     @State private var isCommandPalettePresented = false
+    @State private var isProjectPickerPresented = false
+    @State private var recentWorkspaces: [WorkspaceIdentity] = []
+
+    private var isPalettePresented: Bool {
+        isQuickOpenPresented || isBranchPickerPresented || isCommandPalettePresented || isProjectPickerPresented
+    }
     @State private var isDrawerVisible = false
     @State private var drawerCleanupTask: Task<Void, Never>?
     @State private var diffSelections: [GitDiffSelection] = []
@@ -45,7 +51,7 @@ struct WorkspaceView: View {
                 HStack(spacing: 0) {
                     Group {
                         if let directoryURL {
-                            FileTreeView(rootURL: directoryURL, onOpenFile: open, onOpenProjects: onOpenProjects)
+                            FileTreeView(rootURL: directoryURL, onOpenFile: open, onOpenProjects: presentProjects)
                         } else {
                             Color.clear
                         }
@@ -84,6 +90,7 @@ struct WorkspaceView: View {
                                 rootURL: directoryURL,
                                 onOpenBranches: {
                                     let shouldPresent = !isBranchPickerPresented
+                                    isProjectPickerPresented = false
                                     isCommandPalettePresented = false
                                     isQuickOpenPresented = false
                                     isBranchPickerPresented = shouldPresent
@@ -108,7 +115,7 @@ struct WorkspaceView: View {
 
                 if let openDrawer, let directoryURL {
                     drawer(openDrawer, rootURL: directoryURL)
-                    .disabled(isQuickOpenPresented || isBranchPickerPresented || isCommandPalettePresented)
+                    .disabled(isPalettePresented)
                     .frame(
                         width: min(
                             max(480, geometry.size.width * 0.62),
@@ -123,9 +130,22 @@ struct WorkspaceView: View {
                     .zIndex(1)
                 }
 
-                if isQuickOpenPresented || isBranchPickerPresented || isCommandPalettePresented, let directoryURL {
+                if isPalettePresented, let directoryURL {
                     Group {
-                        if isCommandPalettePresented {
+                        if isProjectPickerPresented {
+                            ProjectPickerView(
+                                workspaces: recentWorkspaces,
+                                onClose: { isProjectPickerPresented = false },
+                                onOpen: { workspace in
+                                    isProjectPickerPresented = false
+                                    onOpenWorkspace(workspace)
+                                },
+                                onChooseDirectory: {
+                                    isProjectPickerPresented = false
+                                    onOpenProject()
+                                }
+                            )
+                        } else if isCommandPalettePresented {
                             CommandPalette(
                                 canSwitchBranch: repository.snapshot.isRepository && !repository.isBusy,
                                 onClose: { isCommandPalettePresented = false },
@@ -166,9 +186,11 @@ struct WorkspaceView: View {
         .focusedSceneValue(\.presentQuickOpen) {
             presentQuickOpen()
         }
+        .focusedSceneValue(\.presentRecentProjects, presentProjects)
         .focusedSceneValue(\.presentCommandPalette) {
             guard !repository.isSwitchingBranch else { return }
             let shouldPresent = !isCommandPalettePresented
+            isProjectPickerPresented = false
             isQuickOpenPresented = false
             isBranchPickerPresented = false
             isCommandPalettePresented = shouldPresent
@@ -178,6 +200,7 @@ struct WorkspaceView: View {
     private func presentQuickOpen() {
         guard directoryURL != nil, !repository.isSwitchingBranch else { return }
         isBranchPickerPresented = false
+        isProjectPickerPresented = false
         isCommandPalettePresented = false
         withAnimation(.snappy(duration: 0.18)) {
             isQuickOpenPresented.toggle()
@@ -197,11 +220,21 @@ struct WorkspaceView: View {
         isCommandPalettePresented = false
         switch command {
         case .reload: repository.reload()
-        case .openProject: onOpenProject()
+        case .openProject: presentProjects()
         case .switchBranch:
             guard repository.snapshot.isRepository, !repository.isBusy else { return }
             isBranchPickerPresented = true
         }
+    }
+
+    private func presentProjects() {
+        guard !repository.isSwitchingBranch else { return }
+        let shouldPresent = !isProjectPickerPresented
+        isQuickOpenPresented = false
+        isCommandPalettePresented = false
+        isBranchPickerPresented = false
+        recentWorkspaces = RecentWorkspaces.load()
+        isProjectPickerPresented = shouldPresent
     }
 
     private func showDiff(

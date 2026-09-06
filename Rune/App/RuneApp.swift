@@ -31,39 +31,25 @@ private struct WorkspaceWindow: View {
     @Environment(\.openWindow) private var openWindow
     @State private var routedCommandLineDirectory = false
     @State private var recentWorkspaces = RecentWorkspaces.load()
-    @State private var isProjectPickerPresented = false
 
     var body: some View {
         Group {
             if let workspace {
-                WorkspaceView(directoryURL: workspace.directoryURL, onOpenProject: chooseProject, onOpenProjects: {
-                    recentWorkspaces = RecentWorkspaces.load()
-                    isProjectPickerPresented = true
-                })
+                WorkspaceView(directoryURL: workspace.directoryURL, onOpenProject: chooseProject, onOpenWorkspace: open)
                     .id(workspace.path)
                     .background { WorkspaceFramePersistence(path: workspace.path) }
             } else if routedCommandLineDirectory {
                 ProjectPickerView(
                     workspaces: recentWorkspaces,
-                    onOpen: open
+                    onClose: {}, onOpen: open, onChooseDirectory: chooseProject
                 )
+                .frame(width: 600, height: 420)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Color(nsColor: .windowBackgroundColor)
             }
         }
             .navigationTitle(workspace?.name ?? "Rune")
-            .focusedSceneValue(\.presentRecentProjects) {
-                recentWorkspaces = RecentWorkspaces.load()
-                isProjectPickerPresented = true
-            }
-            .sheet(isPresented: $isProjectPickerPresented) {
-                ProjectPickerView(workspaces: recentWorkspaces) { directory in
-                    isProjectPickerPresented = false
-                    open(directory)
-                }
-                .frame(width: 560, height: 440)
-                .onExitCommand { isProjectPickerPresented = false }
-            }
             .onAppear {
                 if let workspace { RecentWorkspaces.record(workspace) }
                 guard !routedCommandLineDirectory, workspace == nil else { return }

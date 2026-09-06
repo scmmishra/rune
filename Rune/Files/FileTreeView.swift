@@ -11,15 +11,10 @@ struct FileTreeView: View {
         VStack(spacing: 0) {
             Button(action: onOpenProjects) {
                 HStack(spacing: 6) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 10, weight: .semibold))
                     Text(rootURL.lastPathComponent)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 4)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.secondary)
                 }
                 .runeFont(size: 12, weight: .medium)
                 .frame(height: 28)
