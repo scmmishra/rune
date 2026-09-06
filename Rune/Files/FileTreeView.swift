@@ -42,6 +42,7 @@ private struct FileTreeContents: View {
     let onOpenFile: (URL) -> Void
     @State private var items: [FileTreeItem] = []
     @State private var visibleItems: [VisibleFileTreeItem] = []
+    @State private var treeRevision = 0
     @State private var expandedDirectories: Set<URL>
     @State private var selectedURL: URL?
     @State private var hoveredURL: URL?
@@ -83,8 +84,16 @@ private struct FileTreeContents: View {
             handleKeyPress(keyPress.key)
         }
         .onChange(of: expandedDirectories) {
-            visibleItems = flattened(items, depth: 0)
             UserDefaults.standard.set(expandedDirectories.map(\.path).sorted(), forKey: "expandedDirectories:" + rootURL.path)
+        }
+        .task(id: ExpansionRequest(revision: treeRevision, directories: expandedDirectories)) {
+            let items = items
+            let directories = expandedDirectories
+            let refreshedRows = await Task.detached(priority: .userInitiated) {
+                Self.flattened(items, expandedDirectories: directories)
+            }.value
+            guard !Task.isCancelled else { return }
+            visibleItems = refreshedRows
         }
         .task(id: repository.revision) {
             guard repository.hasLoaded else { return }
@@ -104,18 +113,25 @@ private struct FileTreeContents: View {
 
             guard !Task.isCancelled else { return }
             items = refreshedItems
-            visibleItems = flattened(refreshedItems, depth: 0)
+            treeRevision &+= 1
         }
         }
     }
 
-    private func flattened(_ items: [FileTreeItem], depth: Int) -> [VisibleFileTreeItem] {
+    private struct ExpansionRequest: Equatable {
+        let revision: Int
+        let directories: Set<URL>
+    }
+
+    nonisolated private static func flattened(
+        _ items: [FileTreeItem], expandedDirectories: Set<URL>, depth: Int = 0
+    ) -> [VisibleFileTreeItem] {
         items.flatMap { item in
             var result = [VisibleFileTreeItem(item: item, depth: depth)]
             if item.isDirectory,
                expandedDirectories.contains(item.url),
                let children = item.children {
-                result.append(contentsOf: flattened(children, depth: depth + 1))
+                result.append(contentsOf: flattened(children, expandedDirectories: expandedDirectories, depth: depth + 1))
             }
             return result
         }
@@ -295,37 +311,41 @@ final class WindowTrackingView: NSView {
     }
 }
 
-private struct VisibleFileTreeItem: Identifiable {
+nonisolated private struct VisibleFileTreeItem: Identifiable, Sendable {
     let item: FileTreeItem
     let depth: Int
 
     var id: URL { item.id }
 }
 
-nonisolated private final class FileTreeItem: Identifiable, @unchecked Sendable {
+nonisolated private final class FileTreeItem: Identifiable, Sendable {
     let url: URL
     let isDirectory: Bool
     let status: FileTreeStatus?
-    private let loadChildren: (() -> [FileTreeItem])?
+    private let loadChildren: (@Sendable () -> [FileTreeItem])?
 
     var id: URL { url }
     var name: String { url.lastPathComponent }
-    // The tree crosses from its background build task once, then SwiftUI expands
-    // lazy directory children exclusively on the main actor.
-    nonisolated(unsafe) lazy var children: [FileTreeItem]? = loadChildren?()
+    // Only expanded folders are read, in the background flattening task. Keep this
+    // immutable because a cancelled refresh may overlap the next expansion.
+    var children: [FileTreeItem]? { loadChildren?() }
 
     init(url: URL, isDirectory: Bool, status: FileTreeStatus? = nil) {
         self.url = url
         self.isDirectory = isDirectory
         self.status = status
-        loadChildren = isDirectory ? { Self.contents(of: url) } : nil
+        if isDirectory {
+            loadChildren = { Self.contents(of: url) }
+        } else {
+            loadChildren = nil
+        }
     }
 
     init(directoryURL: URL, children: [FileTreeItem], status: FileTreeStatus?) {
         url = directoryURL
         isDirectory = true
         self.status = status
-        loadChildren = { children }
+        loadChildren = { Self.mergingContents(of: directoryURL, with: children) }
     }
 
     static func workspaceContents(of directoryURL: URL) -> [FileTreeItem] {
@@ -342,6 +362,7 @@ nonisolated private final class FileTreeItem: Identifiable, @unchecked Sendable 
         }
 
         return urls.compactMap { url in
+            guard url.lastPathComponent != ".git" else { return nil }
             guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
             let isDirectory = values.isDirectory == true && values.isSymbolicLink != true
             return FileTreeItem(url: url, isDirectory: isDirectory)
@@ -350,6 +371,17 @@ nonisolated private final class FileTreeItem: Identifiable, @unchecked Sendable 
             if lhs.isDirectory != rhs.isDirectory {
                 return lhs.isDirectory
             }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    static func mergingContents(of directoryURL: URL, with indexedItems: [FileTreeItem]) -> [FileTreeItem] {
+        // Preserve indexed entries (including deleted tracked files) and their Git
+        // status, while exposing ignored files and empty folders without a recursive scan.
+        var items = Dictionary(uniqueKeysWithValues: contents(of: directoryURL).map { ($0.name, $0) })
+        for item in indexedItems { items[item.name] = item }
+        return items.values.sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
             return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
         }
     }
@@ -466,7 +498,7 @@ nonisolated private enum GitFileTree {
             node.status = statuses[path]
         }
 
-        return root.items(at: rootURL)
+        return FileTreeItem.mergingContents(of: rootURL, with: root.items(at: rootURL))
     }
 
     private final class Node {

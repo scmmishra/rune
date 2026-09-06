@@ -102,7 +102,9 @@ final class GitSidebarModel: ObservableObject {
             }.value
 
             guard !Task.isCancelled else { return }
-            let changed = (!result.0.snapshot.isRepository && cachedFiles == nil) ||
+            // Ignored files and empty folders can change without changing Git's file
+            // list. A structural refresh must also rebuild the visible filesystem tree.
+            let changed = cachedFiles == nil ||
                 snapshot.isRepository != result.0.snapshot.isRepository || files != result.1 ||
                 snapshot.changes.count != result.0.snapshot.changes.count ||
                 zip(snapshot.changes, result.0.snapshot.changes).contains {
