@@ -89,11 +89,7 @@ struct WorkspaceView: View {
                             GitSidebarView(
                                 rootURL: directoryURL,
                                 onOpenBranches: {
-                                    let shouldPresent = !isBranchPickerPresented
-                                    isProjectPickerPresented = false
-                                    isCommandPalettePresented = false
-                                    isQuickOpenPresented = false
-                                    isBranchPickerPresented = shouldPresent
+                                    presentBranches()
                                 },
                                 selectedDiff: selectedDiff,
                                 onSelectionsChange: { diffSelections = $0 },
@@ -131,6 +127,12 @@ struct WorkspaceView: View {
                 }
 
                 if isPalettePresented, let directoryURL {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissPalettes() }
+                        .accessibilityLabel("Dismiss palette")
+                        .zIndex(1.5)
+
                     Group {
                         if isProjectPickerPresented {
                             ProjectPickerView(
@@ -170,6 +172,14 @@ struct WorkspaceView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .background {
+            WorkspaceShortcutMonitor(
+                onQuickOpen: presentQuickOpen,
+                onCommands: presentCommands,
+                onProjects: presentProjects,
+                onBranches: presentBranches
+            )
+        }
         .transaction { if reduceMotion { $0.animation = nil } }
         .environmentObject(repository)
         .onAppear { if directoryURL != nil { repository.start() } }
@@ -187,14 +197,28 @@ struct WorkspaceView: View {
             presentQuickOpen()
         }
         .focusedSceneValue(\.presentRecentProjects, presentProjects)
-        .focusedSceneValue(\.presentCommandPalette) {
-            guard !repository.isSwitchingBranch else { return }
-            let shouldPresent = !isCommandPalettePresented
-            isProjectPickerPresented = false
-            isQuickOpenPresented = false
-            isBranchPickerPresented = false
-            isCommandPalettePresented = shouldPresent
-        }
+        .focusedSceneValue(\.presentCommandPalette, presentCommands)
+    }
+
+    private func dismissPalettes() {
+        isProjectPickerPresented = false
+        isQuickOpenPresented = false
+        isBranchPickerPresented = false
+        isCommandPalettePresented = false
+    }
+
+    private func presentCommands() {
+        guard !repository.isSwitchingBranch else { return }
+        let shouldPresent = !isCommandPalettePresented
+        dismissPalettes()
+        isCommandPalettePresented = shouldPresent
+    }
+
+    private func presentBranches() {
+        guard repository.snapshot.isRepository, !repository.isBusy else { return }
+        let shouldPresent = !isBranchPickerPresented
+        dismissPalettes()
+        isBranchPickerPresented = shouldPresent
     }
 
     private func presentQuickOpen() {
