@@ -12,12 +12,9 @@ struct CodeEditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button { perform(.find) } label: { Label("Find", systemImage: "magnifyingglass") }
-                    .keyboardShortcut("f", modifiers: .command)
-                    .help("Find in Preview (⌘F)")
-                Spacer()
-                if presentation == .diff {
+            if presentation == .diff {
+                HStack {
+                    Spacer()
                     Button { perform(.previousHunk) } label: { Image(systemName: "chevron.up") }
                         .keyboardShortcut(.upArrow, modifiers: [.option, .command])
                         .help("Previous Hunk (⌥⌘↑)")
@@ -25,13 +22,22 @@ struct CodeEditorView: View {
                         .keyboardShortcut(.downArrow, modifiers: [.option, .command])
                         .help("Next Hunk (⌥⌘↓)")
                 }
+                .buttonStyle(WorkspaceButtonStyle())
+                .runeFont(size: 11)
+                .padding(.horizontal, 12)
+                .frame(height: 28)
             }
-            .buttonStyle(WorkspaceButtonStyle())
-            .runeFont(size: 11)
-            .padding(.horizontal, 12)
-            .frame(height: 28)
             NativeCodeEditorView(text: $text, fileURL: fileURL, isEditable: isEditable,
                                  presentation: presentation, request: request, action: action)
+        }
+        .background {
+            // Retain the preview-scoped shortcut without a visible toolbar control.
+            Button("Find in Preview") { perform(.find) }
+                .keyboardShortcut("f", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
     }
 

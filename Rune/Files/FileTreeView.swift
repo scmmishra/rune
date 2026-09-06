@@ -30,6 +30,7 @@ struct FileTreeView: View {
 
             FileTreeContents(rootURL: rootURL, onOpenFile: onOpenFile)
                 .id(rootURL)
+                .safeAreaPadding(.bottom, 48)
         }
         .padding(.top, isFullScreen ? 12 : 38)
         .background { WindowFullScreenObserver(isFullScreen: $isFullScreen) }

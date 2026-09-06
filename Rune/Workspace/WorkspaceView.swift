@@ -20,6 +20,7 @@ struct WorkspaceView: View {
     @State private var isBranchPickerPresented = false
     @State private var isCommandPalettePresented = false
     @State private var isProjectPickerPresented = false
+    @State private var isHelpPresented = false
     @State private var recentWorkspaces: [WorkspaceIdentity] = []
 
     private var isPalettePresented: Bool {
@@ -57,6 +58,10 @@ struct WorkspaceView: View {
                         }
                     }
                     .frame(width: min(fileSidebarWidth, geometry.size.width * 0.28))
+                    .overlay(alignment: .bottomLeading) {
+                        WorkspaceHelpButton(isPresented: $isHelpPresented)
+                            .padding(12)
+                    }
                     sidebarDivider(width: $fileSidebarWidth, direction: 1, availableWidth: geometry.size.width)
 
                     Group {
@@ -181,6 +186,9 @@ struct WorkspaceView: View {
             )
         }
         .transaction { if reduceMotion { $0.animation = nil } }
+        .onChange(of: isPalettePresented) { _, isPresented in
+            if isPresented { isHelpPresented = false }
+        }
         .environmentObject(repository)
         .onAppear { if directoryURL != nil { repository.start() } }
         .onDisappear { repository.stop() }
