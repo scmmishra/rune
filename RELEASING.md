@@ -3,7 +3,7 @@
 Publishing a GitHub Release triggers an Apple Silicon Release build, highlighting
 checks, a ZIP and SHA-256 checksum, and a signed Sparkle update feed. Rune requires
 **macOS 26.0 or newer**. CI uses an arm64 macOS 26 runner so the checks can run,
-selects Xcode 26.3 and the macOS 26 SDK, and verifies the packaged minimum OS
+selects Xcode 26.6 and the macOS 26 SDK, and verifies the packaged minimum OS
 and generated feed. Both the runner OS and deployment target are explicit.
 
 ## One-time signing setup

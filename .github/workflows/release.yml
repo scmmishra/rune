@@ -26,7 +26,7 @@ jobs:
       - name: Select Xcode 26
         run: |
           test "$(uname -m)" = arm64
-          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version
           sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
           test "${sdk_version%%.*}" = 26
