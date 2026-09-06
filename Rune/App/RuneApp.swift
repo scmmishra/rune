@@ -36,7 +36,10 @@ private struct WorkspaceWindow: View {
     var body: some View {
         Group {
             if let workspace {
-                WorkspaceView(directoryURL: workspace.directoryURL, onOpenProject: chooseProject)
+                WorkspaceView(directoryURL: workspace.directoryURL, onOpenProject: chooseProject, onOpenProjects: {
+                    recentWorkspaces = RecentWorkspaces.load()
+                    isProjectPickerPresented = true
+                })
                     .id(workspace.path)
                     .background { WorkspaceFramePersistence(path: workspace.path) }
             } else if routedCommandLineDirectory {

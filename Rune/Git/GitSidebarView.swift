@@ -406,6 +406,7 @@ struct BranchPickerView: View {
 }
 
 private struct GitSidebarHeader: View, Equatable {
+    @State private var isFullScreen = false
     let branch: String
     let changeCount: Int
     let additions: Int
@@ -437,6 +438,7 @@ private struct GitSidebarHeader: View, Equatable {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
+                    .frame(height: 28)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -475,8 +477,9 @@ private struct GitSidebarHeader: View, Equatable {
         }
         .runeFont(size: 12, weight: .medium)
         .padding(.horizontal, 12)
-        .padding(.top, 14)
+        .padding(.top, isFullScreen ? 12 : 38)
         .padding(.bottom, 8)
+        .background { WindowFullScreenObserver(isFullScreen: $isFullScreen) }
     }
 }
 

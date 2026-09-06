@@ -4,11 +4,13 @@ import SwiftUI
 struct WorkspaceView: View {
     let directoryURL: URL?
     let onOpenProject: () -> Void
+    let onOpenProjects: () -> Void
     @StateObject private var repository: GitSidebarModel
 
-    init(directoryURL: URL?, onOpenProject: @escaping () -> Void) {
+    init(directoryURL: URL?, onOpenProject: @escaping () -> Void, onOpenProjects: @escaping () -> Void) {
         self.directoryURL = directoryURL
         self.onOpenProject = onOpenProject
+        self.onOpenProjects = onOpenProjects
         _repository = StateObject(wrappedValue: GitSidebarModel(
             rootURL: directoryURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         ))
@@ -41,7 +43,7 @@ struct WorkspaceView: View {
                 HStack(spacing: 0) {
                     Group {
                         if let directoryURL {
-                            FileTreeView(rootURL: directoryURL, onOpenFile: open)
+                            FileTreeView(rootURL: directoryURL, onOpenFile: open, onOpenProjects: onOpenProjects)
                         } else {
                             Color.clear
                         }

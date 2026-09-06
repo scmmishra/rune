@@ -4,19 +4,42 @@ import SwiftUI
 struct FileTreeView: View {
     let rootURL: URL
     let onOpenFile: (URL) -> Void
+    let onOpenProjects: () -> Void
+    @State private var isFullScreen = false
 
     var body: some View {
-        FileTreeContents(rootURL: rootURL, onOpenFile: onOpenFile)
-            .id(rootURL)
+        VStack(spacing: 0) {
+            Button(action: onOpenProjects) {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(rootURL.lastPathComponent)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .runeFont(size: 12, weight: .medium)
+                .frame(height: 28)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Switch Project (⇧⌘O)\n" + rootURL.path)
+            .accessibilityLabel("Switch project, " + rootURL.lastPathComponent)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+
+            FileTreeContents(rootURL: rootURL, onOpenFile: onOpenFile)
+                .id(rootURL)
+        }
+        .padding(.top, isFullScreen ? 12 : 38)
+        .background { WindowFullScreenObserver(isFullScreen: $isFullScreen) }
     }
 }
 
 private struct FileTreeContents: View {
-    private enum Layout {
-        static let windowedTopPadding: CGFloat = 38
-        static let fullScreenTopPadding: CGFloat = 16
-    }
-
     let rootURL: URL
     let onOpenFile: (URL) -> Void
     @State private var items: [FileTreeItem] = []
@@ -24,7 +47,6 @@ private struct FileTreeContents: View {
     @State private var expandedDirectories: Set<URL>
     @State private var selectedURL: URL?
     @EnvironmentObject private var repository: GitSidebarModel
-    @State private var isFullScreen = false
     @FocusState private var hasKeyboardFocus: Bool
     @Environment(\.runeTypography) private var typography
 
@@ -49,13 +71,6 @@ private struct FileTreeContents: View {
                 }
             }
             .padding(.horizontal, 4)
-        }
-        .padding(
-            .top,
-            isFullScreen ? Layout.fullScreenTopPadding : Layout.windowedTopPadding
-        )
-        .background {
-            WindowFullScreenObserver(isFullScreen: $isFullScreen)
         }
         .focusable()
         .focusEffectDisabled()
@@ -194,7 +209,7 @@ private struct FileTreeContents: View {
 
 // SwiftUI does not expose the containing macOS window's full-screen state, so
 // observe that specific NSWindow rather than global application notifications.
-private struct WindowFullScreenObserver: NSViewRepresentable {
+struct WindowFullScreenObserver: NSViewRepresentable {
     @Binding var isFullScreen: Bool
 
     func makeCoordinator() -> Coordinator {
@@ -261,7 +276,7 @@ private struct WindowFullScreenObserver: NSViewRepresentable {
     }
 }
 
-private final class WindowTrackingView: NSView {
+final class WindowTrackingView: NSView {
     var onWindowChange: ((NSWindow?) -> Void)?
 
     override func viewDidMoveToWindow() {
