@@ -1,0 +1,93 @@
+name: Build Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Package macOS 26 / Apple Silicon
+    # Rune's checks must also execute on its minimum supported macOS.
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      - name: Select Xcode 26
+        run: |
+          test "$(uname -m)" = arm64
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+          sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+          test "${sdk_version%%.*}" = 26
+
+      - name: Validate release configuration
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Use a vX.Y.Z or X.Y.Z release tag."
+            exit 1
+          fi
+          if [[ -z "$SPARKLE_PRIVATE_KEY" || -z "$SPARKLE_PUBLIC_KEY" ]]; then
+            echo "::error::Configure the SPARKLE_PRIVATE_KEY secret and SPARKLE_PUBLIC_KEY variable. See RELEASING.md."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build Debug and test highlighting
+        run: |
+          xcodebuild -project Rune.xcodeproj -scheme Rune -configuration Debug \
+            -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
+          bash Scripts/check-highlighting.sh
+
+      - name: Package release
+        env:
+          RUNE_VERSION: ${{ steps.release.outputs.version }}
+          SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+        run: bash Scripts/package-app.sh
+
+      - name: Generate signed update feed
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          updates_directory="$(mktemp -d "$RUNNER_TEMP/rune-updates.XXXXXX")"
+          cp build/Rune-arm64.zip "$updates_directory/"
+          jq -r '.release.body // ""' "$GITHUB_EVENT_PATH" > "$updates_directory/Rune-arm64.md"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | \
+            DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast \
+              --ed-key-file - \
+              --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/" \
+              --embed-release-notes \
+              --link "https://github.com/$GITHUB_REPOSITORY" \
+              --versions "$RELEASE_VERSION" \
+              "$updates_directory"
+          cp "$updates_directory/appcast.xml" build/appcast.xml
+          test -s build/appcast.xml
+          grep -q 'sparkle:edSignature=' build/appcast.xml
+          grep -q '<sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>' build/appcast.xml
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            build/Rune-arm64.zip build/Rune-arm64.zip.sha256 build/appcast.xml \
+            --repo "$GITHUB_REPOSITORY" --clobber

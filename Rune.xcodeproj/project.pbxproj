@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B20000000000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000002 /* Sparkle */; };
 		A10000000000000000000014 /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* GhosttyTerminal */; };
 		A10000000000000000000017 /* SwiftTreeSitter in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000021 /* SwiftTreeSitter */; };
 		A10000000000000000000018 /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000022 /* TreeSitterSwift */; };
@@ -44,6 +45,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B20000000000000000000001 /* Sparkle in Frameworks */,
 				A10000000000000000000014 /* GhosttyTerminal in Frameworks */,
 				A10000000000000000000017 /* SwiftTreeSitter in Frameworks */,
 				A10000000000000000000018 /* TreeSitterSwift in Frameworks */,
@@ -91,6 +93,7 @@
 			);
 			name = Rune;
 			packageProductDependencies = (
+				B20000000000000000000002 /* Sparkle */,
 				A10000000000000000000016 /* GhosttyTerminal */,
 				A10000000000000000000021 /* SwiftTreeSitter */,
 				A10000000000000000000022 /* TreeSitterSwift */,
@@ -126,6 +129,7 @@
 			mainGroup = A10000000000000000000007;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				A10000000000000000000015 /* XCRemoteSwiftPackageReference "libghostty-spm" */,
 				A1000000000000000000001C /* XCRemoteSwiftPackageReference "swift-tree-sitter" */,
 				A1000000000000000000001D /* XCRemoteSwiftPackageReference "tree-sitter-swift" */,
@@ -163,6 +167,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = { kind = exactVersion; version = 2.9.5; };
+		};
 		A10000000000000000000015 /* XCRemoteSwiftPackageReference "libghostty-spm" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/Lakr233/libghostty-spm.git";
@@ -206,6 +215,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		B20000000000000000000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
 		A10000000000000000000016 /* GhosttyTerminal */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000015 /* XCRemoteSwiftPackageReference "libghostty-spm" */;

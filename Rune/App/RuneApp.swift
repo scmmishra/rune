@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct RuneApp: App {
+    @StateObject private var updater = AppUpdater()
+
     var body: some Scene {
         WindowGroup("Rune", id: "workspace", for: WorkspaceIdentity.self) { $workspace in
             WorkspaceWindow(workspace: $workspace)
@@ -11,10 +13,13 @@ struct RuneApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             QuickOpenCommands()
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesButton(updater: updater)
+            }
         }
 
         Settings {
-            SettingsView()
+            SettingsView(updater: updater)
                 .runeTypographyPreferences()
         }
     }

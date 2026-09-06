@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct SettingsView: View {
+    @ObservedObject var updater: AppUpdater
     @AppStorage(TypographyPreferenceKey.fontFamily)
     private var fontFamily = RuneTypography.defaultFamily
     @AppStorage(TypographyPreferenceKey.fontSize)
@@ -28,9 +29,18 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Section("Updates") {
+                if updater.isConfigured {
+                    UpdaterSettingsView(updater: updater.controller.updater)
+                    CheckForUpdatesButton(updater: updater)
+                } else {
+                    Text("Updates are available in release builds distributed through GitHub.")
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 220)
+        .frame(width: 440, height: 370)
         .onAppear {
             fontSizeInput = String(Int(fontSize))
         }
