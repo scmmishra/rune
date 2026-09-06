@@ -41,6 +41,7 @@ private struct WorkspaceHelpView: View {
                     shortcut("Command palette", keys: "⇧⌘P")
                     shortcut("Switch project", keys: "⇧⌘O")
                     shortcut("Switch branch", keys: "⇧⌘B")
+                    shortcut("New terminal", keys: "⇧⌘T")
                     shortcut("Settings", keys: "⌘,")
                 }
 
@@ -64,6 +65,7 @@ private struct WorkspaceHelpView: View {
                     Text("Getting around").runeFont(size: 11, weight: .semibold)
                     Text("Click the project or branch name to switch. Choose Directory… opens any project folder.")
                     Text("In palettes, use ↑↓ to select and Return to open. Press Escape or click outside to dismiss.")
+                    Text("Supporting terminals open in the floating pane. Hide it to keep them running. Click a row’s close button twice to end its processes, or exit the shell to remove it. Right-click to rename.")
                     Text("Drag the edges beside the terminal to resize the sidebars. Rune remembers your layout.")
                 }
                 .foregroundStyle(.secondary)

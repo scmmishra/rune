@@ -5,9 +5,11 @@ struct WorkspaceView: View {
     let directoryURL: URL?
     let onOpenProject: () -> Void
     let onOpenWorkspace: (WorkspaceIdentity) -> Void
+    @StateObject private var terminals: TerminalSessions
     @StateObject private var repository: GitSidebarModel
 
     init(directoryURL: URL?, onOpenProject: @escaping () -> Void, onOpenWorkspace: @escaping (WorkspaceIdentity) -> Void) {
+        _terminals = StateObject(wrappedValue: TerminalSessions(workingDirectory: directoryURL))
         self.directoryURL = directoryURL
         self.onOpenProject = onOpenProject
         self.onOpenWorkspace = onOpenWorkspace
@@ -52,7 +54,15 @@ struct WorkspaceView: View {
                 HStack(spacing: 0) {
                     Group {
                         if let directoryURL {
-                            FileTreeView(rootURL: directoryURL, onOpenFile: open, onOpenProjects: presentProjects)
+                            FileTreeView(terminals: {
+                                TerminalSidebarView(
+                                    sessions: terminals,
+                                    selectedID: selectedTerminalID,
+                                    onSelect: showTerminal,
+                                    onAdd: addTerminal,
+                                    onRemove: removeTerminal
+                                )
+                            }, rootURL: directoryURL, onOpenFile: open, onOpenProjects: presentProjects)
                         } else {
                             Color.clear
                         }
@@ -66,7 +76,7 @@ struct WorkspaceView: View {
 
                     Group {
                         if let directoryURL {
-                            TerminalPane(workingDirectory: directoryURL, focusRequest: terminalFocusRequest)
+                            TerminalPane(focusRequest: terminalFocusRequest, terminal: terminals.primary.terminal)
                                 .id(directoryURL)
                         } else {
                             WorkspacePlaceholder()
@@ -114,8 +124,22 @@ struct WorkspaceView: View {
                     .frame(width: min(gitSidebarWidth, geometry.size.width * 0.28))
                 }
 
-                if let openDrawer, let directoryURL {
-                    drawer(openDrawer, rootURL: directoryURL)
+                if let directoryURL {
+                    ZStack {
+                        // Ghostty surfaces belong to their mounted platform views. Keep
+                        // sessions mounted across preview changes, but stop hidden rendering.
+                        // Source: libghostty-spm TerminalViewState.isSurfaceVisible (1.5.2).
+                        ForEach(terminals.supporting) { session in
+                            let visible = selectedTerminalID == session.id
+                            TerminalDrawer(session: session, isVisible: visible, onClose: closeDrawer)
+                                .opacity(visible ? 1 : 0)
+                                .allowsHitTesting(visible)
+                                .accessibilityHidden(!visible)
+                        }
+                        if let openDrawer {
+                            drawer(openDrawer, rootURL: directoryURL)
+                        }
+                    }
                     .disabled(isPalettePresented)
                     .frame(
                         width: min(
@@ -182,16 +206,28 @@ struct WorkspaceView: View {
                 onQuickOpen: presentQuickOpen,
                 onCommands: presentCommands,
                 onProjects: presentProjects,
-                onBranches: presentBranches
+                onBranches: presentBranches,
+                onNewTerminal: addTerminal
             )
         }
         .transaction { if reduceMotion { $0.animation = nil } }
         .onChange(of: isPalettePresented) { _, isPresented in
             if isPresented { isHelpPresented = false }
         }
+        .task { await terminals.monitorProcesses() }
+        .onChange(of: terminals.supporting.map(\.id)) {
+            if case let .terminal(id) = openDrawer,
+               !terminals.supporting.contains(where: { $0.id == id }) {
+                closeDrawer()
+            }
+        }
         .environmentObject(repository)
         .onAppear { if directoryURL != nil { repository.start() } }
-        .onDisappear { repository.stop() }
+        .onDisappear {
+            repository.stop()
+            drawerCleanupTask?.cancel()
+            terminals.stopAll()
+        }
         .onAppear {
             guard let directoryURL else { return }
             let widths = UserDefaults.standard.array(forKey: "sidebarWidths:" + directoryURL.path) as? [Double]
@@ -303,9 +339,39 @@ struct WorkspaceView: View {
                 onClose: closeDrawer,
                 onNavigate: navigateDiff
             )
+        case .terminal:
+            EmptyView()
         case let .commit(commit):
             GitCommitDrawer(rootURL: rootURL, commit: commit, onClose: closeDrawer)
         }
+    }
+
+    private var selectedTerminalID: UUID? {
+        guard isDrawerVisible, case let .terminal(id) = openDrawer else { return nil }
+        return id
+    }
+
+    private func addTerminal() {
+        guard directoryURL != nil else { return }
+        showTerminal(terminals.add())
+    }
+
+    private func showTerminal(_ session: TerminalSession) {
+        if selectedTerminalID == session.id {
+            closeDrawer()
+            return
+        }
+        dismissPalettes()
+        drawerCleanupTask?.cancel()
+        withAnimation(.snappy(duration: 0.22)) {
+            openDrawer = .terminal(session.id)
+            isDrawerVisible = true
+        }
+    }
+
+    private func removeTerminal(_ session: TerminalSession) {
+        if case let .terminal(id) = openDrawer, id == session.id { closeDrawer() }
+        Task { await terminals.terminate(session) }
     }
 
     private func closeDrawer() {
@@ -365,6 +431,7 @@ struct WorkspaceView: View {
 }
 
 private enum WorkspaceDrawer {
+    case terminal(UUID)
     case file(URL)
     case diff(GitChange, GitChange.Area)
     case commit(GitCommit)

@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-struct FileTreeView: View {
+struct FileTreeView<Terminals: View>: View {
+    @ViewBuilder let terminals: () -> Terminals
     let rootURL: URL
     let onOpenFile: (URL) -> Void
     let onOpenProjects: () -> Void
@@ -27,6 +28,10 @@ struct FileTreeView: View {
                 .accessibilityLabel("Switch project, " + rootURL.lastPathComponent)
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction { onOpenProjects() }
+
+            terminals()
+
+            Divider()
 
             FileTreeContents(rootURL: rootURL, onOpenFile: onOpenFile)
                 .id(rootURL)

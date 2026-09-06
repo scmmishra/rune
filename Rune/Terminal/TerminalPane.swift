@@ -4,49 +4,34 @@ import GhosttyTerminal
 
 struct TerminalPane: View {
     var focusRequest: Int = 0
-    @FocusState private var isFocused: Bool
     @State private var didRequestInitialFocus = false
-    @StateObject private var terminal: TerminalViewState
+    @ObservedObject var terminal: TerminalViewState
+    var isVisible = true
     @Environment(\.runeTypography) private var typography
-
-    init(workingDirectory: URL?, focusRequest: Int = 0) {
-        self.focusRequest = focusRequest
-        let terminal = TerminalViewState(
-            theme: TerminalTheme(
-                light: TerminalConfiguration(startingFrom: .alabaster) { builder in
-                    builder.withBackground("EFEFEF")
-                },
-                dark: TerminalConfiguration(startingFrom: .afterglow) { builder in
-                    builder.withBackground("181818")
-                }
-            ),
-            terminalConfiguration: TerminalConfiguration { builder in
-                builder.withWindowPaddingX(12)
-                builder.withWindowPaddingY(10)
-            }
-        )
-        terminal.configuration = TerminalSurfaceOptions(
-            backend: .exec,
-            fontSize: 12,
-            workingDirectory: workingDirectory?.path
-        )
-        terminal.makePlatformView = {
-            RuneTerminalView(frame: .zero)
-        }
-        _terminal = StateObject(wrappedValue: terminal)
-    }
 
     var body: some View {
         TerminalSurfaceView(context: terminal)
-            .terminalFocused($isFocused)
-            .onChange(of: focusRequest) { isFocused = true }
+            .onChange(of: focusRequest) { if isVisible { terminal.requestFocus() } }
+            .onChange(of: isVisible) {
+                terminal.isSurfaceVisible = isVisible
+                if isVisible {
+                    terminal.requestFocus()
+                } else if let view = terminal.attachedPlatformView,
+                          view.window?.firstResponder === view {
+                    view.window?.makeFirstResponder(nil)
+                }
+            }
             .accessibilityLabel("Terminal")
             .onAppear {
                 applyTypography()
+                terminal.isSurfaceVisible = isVisible
                 // Request focus once, not on subsequent updates that could interrupt a palette.
-                guard !didRequestInitialFocus else { return }
+                // Ghostty's imperative focus API avoids SwiftUI FocusState resets
+                // resigning the native responder immediately after a session switch.
+                // Source: libghostty-spm TerminalViewState.requestFocus (1.5.2).
+                guard isVisible, !didRequestInitialFocus else { return }
                 didRequestInitialFocus = true
-                isFocused = true
+                terminal.requestFocus()
             }
             .onChange(of: typography) {
                 applyTypography()
@@ -73,7 +58,77 @@ struct TerminalPane: View {
     }
 }
 
-private final class RuneTerminalView: TerminalView {
+final class RuneTerminalView: TerminalView {
+    private var isStopped = false
+    private var isTrackingProcess = false
+    private static var isAssociatingProcess = false
+    private static var canAssociateProcesses = true
+    private(set) var rootProcess: TerminalProcessMonitor.TerminationTarget?
+
+    override func viewDidMoveToWindow() {
+        trackProcessCreation { super.viewDidMoveToWindow() }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        trackProcessCreation { super.setFrameSize(newSize) }
+    }
+
+    override func layout() {
+        trackProcessCreation { super.layout() }
+    }
+
+    override func viewDidChangeBackingProperties() {
+        trackProcessCreation { super.viewDidChangeBackingProperties() }
+    }
+
+    override var configuration: TerminalSurfaceOptions {
+        get { super.configuration }
+        set { trackProcessCreation { super.configuration = newValue } }
+    }
+
+    private func trackProcessCreation(_ update: () -> Void) {
+        guard !isTrackingProcess, Self.canAssociateProcesses, rootProcess == nil, !isStopped,
+              (delegate as? TerminalViewState)?.surface == nil else { update(); return }
+        guard !Self.isAssociatingProcess else {
+            // Reentrant creation of another terminal makes the child set ambiguous.
+            Self.canAssociateProcesses = false
+            update()
+            return
+        }
+        isTrackingProcess = true
+        Self.isAssociatingProcess = true
+        defer {
+            isTrackingProcess = false
+            Self.isAssociatingProcess = false
+        }
+        let previous = TerminalProcessMonitor.childProcesses()
+        update()
+        guard Self.canAssociateProcesses, (delegate as? TerminalViewState)?.surface != nil else { return }
+        rootProcess = TerminalProcessMonitor.newlyStartedProcess(after: previous)
+        if rootProcess == nil {
+            // A delayed child could otherwise be mistaken for the next terminal's
+            // process, including in another window. Keep existing associations,
+            // but stop making new ones after any ambiguous or timed-out launch.
+            Self.canAssociateProcesses = false
+        }
+    }
+
+    override var controller: TerminalController? {
+        get { super.controller }
+        set {
+            guard !isStopped else { return }
+            trackProcessCreation { super.controller = newValue }
+        }
+    }
+
+    func stop() {
+        // SwiftUI can retain removed views. Detach the controller to free the
+        // PTY immediately, and prevent outgoing updates from recreating it.
+        // Source: libghostty-spm TerminalSurfaceCoordinator.rebuildIfReady (1.5.2).
+        isStopped = true
+        super.controller = nil
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 

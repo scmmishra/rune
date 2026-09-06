@@ -6,6 +6,7 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
     let onCommands: () -> Void
     let onProjects: () -> Void
     let onBranches: () -> Void
+    let onNewTerminal: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -33,7 +34,7 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
 
         func install(for view: NSView) {
             // Native terminal/editor responders can consume menu equivalents before
-            // SwiftUI sees them. Route only Rune's palette shortcuts in this window.
+            // SwiftUI sees them. Route Rune's workspace shortcuts in this window.
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self, weak view] event in
                 guard let self, let window = view?.window,
                       window.isKeyWindow, event.window === window,
@@ -47,6 +48,7 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
                 case ("p", [.command, .shift]): action = self.parent.onCommands
                 case ("o", [.command, .shift]): action = self.parent.onProjects
                 case ("b", [.command, .shift]): action = self.parent.onBranches
+                case ("t", [.command, .shift]): action = self.parent.onNewTerminal
                 default: action = nil
                 }
                 guard let action else { return event }
