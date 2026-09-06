@@ -77,11 +77,11 @@ private final class RuneTerminalView: TerminalView {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
-        // Ghostty treats Command-Q as a terminal binding before AppKit can route
-        // it to the application menu. Leave this equivalent for macOS to handle.
+        // Ghostty handles these as terminal bindings before AppKit reaches Rune's
+        // Quit and Settings menu items. Leave app-level equivalents to macOS.
         if event.type == .keyDown,
            modifiers == .command,
-           event.charactersIgnoringModifiers?.lowercased() == "q" {
+           ["q", ","].contains(event.charactersIgnoringModifiers?.lowercased() ?? "") {
             return false
         }
 
