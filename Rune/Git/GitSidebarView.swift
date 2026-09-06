@@ -9,8 +9,7 @@ struct GitSidebarView: View {
     let onOpenDiff: (GitDiffSelection, [GitDiffSelection]) -> Void
     let onOpenCommit: (GitCommit) -> Void
 
-    @StateObject private var model: GitSidebarModel
-    @StateObject private var watcher: WorkspaceWatcher
+    @EnvironmentObject private var model: GitSidebarModel
     @State private var commitMessage = ""
     @State private var pendingDiscard: GitChange?
     @State private var isBranchPickerPresented = false
@@ -29,10 +28,6 @@ struct GitSidebarView: View {
         self.onOpenFile = onOpenFile
         self.onOpenDiff = onOpenDiff
         self.onOpenCommit = onOpenCommit
-        _model = StateObject(wrappedValue: GitSidebarModel(rootURL: rootURL))
-        _watcher = StateObject(
-            wrappedValue: WorkspaceWatcher(rootURL: rootURL, debounceDuration: .milliseconds(300))
-        )
     }
 
     var body: some View {
@@ -58,17 +53,6 @@ struct GitSidebarView: View {
                     historyArea
                 }
             }
-        }
-        .onAppear {
-            watcher.start()
-            model.refresh()
-        }
-        .onDisappear {
-            watcher.stop()
-            model.cancelRefresh()
-        }
-        .onChange(of: watcher.revision) {
-            model.refreshFromWatcher()
         }
         .onChange(of: diffSelections, initial: true) { onSelectionsChange(diffSelections) }
         .sheet(isPresented: $isBranchPickerPresented) {

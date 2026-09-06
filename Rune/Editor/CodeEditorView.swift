@@ -42,6 +42,33 @@ struct CodeEditorView: View {
 
 enum PreviewAction { case find, previousHunk, nextHunk }
 
+// Only immutable copies cross the actor boundary; mutable parser state stays in the worker.
+nonisolated struct HighlightedText: @unchecked Sendable {
+    let value: NSAttributedString
+}
+
+private actor HighlightWorker {
+    private var highlighter: SyntaxHighlighter?
+    private var fileURL: URL?
+    private var fontName = ""
+    private var fontSize: CGFloat = 0
+
+    func highlight(_ text: String, fileURL: URL, fontName: String, fontSize: CGFloat, isDiff: Bool) -> HighlightedText? {
+        guard !Task.isCancelled else { return nil }
+        let font = NSFont(name: fontName, size: fontSize) ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        if isDiff {
+            return HighlightedText(value: NSAttributedString(attributedString: DiffSyntaxHighlighter.highlight(text, font: font)))
+        }
+        if self.fileURL != fileURL || self.fontName != fontName || self.fontSize != fontSize {
+            highlighter = SyntaxHighlighter(fileURL: fileURL, font: font)
+            self.fileURL = fileURL
+            self.fontName = fontName
+            self.fontSize = fontSize
+        }
+        return HighlightedText(value: NSAttributedString(attributedString: highlighter!.highlight(text)))
+    }
+}
+
 struct NativeCodeEditorView: NSViewRepresentable {
     enum Presentation {
         case source
@@ -58,6 +85,10 @@ struct NativeCodeEditorView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
+    }
+
+    static func dismantleNSView(_ view: NSScrollView, coordinator: Coordinator) {
+        coordinator.highlightTask?.cancel()
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -167,19 +198,12 @@ struct NativeCodeEditorView: NSViewRepresentable {
         var typography: RuneTypography
         let textStorage = NSTextStorage()
         private var isRendering = false
-        private var syntaxHighlighter: SyntaxHighlighter?
-        private var syntaxFileURL: URL?
+        private let worker = HighlightWorker()
+        var highlightTask: Task<Void, Never>?
 
         init(parent: NativeCodeEditorView) {
             self.parent = parent
             typography = parent.typography
-            if parent.presentation == .source {
-                syntaxFileURL = parent.fileURL
-                syntaxHighlighter = SyntaxHighlighter(
-                    fileURL: parent.fileURL,
-                    font: parent.typography.nsFont(size: 12)
-                )
-            }
         }
 
         func textDidChange(_ notification: Notification) {
@@ -187,7 +211,7 @@ struct NativeCodeEditorView: NSViewRepresentable {
                   let textView = notification.object as? NSTextView else { return }
 
             parent.text = textView.string
-            highlight(textView, fileURL: parent.fileURL, typography: typography)
+            highlight(textView, fileURL: parent.fileURL, typography: typography, debounce: true)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -203,10 +227,10 @@ struct NativeCodeEditorView: NSViewRepresentable {
             isRendering = true
             if self.typography != typography {
                 self.typography = typography
-                syntaxHighlighter = nil
-                syntaxFileURL = nil
             }
             textView.string = text
+            textView.textStorage?.setAttributes(SyntaxHighlighter.baseAttributes(font: typography.nsFont(size: 12)),
+                                               range: NSRange(location: 0, length: (text as NSString).length))
             highlight(textView, fileURL: fileURL, typography: typography)
             isRendering = false
         }
@@ -214,44 +238,37 @@ struct NativeCodeEditorView: NSViewRepresentable {
         private func highlight(
             _ textView: NSTextView,
             fileURL: URL,
-            typography: RuneTypography
+            typography: RuneTypography,
+            debounce: Bool = false
         ) {
-            guard let textStorage = textView.textStorage else { return }
-
-            let selectedRanges = textView.selectedRanges
+            highlightTask?.cancel()
+            let source = textView.string
             let font = typography.nsFont(size: 12)
-            isRendering = true
-            let highlightedText = switch parent.presentation {
-            case .source:
-                sourceHighlight(textView.string, fileURL: fileURL, font: font)
-            case .diff:
-                DiffSyntaxHighlighter.highlight(textView.string, font: font)
+            let isDiff = parent.presentation == .diff
+            let worker = worker
+            highlightTask = Task { [weak self, weak textView] in
+                if debounce { try? await Task.sleep(for: .milliseconds(60)) }
+                guard !Task.isCancelled else { return }
+                let result = await worker.highlight(source, fileURL: fileURL, fontName: font.fontName,
+                                                    fontSize: font.pointSize, isDiff: isDiff)
+                guard !Task.isCancelled, let result, let self, let textView,
+                      textView.string == source, let storage = textView.textStorage else { return }
+                self.isRendering = true
+                var changes: [(NSRange, [NSAttributedString.Key: Any])] = []
+                result.value.enumerateAttributes(in: NSRange(location: 0, length: result.value.length)) { attributes, range, _ in
+                    storage.enumerateAttributes(in: range) { existing, subrange, _ in
+                        if !NSDictionary(dictionary: existing).isEqual(to: attributes) {
+                            changes.append((subrange, attributes))
+                        }
+                    }
+                }
+                // Attribute-only edits preserve undo, selection, and layout outside changed runs.
+                storage.beginEditing()
+                for (range, attributes) in changes { storage.setAttributes(attributes, range: range) }
+                storage.endEditing()
+                textView.typingAttributes = SyntaxHighlighter.baseAttributes(font: font)
+                self.isRendering = false
             }
-            textStorage.setAttributedString(highlightedText)
-            textView.selectedRanges = selectedRanges.map { value in
-                let range = value.rangeValue
-                let location = min(range.location, textStorage.length)
-                let length = min(range.length, textStorage.length - location)
-                return NSValue(range: NSRange(location: location, length: length))
-            }
-            textView.typingAttributes = SyntaxHighlighter.baseAttributes(font: font)
-            (textView as? RuneTextView)?.refreshCurrentLineHighlight()
-            isRendering = false
-        }
-
-        private func sourceHighlight(
-            _ source: String,
-            fileURL: URL,
-            font: NSFont
-        ) -> NSAttributedString {
-            if let syntaxHighlighter, syntaxFileURL == fileURL {
-                return syntaxHighlighter.highlight(source)
-            }
-
-            let syntaxHighlighter = SyntaxHighlighter(fileURL: fileURL, font: font)
-            syntaxFileURL = fileURL
-            self.syntaxHighlighter = syntaxHighlighter
-            return syntaxHighlighter.highlight(source)
         }
     }
 }

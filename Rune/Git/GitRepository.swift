@@ -47,7 +47,7 @@ nonisolated enum GitRepository {
         let errorMessage: String?
     }
 
-    static func snapshot(at rootURL: URL) -> SnapshotResult {
+    static func snapshot(at rootURL: URL, cachedCommits: [GitCommit]? = nil) -> SnapshotResult {
         let statusResult = runGit(
             ["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all"],
             at: rootURL,
@@ -64,7 +64,7 @@ nonisolated enum GitRepository {
             from: runGit(["diff", "--numstat", "-z", "--no-renames"], at: rootURL, readOnly: true).data
         )
         let parsedStatus = parseStatus(statusResult.data)
-        let commits = commitHistory(at: rootURL)
+        let commits = cachedCommits ?? commitHistory(at: rootURL)
         let changes = parsedStatus.changes.map { change in
             var change = change
             change.stagedDiff = combinedDiff(for: change, in: stagedDiffs)

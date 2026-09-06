@@ -22,13 +22,16 @@ struct GitDiffDrawer: View {
     @State private var contents = ""
     @State private var loadError: String?
     @State private var isLoading = true
+    @EnvironmentObject private var repository: GitSidebarModel
+    @State private var cachedDiffs: [String: GitRepository.DiffResult] = [:]
+    @State private var cacheRevision = -1
 
     private var fileURL: URL {
         rootURL.appending(path: change.path)
     }
 
     private var requestID: String {
-        "\(area)-\(change.path)"
+        "\(repository.contentRevision)-\(area)-\(change.path)"
     }
 
     var body: some View {
@@ -37,11 +40,7 @@ struct GitDiffDrawer: View {
 
             Divider()
 
-            if isLoading {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let loadError {
+            if let loadError {
                 ContentUnavailableView(
                     "Unable to Load Diff",
                     systemImage: "exclamationmark.triangle",
@@ -56,6 +55,9 @@ struct GitDiffDrawer: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
+                .overlay {
+                    if isLoading { ProgressView().controlSize(.small) }
+                }
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -108,7 +110,19 @@ struct GitDiffDrawer: View {
     }
 
     private func load() async {
+        if cacheRevision != repository.contentRevision {
+            cachedDiffs.removeAll()
+            cacheRevision = repository.contentRevision
+        }
+        let requestID = requestID
+        if let cached = cachedDiffs[requestID] {
+            contents = cached.contents
+            loadError = cached.errorMessage
+            isLoading = false
+            return
+        }
         isLoading = true
+        contents = ""
         loadError = nil
 
         let rootURL = rootURL
@@ -119,6 +133,11 @@ struct GitDiffDrawer: View {
         }.value
 
         guard !Task.isCancelled else { return }
+        // Bound the cache to a few small previews; large diffs should not accumulate in memory.
+        if result.errorMessage == nil, result.contents.utf8.count <= 500_000 {
+            if cachedDiffs.count >= 4 { cachedDiffs.removeAll() }
+            cachedDiffs[requestID] = result
+        }
         contents = result.contents
         loadError = result.errorMessage
         isLoading = false

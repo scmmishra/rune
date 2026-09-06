@@ -8,6 +8,7 @@ struct FileEditorDrawer: View {
     @State private var text = ""
     @State private var savedText = ""
     @State private var loadError: String?
+    @State private var isLoading = true
 
     private var isDirty: Bool {
         text != savedText
@@ -28,7 +29,8 @@ struct FileEditorDrawer: View {
             } else {
                 CodeEditorView(
                     text: $text,
-                    fileURL: fileURL
+                    fileURL: fileURL,
+                    isEditable: !isLoading
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
@@ -45,7 +47,7 @@ struct FileEditorDrawer: View {
             DrawerEscapeMonitor(onEscape: onClose)
         }
         .task(id: fileURL) {
-            load()
+            await load()
         }
         .focusedSceneValue(\.saveCurrentFile, save)
     }
@@ -80,27 +82,28 @@ struct FileEditorDrawer: View {
         .frame(height: 38)
     }
 
-    private func load() {
-        do {
-            let data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
-            guard data.count <= 5_000_000 else {
-                throw FileEditorError.tooLarge
-            }
-            guard let contents = String(data: data, encoding: .utf8) else {
-                throw FileEditorError.notText
-            }
-            text = contents
-            savedText = contents
-            loadError = nil
-        } catch {
-            text = ""
-            savedText = ""
-            loadError = error.localizedDescription
-        }
+    private func load() async {
+        isLoading = true
+        let fileURL = fileURL
+        let result = await Task.detached(priority: .userInitiated) { () -> (String, String?) in
+            do {
+                let size = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard size <= 5_000_000 else { throw FileEditorError.tooLarge }
+                let data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
+                guard data.count <= 5_000_000 else { throw FileEditorError.tooLarge }
+                guard let contents = String(data: data, encoding: .utf8) else { throw FileEditorError.notText }
+                return (contents, nil)
+            } catch { return ("", error.localizedDescription) }
+        }.value
+        guard !Task.isCancelled else { return }
+        text = result.0
+        savedText = result.0
+        loadError = result.1
+        isLoading = false
     }
 
     private func save() {
-        guard loadError == nil else { return }
+        guard loadError == nil, !isLoading else { return }
 
         do {
             try text.write(to: fileURL, atomically: true, encoding: .utf8)
@@ -169,7 +172,7 @@ private struct DrawerEscapeMonitor: NSViewRepresentable {
     }
 }
 
-private enum FileEditorError: LocalizedError {
+nonisolated private enum FileEditorError: LocalizedError {
     case tooLarge
     case notText
 

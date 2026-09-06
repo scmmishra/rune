@@ -3,6 +3,14 @@ import SwiftUI
 
 struct WorkspaceView: View {
     let directoryURL: URL?
+    @StateObject private var repository: GitSidebarModel
+
+    init(directoryURL: URL?) {
+        self.directoryURL = directoryURL
+        _repository = StateObject(wrappedValue: GitSidebarModel(
+            rootURL: directoryURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        ))
+    }
     @State private var openDrawer: WorkspaceDrawer?
     @State private var isQuickOpenPresented = false
     @State private var isDrawerVisible = false
@@ -115,6 +123,9 @@ struct WorkspaceView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .environmentObject(repository)
+        .onAppear { if directoryURL != nil { repository.start() } }
+        .onDisappear { repository.stop() }
         .onAppear {
             guard let directoryURL else { return }
             let widths = UserDefaults.standard.array(forKey: "sidebarWidths:" + directoryURL.path) as? [Double]

@@ -4,6 +4,7 @@ struct QuickOpenPanel: View {
     let rootURL: URL
     let onOpen: (URL) -> Void
     let onClose: () -> Void
+    @EnvironmentObject private var repository: GitSidebarModel
 
     @State private var query = ""
     @State private var files: [WorkspaceFileIndex.Entry] = []
@@ -70,9 +71,12 @@ struct QuickOpenPanel: View {
         .onChange(of: query) {
             refreshMatches()
         }
-        .task(id: rootURL) {
-            await loadFiles()
+        .onChange(of: repository.files, initial: true) {
+            files = repository.files
+            isLoading = !repository.hasLoaded
+            refreshMatches()
         }
+        .onChange(of: repository.hasLoaded) { isLoading = !repository.hasLoaded }
         .onDisappear {
             searchTask?.cancel()
         }
@@ -135,19 +139,6 @@ struct QuickOpenPanel: View {
         }
 
         return .ignored
-    }
-
-    private func loadFiles() async {
-        isLoading = true
-        let rootURL = rootURL
-        let indexedFiles = await Task.detached(priority: .userInitiated) {
-            WorkspaceFileIndex.files(in: rootURL)
-        }.value
-
-        guard !Task.isCancelled else { return }
-        files = indexedFiles
-        isLoading = false
-        refreshMatches()
     }
 
     private func refreshMatches() {

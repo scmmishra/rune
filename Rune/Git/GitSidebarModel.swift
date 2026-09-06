@@ -6,6 +6,12 @@ final class GitSidebarModel: ObservableObject {
     private static let indexRefreshFallbackDelay = Duration.milliseconds(750)
 
     @Published private(set) var snapshot = GitSnapshot.empty
+    @Published private(set) var files: [WorkspaceFileIndex.Entry] = []
+    @Published private(set) var revision = 0
+    @Published private(set) var contentRevision = 0
+    @Published private(set) var hasLoaded = false
+    private let watcher: WorkspaceWatcher
+    private var watcherSubscription: AnyCancellable?
     @Published private(set) var isCommitting = false
     @Published private(set) var isTrashing = false
     @Published private(set) var isDiscarding = false
@@ -18,6 +24,9 @@ final class GitSidebarModel: ObservableObject {
     private var indexRefreshTask: Task<Void, Never>?
     private var refreshRequested = false
     private var isUpdatingIndex = false
+    private var needsFileIndex = true
+    private var needsHistory = true
+    private var historyUpdatedAt = Date.distantPast
 
     var errorMessage: String? {
         actionErrorMessage ?? repositoryErrorMessage
@@ -33,6 +42,22 @@ final class GitSidebarModel: ObservableObject {
 
     init(rootURL: URL) {
         self.rootURL = rootURL
+        watcher = WorkspaceWatcher(rootURL: rootURL, debounceDuration: .milliseconds(300))
+    }
+
+    func start() {
+        guard watcherSubscription == nil else { return }
+        watcherSubscription = watcher.$revision.dropFirst().sink { [weak self] _ in
+            self?.refreshFromWatcher()
+        }
+        watcher.start()
+        refresh()
+    }
+
+    func stop() {
+        watcher.stop()
+        watcherSubscription = nil
+        cancelRefresh()
     }
 
     func switchBranch(_ name: String, create: Bool) async -> Bool {
@@ -57,18 +82,33 @@ final class GitSidebarModel: ObservableObject {
 
         refreshRequested = false
         let rootURL = rootURL
+        let cachedFiles = needsFileIndex ? nil : files
+        let cachedCommits = needsHistory || Date().timeIntervalSince(historyUpdatedAt) > 60 ? nil : snapshot.commits
+        needsFileIndex = false
+        needsHistory = false
 
         refreshTask = Task {
             let result = await Task.detached(priority: .utility) {
-                GitRepository.snapshot(at: rootURL)
+                (GitRepository.snapshot(at: rootURL, cachedCommits: cachedCommits),
+                 cachedFiles ?? WorkspaceFileIndex.files(in: rootURL))
             }.value
 
             guard !Task.isCancelled else { return }
-            if snapshot != result.snapshot {
-                snapshot = result.snapshot
+            let changed = (!result.0.snapshot.isRepository && cachedFiles == nil) ||
+                snapshot.isRepository != result.0.snapshot.isRepository || files != result.1 ||
+                snapshot.changes.count != result.0.snapshot.changes.count ||
+                zip(snapshot.changes, result.0.snapshot.changes).contains {
+                    $0.path != $1.path || $0.stagedState != $1.stagedState || $0.unstagedState != $1.unstagedState
+                }
+            if snapshot != result.0.snapshot {
+                snapshot = result.0.snapshot
             }
-            if repositoryErrorMessage != result.errorMessage {
-                repositoryErrorMessage = result.errorMessage
+            if files != result.1 { files = result.1 }
+            if changed || !hasLoaded { revision &+= 1 }
+            hasLoaded = true
+            if cachedCommits == nil { historyUpdatedAt = Date() }
+            if repositoryErrorMessage != result.0.errorMessage {
+                repositoryErrorMessage = result.0.errorMessage
             }
             refreshTask = nil
 
@@ -80,14 +120,20 @@ final class GitSidebarModel: ObservableObject {
     }
 
     func cancelRefresh() {
+        contentRevision &+= 1
         refreshTask?.cancel()
         refreshTask = nil
         indexRefreshTask?.cancel()
         indexRefreshTask = nil
         refreshRequested = false
+        needsFileIndex = true
+        needsHistory = true
     }
 
     func refreshFromWatcher() {
+        contentRevision &+= 1
+        needsFileIndex = needsFileIndex || watcher.requiresFileIndexRefresh
+        needsHistory = needsHistory || watcher.requiresHistoryRefresh
         indexRefreshTask?.cancel()
         indexRefreshTask = nil
         refresh()

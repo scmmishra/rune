@@ -20,9 +20,10 @@ private struct FileTreeContents: View {
     let rootURL: URL
     let onOpenFile: (URL) -> Void
     @State private var items: [FileTreeItem] = []
+    @State private var visibleItems: [VisibleFileTreeItem] = []
     @State private var expandedDirectories: Set<URL>
     @State private var selectedURL: URL?
-    @StateObject private var watcher: WorkspaceWatcher
+    @EnvironmentObject private var repository: GitSidebarModel
     @State private var isFullScreen = false
     @FocusState private var hasKeyboardFocus: Bool
     @Environment(\.runeTypography) private var typography
@@ -32,7 +33,6 @@ private struct FileTreeContents: View {
         self.onOpenFile = onOpenFile
         let paths = UserDefaults.standard.stringArray(forKey: "expandedDirectories:" + rootURL.path) ?? []
         _expandedDirectories = State(initialValue: Set(paths.map { URL(fileURLWithPath: $0, isDirectory: true) }))
-        _watcher = StateObject(wrappedValue: WorkspaceWatcher(rootURL: rootURL))
     }
 
     var body: some View {
@@ -63,28 +63,30 @@ private struct FileTreeContents: View {
         .onKeyPress(keys: [.upArrow, .downArrow, .return]) { keyPress in
             handleKeyPress(keyPress.key)
         }
-        .onAppear {
-            watcher.start()
-        }
-        .onDisappear {
-            watcher.stop()
-        }
         .onChange(of: expandedDirectories) {
+            visibleItems = flattened(items, depth: 0)
             UserDefaults.standard.set(expandedDirectories.map(\.path).sorted(), forKey: "expandedDirectories:" + rootURL.path)
         }
-        .task(id: watcher.revision) {
+        .task(id: repository.revision) {
+            guard repository.hasLoaded else { return }
             let rootURL = rootURL
+            let snapshot = repository.snapshot
+            let paths = repository.files.map(\.relativePath)
             let refreshedItems = await Task.detached(priority: .userInitiated) {
-                FileTreeItem.workspaceContents(of: rootURL)
+                if snapshot.isRepository {
+                    let statuses = Dictionary(uniqueKeysWithValues: snapshot.changes.map {
+                        ($0.path, $0.unstagedState == .untracked || $0.stagedState == .added
+                            ? FileTreeStatus.untracked : FileTreeStatus.modified)
+                    })
+                    return GitFileTree.makeTree(from: paths, statuses: statuses, rootedAt: rootURL)
+                }
+                return FileTreeItem.contents(of: rootURL)
             }.value
 
             guard !Task.isCancelled else { return }
             items = refreshedItems
+            visibleItems = flattened(refreshedItems, depth: 0)
         }
-    }
-
-    private var visibleItems: [VisibleFileTreeItem] {
-        flattened(items, depth: 0)
     }
 
     private func flattened(_ items: [FileTreeItem], depth: Int) -> [VisibleFileTreeItem] {
@@ -417,7 +419,7 @@ nonisolated private enum GitFileTree {
         return statuses
     }
 
-    private static func makeTree(
+    static func makeTree(
         from paths: [String],
         statuses: [String: FileTreeStatus],
         rootedAt rootURL: URL

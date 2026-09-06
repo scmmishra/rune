@@ -4,7 +4,7 @@ import TreeSitterGo
 import TreeSitterRuby
 import TreeSitterSwift
 
-final class SyntaxHighlighter {
+nonisolated final class SyntaxHighlighter {
     static func baseAttributes(font: NSFont) -> [NSAttributedString.Key: Any] {
         [
             .font: font,
@@ -77,7 +77,7 @@ final class SyntaxHighlighter {
     }
 }
 
-enum DiffSyntaxHighlighter {
+nonisolated enum DiffSyntaxHighlighter {
     static func highlight(_ source: String, font: NSFont) -> NSAttributedString {
         let output = NSMutableAttributedString(
             string: source,
@@ -118,9 +118,11 @@ enum DiffSyntaxHighlighter {
     }
 }
 
-private final class TreeSitterSyntaxHighlighter {
+nonisolated private final class TreeSitterSyntaxHighlighter {
     private let parser: Parser
     private let query: Query
+    private var previousSource = ""
+    private var previousTree: MutableTree?
 
     init?(fileURL: URL) {
         guard let configuration = TreeSitterLanguageRegistry.configuration(for: fileURL),
@@ -138,7 +140,15 @@ private final class TreeSitterSyntaxHighlighter {
     }
 
     func apply(to output: NSMutableAttributedString, source: String) -> Bool {
-        guard let tree = parser.parse(source) else { return false }
+        if let previousTree {
+            previousTree.edit(Self.edit(from: previousSource, to: source))
+        }
+        guard let tree = parser.parse(tree: previousTree, string: source) else {
+            previousTree = nil
+            return false
+        }
+        previousTree = tree
+        previousSource = source
 
         // SwiftTreeSitter exposes query results as UTF-16 NSRanges, which match
         // NSTextStorage without manual byte-offset conversion.
@@ -159,9 +169,35 @@ private final class TreeSitterSyntaxHighlighter {
 
         return true
     }
+
+    private static func edit(from oldSource: String, to newSource: String) -> InputEdit {
+        let old = Array(oldSource.utf16)
+        let new = Array(newSource.utf16)
+        var start = 0
+        while start < min(old.count, new.count), old[start] == new[start] { start += 1 }
+        var oldEnd = old.count
+        var newEnd = new.count
+        while oldEnd > start, newEnd > start, old[oldEnd - 1] == new[newEnd - 1] {
+            oldEnd -= 1
+            newEnd -= 1
+        }
+        // The parser consumes UTF-16, so byte offsets and point columns use two bytes per code unit.
+        func point(_ units: [UInt16], at end: Int) -> Point {
+            var row = 0
+            var lineStart = 0
+            for index in 0..<end where units[index] == 10 {
+                row += 1
+                lineStart = index + 1
+            }
+            return Point(row: row, column: (end - lineStart) * 2)
+        }
+        return InputEdit(startByte: start * 2, oldEndByte: oldEnd * 2, newEndByte: newEnd * 2,
+                         startPoint: point(old, at: start), oldEndPoint: point(old, at: oldEnd),
+                         newEndPoint: point(new, at: newEnd))
+    }
 }
 
-private enum TreeSitterLanguageRegistry {
+nonisolated private enum TreeSitterLanguageRegistry {
     static func configuration(for fileURL: URL) -> LanguageConfiguration? {
         switch fileURL.pathExtension.lowercased() {
         case "swift":
@@ -176,7 +212,7 @@ private enum TreeSitterLanguageRegistry {
     }
 }
 
-private enum SyntaxColor {
+nonisolated private enum SyntaxColor {
     static func color(for capture: String) -> NSColor? {
         if capture == "none" {
             return .labelColor
@@ -221,7 +257,7 @@ private enum SyntaxColor {
     }
 }
 
-private enum FallbackLanguage: Equatable {
+nonisolated private enum FallbackLanguage: Equatable {
     case cStyle
     case hashComments
     case structuredData
