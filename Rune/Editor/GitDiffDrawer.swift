@@ -15,6 +15,7 @@ struct GitDiffDrawer: View {
     let rootURL: URL
     let change: GitChange
     let area: GitChange.Area
+    var position: String?
     let onClose: () -> Void
     let onNavigate: (GitDiffNavigation) -> Void
 
@@ -91,6 +92,10 @@ struct GitDiffDrawer: View {
                 .background(Color.primary.opacity(0.06), in: Capsule())
 
             Spacer()
+
+            if let position {
+                Text(position).runeFont(size: 10).foregroundStyle(.secondary)
+            }
 
             Button(action: onClose) {
                 Image(systemName: "xmark")

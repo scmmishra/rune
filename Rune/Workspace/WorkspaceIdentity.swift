@@ -1,4 +1,30 @@
 import Foundation
+import AppKit
+import SwiftUI
+
+struct WorkspaceFramePersistence: NSViewRepresentable {
+    let path: String
+
+    func makeNSView(context: Context) -> FrameView { FrameView(path: path) }
+    func updateNSView(_ view: FrameView, context: Context) {}
+
+    final class FrameView: NSView {
+        let path: String
+        init(path: String) {
+            self.path = path
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            // AppKit saves frame changes and constrains restored frames to available screens.
+            let name = "workspace:" + path
+            window.setFrameUsingName(name)
+            window.setFrameAutosaveName(name)
+        }
+    }
+}
 
 struct WorkspaceIdentity: Codable, Hashable {
     let path: String

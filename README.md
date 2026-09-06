@@ -34,6 +34,19 @@ rune path/to/project  # Open another project
 
 Press `Command+P` to find a file and `Command+,` to adjust Rune's font family and size.
 
+Press `Command+Shift+O` to search recent projects, or `Command+Shift+B` to
+search local branches and switch or create a branch from the current HEAD.
+Git reports any local changes that prevent switching without discarding them.
+
+Previews have a Find button (`Command+F`). Diff previews show the selected file's
+position and highlight it in the Git sidebar. Use Up/Down to move between files
+when the text editor is not focused, and `Option+Command+Up/Down` to jump between
+hunks. The hunk buttons work while the editor is focused too.
+
+Rune reopens the most recent project when launched without a folder. Each project
+remembers its window frame, expanded folders, and sidebar widths. Drag the thin
+edges beside the terminal to resize the sidebars.
+
 For an incremental development loop, run `mise run dev`.
 
 ## Credits

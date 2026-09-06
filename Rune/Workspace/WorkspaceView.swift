@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct WorkspaceView: View {
@@ -7,9 +8,16 @@ struct WorkspaceView: View {
     @State private var isDrawerVisible = false
     @State private var drawerCleanupTask: Task<Void, Never>?
     @State private var diffSelections: [GitDiffSelection] = []
+    @State private var fileSidebarWidth: CGFloat = 240
+    @State private var gitSidebarWidth: CGFloat = 240
+    @State private var dragStart: CGFloat?
+
+    private var selectedDiff: GitDiffSelection? {
+        guard isDrawerVisible, case let .diff(change, area) = openDrawer else { return nil }
+        return GitDiffSelection(change: change, area: area)
+    }
 
     private enum Layout {
-        static let sidebarWidthRatio: CGFloat = 0.20
         static let workspaceInset: CGFloat = 16
         static let workspaceCornerRadius: CGFloat = 14
         static let drawerCloseDuration = Duration.milliseconds(90)
@@ -26,7 +34,8 @@ struct WorkspaceView: View {
                             Color.clear
                         }
                     }
-                    .frame(width: geometry.size.width * Layout.sidebarWidthRatio)
+                    .frame(width: min(fileSidebarWidth, geometry.size.width * 0.28))
+                    sidebarDivider(width: $fileSidebarWidth, direction: 1, availableWidth: geometry.size.width)
 
                     Group {
                         if let directoryURL {
@@ -36,7 +45,7 @@ struct WorkspaceView: View {
                             WorkspacePlaceholder()
                         }
                     }
-                    .frame(minWidth: 480)
+                    .frame(minWidth: min(480, geometry.size.width * 0.40))
                     .clipShape(
                         RoundedRectangle(
                             cornerRadius: Layout.workspaceCornerRadius,
@@ -52,10 +61,13 @@ struct WorkspaceView: View {
                     }
                     .padding(.vertical, Layout.workspaceInset)
 
+                    sidebarDivider(width: $gitSidebarWidth, direction: -1, availableWidth: geometry.size.width)
                     Group {
                         if let directoryURL {
                             GitSidebarView(
                                 rootURL: directoryURL,
+                                selectedDiff: selectedDiff,
+                                onSelectionsChange: { diffSelections = $0 },
                                 onOpenFile: open,
                                 onOpenDiff: { selection, selections in
                                     showDiff(selection, among: selections)
@@ -69,7 +81,7 @@ struct WorkspaceView: View {
                             Color.clear
                         }
                     }
-                    .frame(width: geometry.size.width * Layout.sidebarWidthRatio)
+                    .frame(width: min(gitSidebarWidth, geometry.size.width * 0.28))
                 }
 
                 if let openDrawer, let directoryURL {
@@ -103,6 +115,14 @@ struct WorkspaceView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear {
+            guard let directoryURL else { return }
+            let widths = UserDefaults.standard.array(forKey: "sidebarWidths:" + directoryURL.path) as? [Double]
+            if let widths, widths.count == 2 {
+                fileSidebarWidth = max(160, widths[0])
+                gitSidebarWidth = max(160, widths[1])
+            }
+        }
         .ignoresSafeArea(.container, edges: .top)
         .focusedSceneValue(\.presentQuickOpen) {
             presentQuickOpen()
@@ -155,6 +175,7 @@ struct WorkspaceView: View {
                 rootURL: rootURL,
                 change: change,
                 area: area,
+                position: diffSelections.firstIndex(where: { $0.change.path == change.path && $0.area == area }).map { "\($0 + 1) of \(diffSelections.count)" },
                 onClose: closeDrawer,
                 onNavigate: navigateDiff
             )
@@ -191,6 +212,30 @@ struct WorkspaceView: View {
 
         let selection = diffSelections[nextIndex]
         openDrawer = .diff(selection.change, selection.area)
+    }
+
+    private func sidebarDivider(width: Binding<CGFloat>, direction: CGFloat, availableWidth: CGFloat) -> some View {
+        Color.clear
+            .frame(width: 4)
+            .contentShape(Rectangle())
+            .onHover { isHovered in
+                if isHovered {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if dragStart == nil { dragStart = width.wrappedValue }
+                    width.wrappedValue = min(max(160, (dragStart ?? width.wrappedValue) + direction * value.translation.width), availableWidth * 0.28)
+                }
+                .onEnded { _ in
+                    dragStart = nil
+                    guard let directoryURL else { return }
+                    UserDefaults.standard.set([Double(fileSidebarWidth), Double(gitSidebarWidth)], forKey: "sidebarWidths:" + directoryURL.path)
+                })
+            .accessibilityLabel("Resize sidebar")
     }
 }
 

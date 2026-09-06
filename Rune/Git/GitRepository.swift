@@ -1,6 +1,22 @@
 import Foundation
 
 nonisolated enum GitRepository {
+    static func branches(at rootURL: URL) -> (names: [String], error: String?) {
+        let result = runGit(["for-each-ref", "--format=%(refname:short)", "refs/heads/"], at: rootURL, readOnly: true)
+        guard result.status == 0 else { return ([], errorMessage(from: result.data)) }
+        return (String(decoding: result.data, as: UTF8.self).split(separator: "\n").map(String.init), nil)
+    }
+
+    static func switchBranch(_ name: String, create: Bool, at rootURL: URL) -> CommitResult {
+        if create {
+            let validation = runGit(["check-ref-format", "--branch", name], at: rootURL, readOnly: true)
+            guard validation.status == 0, !name.hasPrefix("-") else {
+                return CommitResult(succeeded: false, errorMessage: "Enter a valid branch name.")
+            }
+        }
+        let result = runGit(["switch"] + (create ? ["-c", name] : ["--", name]), at: rootURL, readOnly: false)
+        return CommitResult(succeeded: result.status == 0, errorMessage: result.status == 0 ? nil : errorMessage(from: result.data))
+    }
     private static let maximumRenderedCommitDiffBytes = 5_000_000
 
     enum IndexAction: Sendable {

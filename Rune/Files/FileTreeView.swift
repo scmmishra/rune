@@ -30,7 +30,8 @@ private struct FileTreeContents: View {
     init(rootURL: URL, onOpenFile: @escaping (URL) -> Void) {
         self.rootURL = rootURL
         self.onOpenFile = onOpenFile
-        _expandedDirectories = State(initialValue: [])
+        let paths = UserDefaults.standard.stringArray(forKey: "expandedDirectories:" + rootURL.path) ?? []
+        _expandedDirectories = State(initialValue: Set(paths.map { URL(fileURLWithPath: $0, isDirectory: true) }))
         _watcher = StateObject(wrappedValue: WorkspaceWatcher(rootURL: rootURL))
     }
 
@@ -67,6 +68,9 @@ private struct FileTreeContents: View {
         }
         .onDisappear {
             watcher.stop()
+        }
+        .onChange(of: expandedDirectories) {
+            UserDefaults.standard.set(expandedDirectories.map(\.path).sorted(), forKey: "expandedDirectories:" + rootURL.path)
         }
         .task(id: watcher.revision) {
             let rootURL = rootURL

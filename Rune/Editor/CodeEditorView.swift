@@ -1,7 +1,48 @@
 import AppKit
 import SwiftUI
 
-struct CodeEditorView: NSViewRepresentable {
+struct CodeEditorView: View {
+    typealias Presentation = NativeCodeEditorView.Presentation
+    @Binding var text: String
+    let fileURL: URL
+    var isEditable = true
+    var presentation: Presentation = .source
+    @State private var request = 0
+    @State private var action = PreviewAction.find
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button { perform(.find) } label: { Label("Find", systemImage: "magnifyingglass") }
+                    .keyboardShortcut("f", modifiers: .command)
+                Spacer()
+                if presentation == .diff {
+                    Button { perform(.previousHunk) } label: { Image(systemName: "chevron.up") }
+                        .keyboardShortcut(.upArrow, modifiers: [.option, .command])
+                        .help("Previous Hunk (⌥⌘↑)")
+                    Button { perform(.nextHunk) } label: { Image(systemName: "chevron.down") }
+                        .keyboardShortcut(.downArrow, modifiers: [.option, .command])
+                        .help("Next Hunk (⌥⌘↓)")
+                }
+            }
+            .buttonStyle(.plain)
+            .runeFont(size: 11)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            NativeCodeEditorView(text: $text, fileURL: fileURL, isEditable: isEditable,
+                                 presentation: presentation, request: request, action: action)
+        }
+    }
+
+    private func perform(_ action: PreviewAction) {
+        self.action = action
+        request += 1
+    }
+}
+
+enum PreviewAction { case find, previousHunk, nextHunk }
+
+struct NativeCodeEditorView: NSViewRepresentable {
     enum Presentation {
         case source
         case diff
@@ -12,6 +53,8 @@ struct CodeEditorView: NSViewRepresentable {
     let fileURL: URL
     var isEditable = true
     var presentation: Presentation = .source
+    var request = 0
+    var action = PreviewAction.find
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -55,6 +98,7 @@ struct CodeEditorView: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.usesFindPanel = true
+        textView.usesFindBar = true
         textView.isIncrementalSearchingEnabled = true
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 12, height: 10)
@@ -82,6 +126,30 @@ struct CodeEditorView: NSViewRepresentable {
         context.coordinator.parent = self
         textView.isEditable = isEditable
 
+        if context.coordinator.lastRequest != request {
+            context.coordinator.lastRequest = request
+            switch action {
+            case .find:
+                scrollView.window?.makeFirstResponder(textView)
+                let item = NSMenuItem()
+                item.tag = NSTextFinder.Action.showFindInterface.rawValue
+                textView.performFindPanelAction(item)
+            case .previousHunk, .nextHunk:
+                let source = textView.string as NSString
+                let expression = try? NSRegularExpression(pattern: "^@@", options: .anchorsMatchLines)
+                let locations = expression?.matches(in: textView.string, range: NSRange(location: 0, length: source.length)).map { $0.range.location } ?? []
+                let current = textView.selectedRange().location
+                let target = action == .nextHunk
+                    ? locations.first(where: { $0 > current }) ?? locations.last
+                    : locations.last(where: { $0 < current }) ?? locations.first
+                if let target {
+                    let range = source.lineRange(for: NSRange(location: target, length: 0))
+                    textView.setSelectedRange(NSRange(location: target, length: 0))
+                    textView.scrollRangeToVisible(range)
+                }
+            }
+        }
+
         if textView.string != text || context.coordinator.typography != typography {
             context.coordinator.render(
                 text,
@@ -94,14 +162,15 @@ struct CodeEditorView: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: CodeEditorView
+        var parent: NativeCodeEditorView
+        var lastRequest = 0
         var typography: RuneTypography
         let textStorage = NSTextStorage()
         private var isRendering = false
         private var syntaxHighlighter: SyntaxHighlighter?
         private var syntaxFileURL: URL?
 
-        init(parent: CodeEditorView) {
+        init(parent: NativeCodeEditorView) {
             self.parent = parent
             typography = parent.typography
             if parent.presentation == .source {

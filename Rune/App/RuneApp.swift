@@ -26,11 +26,14 @@ private struct WorkspaceWindow: View {
     @Environment(\.openWindow) private var openWindow
     @State private var routedCommandLineDirectory = false
     @State private var recentWorkspaces = RecentWorkspaces.load()
+    @State private var isProjectPickerPresented = false
 
     var body: some View {
         Group {
             if let workspace {
                 WorkspaceView(directoryURL: workspace.directoryURL)
+                    .id(workspace.path)
+                    .background { WorkspaceFramePersistence(path: workspace.path) }
             } else if routedCommandLineDirectory {
                 ProjectPickerView(
                     workspaces: recentWorkspaces,
@@ -41,7 +44,20 @@ private struct WorkspaceWindow: View {
             }
         }
             .navigationTitle(workspace?.name ?? "Rune")
+            .focusedSceneValue(\.presentRecentProjects) {
+                recentWorkspaces = RecentWorkspaces.load()
+                isProjectPickerPresented = true
+            }
+            .sheet(isPresented: $isProjectPickerPresented) {
+                ProjectPickerView(workspaces: recentWorkspaces) { directory in
+                    isProjectPickerPresented = false
+                    open(directory)
+                }
+                .frame(width: 560, height: 440)
+                .onExitCommand { isProjectPickerPresented = false }
+            }
             .onAppear {
+                if let workspace { RecentWorkspaces.record(workspace) }
                 guard !routedCommandLineDirectory, workspace == nil else { return }
                 routedCommandLineDirectory = true
 
@@ -49,6 +65,7 @@ private struct WorkspaceWindow: View {
                     open(directory)
                 } else {
                     recentWorkspaces = RecentWorkspaces.load()
+                    if let recent = recentWorkspaces.first { open(recent) }
                 }
             }
             .onOpenURL { url in

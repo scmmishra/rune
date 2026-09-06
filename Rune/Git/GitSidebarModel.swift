@@ -9,6 +9,7 @@ final class GitSidebarModel: ObservableObject {
     @Published private(set) var isCommitting = false
     @Published private(set) var isTrashing = false
     @Published private(set) var isDiscarding = false
+    @Published private(set) var isSwitchingBranch = false
     @Published private var repositoryErrorMessage: String?
     @Published private var actionErrorMessage: String?
 
@@ -23,7 +24,7 @@ final class GitSidebarModel: ObservableObject {
     }
 
     var isBusy: Bool {
-        isCommitting || isTrashing || isDiscarding
+        isCommitting || isTrashing || isDiscarding || isSwitchingBranch
     }
 
     private var isPerformingAction: Bool {
@@ -32,6 +33,20 @@ final class GitSidebarModel: ObservableObject {
 
     init(rootURL: URL) {
         self.rootURL = rootURL
+    }
+
+    func switchBranch(_ name: String, create: Bool) async -> Bool {
+        guard !isPerformingAction else { return false }
+        cancelRefresh()
+        isSwitchingBranch = true
+        let rootURL = rootURL
+        let result = await Task.detached(priority: .userInitiated) {
+            GitRepository.switchBranch(name, create: create, at: rootURL)
+        }.value
+        isSwitchingBranch = false
+        actionErrorMessage = result.errorMessage
+        refresh()
+        return result.succeeded
     }
 
     func refresh() {

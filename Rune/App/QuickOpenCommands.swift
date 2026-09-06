@@ -3,14 +3,19 @@ import SwiftUI
 extension FocusedValues {
     @Entry var presentQuickOpen: (() -> Void)?
     @Entry var saveCurrentFile: (() -> Void)?
+    @Entry var presentRecentProjects: (() -> Void)?
 }
 
 struct QuickOpenCommands: Commands {
     @FocusedValue(\.presentQuickOpen) private var presentQuickOpen
     @FocusedValue(\.saveCurrentFile) private var saveCurrentFile
+    @FocusedValue(\.presentRecentProjects) private var presentRecentProjects
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
+            Button("Switch Project…") { presentRecentProjects?() }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(presentRecentProjects == nil)
             Button("Open Quickly…") {
                 presentQuickOpen?()
             }
