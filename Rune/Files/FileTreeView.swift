@@ -8,23 +8,17 @@ struct FileTreeView: View {
     @State private var isFullScreen = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Button(action: onOpenProjects) {
-                HStack(spacing: 6) {
-                    Text(rootURL.lastPathComponent)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 4)
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(rootURL.lastPathComponent)
                 .runeFont(size: 12, weight: .medium)
-                .frame(height: 28)
+                .lineLimit(1)
+                .truncationMode(.middle)
                 .contentShape(Rectangle())
-            }
-            .buttonStyle(WorkspaceButtonStyle())
-            .help("Switch Project (⇧⌘O)\n" + rootURL.path)
-            .accessibilityLabel("Switch project, " + rootURL.lastPathComponent)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
+                .onTapGesture(perform: onOpenProjects)
+                .help("Switch Project (⇧⌘O)\n" + rootURL.path)
+                .accessibilityLabel("Switch project, " + rootURL.lastPathComponent)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { onOpenProjects() }
 
             FileTreeContents(rootURL: rootURL, onOpenFile: onOpenFile)
                 .id(rootURL)

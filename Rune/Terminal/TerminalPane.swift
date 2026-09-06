@@ -5,6 +5,7 @@ import GhosttyTerminal
 struct TerminalPane: View {
     var focusRequest: Int = 0
     @FocusState private var isFocused: Bool
+    @State private var didRequestInitialFocus = false
     @StateObject private var terminal: TerminalViewState
     @Environment(\.runeTypography) private var typography
 
@@ -40,7 +41,13 @@ struct TerminalPane: View {
             .terminalFocused($isFocused)
             .onChange(of: focusRequest) { isFocused = true }
             .accessibilityLabel("Terminal")
-            .onAppear(perform: applyTypography)
+            .onAppear {
+                applyTypography()
+                // Request focus once, not on subsequent updates that could interrupt a palette.
+                guard !didRequestInitialFocus else { return }
+                didRequestInitialFocus = true
+                isFocused = true
+            }
             .onChange(of: typography) {
                 applyTypography()
             }
