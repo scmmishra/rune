@@ -6,6 +6,7 @@ struct FileTreeView: View {
     let onOpenFile: (URL) -> Void
     let onOpenProjects: () -> Void
     @State private var isFullScreen = false
+    @State private var isTitleHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -13,6 +14,13 @@ struct FileTreeView: View {
                 .runeFont(size: 12, weight: .medium)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .background {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.primary.opacity(isTitleHovered ? 0.06 : 0))
+                        .padding(-4)
+                }
+                .padding(.leading, 12)
+                .onHover { isTitleHovered = $0 }
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onOpenProjects)
                 .help("Switch Project (⇧⌘O)\n" + rootURL.path)
