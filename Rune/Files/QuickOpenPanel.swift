@@ -1,5 +1,63 @@
 import SwiftUI
 
+enum WorkspaceCommand: String, CaseIterable, Identifiable {
+    case reload, openProject, switchBranch
+
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .reload: "Reload Files and Git"
+        case .openProject: "Open Project…"
+        case .switchBranch: "Switch Branch…"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .reload: "arrow.clockwise"
+        case .openProject: "folder"
+        case .switchBranch: "arrow.triangle.branch"
+        }
+    }
+}
+
+struct CommandPalette: View {
+    let canSwitchBranch: Bool
+    let onClose: () -> Void
+    let onSelect: (WorkspaceCommand) -> Void
+    @State private var query = ""
+    @State private var selection: WorkspaceCommand? = .reload
+
+    private var matches: [WorkspaceCommand] {
+        let commands = WorkspaceCommand.allCases.filter { $0 != .switchBranch || canSwitchBranch }
+        guard !query.isEmpty else { return commands }
+        let bytes = Array(query.lowercased().utf8)
+        return commands.compactMap { command -> (WorkspaceCommand, Int)? in
+            let name = command.title.lowercased()
+            guard let score = FuzzyMatcher.pathScore(bytes, path: name, filename: name) else { return nil }
+            return (command, score)
+        }
+        .sorted { $0.1 == $1.1 ? $0.0.title < $1.0.title : $0.1 > $1.1 }
+        .map(\.0)
+    }
+
+    var body: some View {
+        SearchPalette(
+            placeholder: "Run a command", query: $query, items: matches,
+            selection: $selection, onClose: onClose, onSelect: onSelect
+        ) { command in
+            HStack(spacing: 8) {
+                Image(systemName: command.symbol)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 12, height: 12)
+                Text(command.title)
+                Spacer(minLength: 0)
+            }
+        }
+        .onChange(of: query) { selection = matches.first }
+        .onChange(of: canSwitchBranch) { selection = matches.first }
+    }
+}
+
 struct QuickOpenPanel: View {
     let rootURL: URL
     let onOpen: (URL) -> Void
@@ -12,61 +70,25 @@ struct QuickOpenPanel: View {
     @State private var isLoading = true
     @State private var selectedURL: URL?
     @State private var searchTask: Task<Void, Never>?
-    @FocusState private var isSearchFocused: Bool
-    @Environment(\.runeTypography) private var typography
 
     // Bound SwiftUI diffing while still keeping far more results than the panel can display.
     private let resultLimit = 200
 
     var body: some View {
-        VStack(spacing: 0) {
+        SearchPalette(
+            placeholder: "Open file", query: $query, items: matchingFiles,
+            selection: $selectedURL, isLoading: isLoading,
+            onClose: onClose, onSelect: { onOpen($0.url) }
+        ) { file in
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
+                FileIconView(url: file.url, isDirectory: false)
                     .foregroundStyle(.secondary)
-
-                TextField("Open file", text: $query)
-                    .textFieldStyle(.plain)
-                    .runeFont(size: 13)
-                    .focused($isSearchFocused)
-                    .onSubmit(openSelection)
+                    .frame(width: 12, height: 12)
+                Text(file.relativePath)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12)
-            .frame(height: 42)
-
-            Divider()
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(matchingFiles, id: \.url) { file in
-                            fileRow(file)
-                                .id(file.url)
-                        }
-                    }
-                    .padding(6)
-                }
-                .overlay {
-                    if isLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-                .onChange(of: selectedURL) { _, selectedURL in
-                    if let selectedURL {
-                        proxy.scrollTo(selectedURL, anchor: .center)
-                    }
-                }
-            }
-        }
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.primary.opacity(0.14), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.28), radius: 28, y: 10)
-        .onAppear {
-            isSearchFocused = true
         }
         .onChange(of: query) {
             refreshMatches()
@@ -80,65 +102,6 @@ struct QuickOpenPanel: View {
         .onDisappear {
             searchTask?.cancel()
         }
-        .onKeyPress(keys: [.upArrow, .downArrow, .escape]) { keyPress in
-            handleKeyPress(keyPress.key)
-        }
-    }
-
-    private func fileRow(_ file: WorkspaceFileIndex.Entry) -> some View {
-        HStack(spacing: 8) {
-            FileIconView(url: file.url, isDirectory: false)
-                .foregroundStyle(.secondary)
-                .frame(width: 12, height: 12)
-
-            Text(file.relativePath)
-                .runeFont(size: 12)
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .frame(minHeight: max(25, typography.size(relativeTo: 25)))
-        .background {
-            if selectedURL == file.url {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.accentColor.opacity(0.20))
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onOpen(file.url)
-        }
-    }
-
-    private func openSelection() {
-        guard let fileURL = selectedURL ?? matchingFiles.first?.url else { return }
-        onOpen(fileURL)
-    }
-
-    private func handleKeyPress(_ key: KeyEquivalent) -> KeyPress.Result {
-        if key == .escape {
-            onClose()
-            return .handled
-        }
-
-        guard !matchingFiles.isEmpty else { return .ignored }
-        let currentIndex = selectedURL.flatMap { selectedURL in
-            matchingFiles.firstIndex { $0.url == selectedURL }
-        }
-
-        if key == .upArrow {
-            selectedURL = matchingFiles[max(0, (currentIndex ?? 1) - 1)].url
-            return .handled
-        }
-
-        if key == .downArrow {
-            selectedURL = matchingFiles[min(matchingFiles.count - 1, (currentIndex ?? -1) + 1)].url
-            return .handled
-        }
-
-        return .ignored
     }
 
     private func refreshMatches() {
@@ -201,5 +164,104 @@ nonisolated private enum QuickOpenSearch {
         }
 
         return matches.prefix(limit).map(\.file)
+    }
+}
+
+struct SearchPalette<Item: Identifiable, Row: View>: View {
+    let placeholder: String
+    @Binding var query: String
+    let items: [Item]
+    @Binding var selection: Item.ID?
+    var isLoading = false
+    var isBusy = false
+    var error: String?
+    let onClose: () -> Void
+    let onSelect: (Item) -> Void
+    @ViewBuilder let row: (Item) -> Row
+    @FocusState private var isSearchFocused: Bool
+    @Environment(\.runeTypography) private var typography
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField(placeholder, text: $query)
+                    .textFieldStyle(.plain)
+                    .runeFont(size: 13)
+                    .focused($isSearchFocused)
+                    .disabled(isBusy)
+                    .onSubmit {
+                        guard !isBusy, let item = items.first(where: { $0.id == selection }) else { return }
+                        onSelect(item)
+                    }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 42)
+            Divider()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(items) { item in
+                            Button {
+                                guard !isBusy else { return }
+                                selection = item.id
+                                onSelect(item)
+                            } label: {
+                                row(item)
+                                    .runeFont(size: 12)
+                                    .padding(.horizontal, 8)
+                                    .frame(minHeight: max(25, typography.size(relativeTo: 25)))
+                                    .background {
+                                        if selection == item.id {
+                                            RoundedRectangle(cornerRadius: 5)
+                                                .fill(Color.accentColor.opacity(0.20))
+                                        }
+                                    }
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isBusy)
+                            .id(item.id)
+                        }
+                    }
+                    .padding(6)
+                }
+                .overlay {
+                    if isLoading || isBusy {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                .onChange(of: selection) { _, selected in
+                    if let selected { proxy.scrollTo(selected, anchor: .center) }
+                }
+            }
+            if let error {
+                Divider()
+                Text(error)
+                    .runeFont(size: 11)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.primary.opacity(0.14), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 28, y: 10)
+        .onAppear { isSearchFocused = true }
+        .onChange(of: isBusy) { if !isBusy { isSearchFocused = true } }
+        .onKeyPress(keys: [.upArrow, .downArrow, .escape], phases: [.down, .repeat]) { event in
+            guard !isBusy else { return .handled }
+            if event.key == .escape { onClose(); return .handled }
+            guard !items.isEmpty else { return .ignored }
+            let index = selection.flatMap { selected in items.firstIndex { $0.id == selected } }
+            let next = event.key == .upArrow ? max(0, (index ?? 1) - 1) : min(items.count - 1, (index ?? -1) + 1)
+            selection = items[next].id
+            return .handled
+        }
     }
 }

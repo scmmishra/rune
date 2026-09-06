@@ -3,16 +3,20 @@ import SwiftUI
 
 struct WorkspaceView: View {
     let directoryURL: URL?
+    let onOpenProject: () -> Void
     @StateObject private var repository: GitSidebarModel
 
-    init(directoryURL: URL?) {
+    init(directoryURL: URL?, onOpenProject: @escaping () -> Void) {
         self.directoryURL = directoryURL
+        self.onOpenProject = onOpenProject
         _repository = StateObject(wrappedValue: GitSidebarModel(
             rootURL: directoryURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         ))
     }
     @State private var openDrawer: WorkspaceDrawer?
     @State private var isQuickOpenPresented = false
+    @State private var isBranchPickerPresented = false
+    @State private var isCommandPalettePresented = false
     @State private var isDrawerVisible = false
     @State private var drawerCleanupTask: Task<Void, Never>?
     @State private var diffSelections: [GitDiffSelection] = []
@@ -74,6 +78,11 @@ struct WorkspaceView: View {
                         if let directoryURL {
                             GitSidebarView(
                                 rootURL: directoryURL,
+                                onOpenBranches: {
+                                    isCommandPalettePresented = false
+                                    isQuickOpenPresented = false
+                                    isBranchPickerPresented = true
+                                },
                                 selectedDiff: selectedDiff,
                                 onSelectionsChange: { diffSelections = $0 },
                                 onOpenFile: open,
@@ -94,6 +103,7 @@ struct WorkspaceView: View {
 
                 if let openDrawer, let directoryURL {
                     drawer(openDrawer, rootURL: directoryURL)
+                    .disabled(isQuickOpenPresented || isBranchPickerPresented || isCommandPalettePresented)
                     .frame(
                         width: min(
                             max(480, geometry.size.width * 0.62),
@@ -108,12 +118,24 @@ struct WorkspaceView: View {
                     .zIndex(1)
                 }
 
-                if isQuickOpenPresented, let directoryURL {
-                    QuickOpenPanel(
-                        rootURL: directoryURL,
-                        onOpen: open,
-                        onClose: { isQuickOpenPresented = false }
-                    )
+                if isQuickOpenPresented || isBranchPickerPresented || isCommandPalettePresented, let directoryURL {
+                    Group {
+                        if isCommandPalettePresented {
+                            CommandPalette(
+                                canSwitchBranch: repository.snapshot.isRepository && !repository.isBusy,
+                                onClose: { isCommandPalettePresented = false },
+                                onSelect: performCommand
+                            )
+                        } else if isBranchPickerPresented {
+                            BranchPickerView(rootURL: directoryURL, onClose: { isBranchPickerPresented = false })
+                        } else {
+                            QuickOpenPanel(
+                                rootURL: directoryURL,
+                                onOpen: open,
+                                onClose: { isQuickOpenPresented = false }
+                            )
+                        }
+                    }
                     .frame(width: min(600, geometry.size.width - 64), height: 420)
                     .padding(.top, 48)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -138,12 +160,20 @@ struct WorkspaceView: View {
         .focusedSceneValue(\.presentQuickOpen) {
             presentQuickOpen()
         }
+        .focusedSceneValue(\.presentCommandPalette) {
+            guard !repository.isSwitchingBranch else { return }
+            isQuickOpenPresented = false
+            isBranchPickerPresented = false
+            isCommandPalettePresented = true
+        }
     }
 
     private func presentQuickOpen() {
-        guard directoryURL != nil else { return }
+        guard directoryURL != nil, !repository.isSwitchingBranch else { return }
+        isBranchPickerPresented = false
+        isCommandPalettePresented = false
         withAnimation(.snappy(duration: 0.18)) {
-            isQuickOpenPresented = true
+            isQuickOpenPresented.toggle()
         }
     }
 
@@ -153,6 +183,17 @@ struct WorkspaceView: View {
         withAnimation(.snappy(duration: 0.22)) {
             openDrawer = .file(fileURL)
             isDrawerVisible = true
+        }
+    }
+
+    private func performCommand(_ command: WorkspaceCommand) {
+        isCommandPalettePresented = false
+        switch command {
+        case .reload: repository.reload()
+        case .openProject: onOpenProject()
+        case .switchBranch:
+            guard repository.snapshot.isRepository, !repository.isBusy else { return }
+            isBranchPickerPresented = true
         }
     }
 

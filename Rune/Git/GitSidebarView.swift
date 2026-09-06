@@ -12,10 +12,11 @@ struct GitSidebarView: View {
     @EnvironmentObject private var model: GitSidebarModel
     @State private var commitMessage = ""
     @State private var pendingDiscard: GitChange?
-    @State private var isBranchPickerPresented = false
+    let onOpenBranches: () -> Void
 
     init(
         rootURL: URL,
+        onOpenBranches: @escaping () -> Void,
         selectedDiff: GitDiffSelection?,
         onSelectionsChange: @escaping ([GitDiffSelection]) -> Void,
         onOpenFile: @escaping (URL) -> Void,
@@ -23,6 +24,7 @@ struct GitSidebarView: View {
         onOpenCommit: @escaping (GitCommit) -> Void
     ) {
         self.rootURL = rootURL
+        self.onOpenBranches = onOpenBranches
         self.selectedDiff = selectedDiff
         self.onSelectionsChange = onSelectionsChange
         self.onOpenFile = onOpenFile
@@ -32,12 +34,6 @@ struct GitSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Button("Switch Branch…") { isBranchPickerPresented = true }
-                .buttonStyle(.plain)
-                .runeFont(size: 10)
-                .padding(.top, 12)
-                .keyboardShortcut("b", modifiers: [.command, .shift])
-                .disabled(model.isBusy || !model.snapshot.isRepository)
             header
 
             GeometryReader { geometry in
@@ -55,9 +51,6 @@ struct GitSidebarView: View {
             }
         }
         .onChange(of: diffSelections, initial: true) { onSelectionsChange(diffSelections) }
-        .sheet(isPresented: $isBranchPickerPresented) {
-            BranchPickerView(rootURL: rootURL, model: model)
-        }
         .confirmationDialog(
             "Discard changes to \(pendingDiscard?.path ?? "this file")?",
             isPresented: Binding(
@@ -128,6 +121,8 @@ struct GitSidebarView: View {
             deletions: model.snapshot.deletions,
             hasUnstagedChanges: model.snapshot.hasUnstagedChanges,
             isDisabled: model.isBusy,
+            canSwitchBranch: model.snapshot.isRepository && !model.isBusy,
+            onOpenBranches: onOpenBranches,
             onStageAll: {
                 Task { await model.stageAll() }
             }
@@ -340,83 +335,72 @@ struct GitSidebarView: View {
     }
 }
 
-private struct BranchPickerView: View {
+struct BranchPickerView: View {
     let rootURL: URL
-    @ObservedObject var model: GitSidebarModel
-    @Environment(\.dismiss) private var dismiss
-    @FocusState private var searchFocused: Bool
+    let onClose: () -> Void
+    @EnvironmentObject private var model: GitSidebarModel
     @State private var query = ""
     @State private var branches: [String] = []
     @State private var selected: String?
     @State private var loadError: String?
     @State private var isLoading = true
 
-    private var matches: [String] {
-        branches.filter { query.isEmpty || $0.localizedCaseInsensitiveContains(query) }
+    private struct Choice: Identifiable {
+        let name: String
+        var create = false
+        var id: String { (create ? "create:" : "branch:") + name }
+    }
+
+    private var choices: [Choice] {
+        let queryBytes = Array(query.lowercased().utf8)
+        let matches = branches.compactMap { name -> (String, Int)? in
+            guard !query.isEmpty else { return (name, 0) }
+            guard let score = FuzzyMatcher.pathScore(queryBytes, path: name.lowercased(), filename: name.lowercased()) else { return nil }
+            return (name, score)
+        }.sorted { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }
+        var result = matches.map { Choice(name: $0.0) }
+        if !isLoading, loadError == nil, !query.isEmpty, !branches.contains(query) {
+            result.append(Choice(name: query, create: true))
+        }
+        return result
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Switch Branch").runeFont(size: 16, weight: .semibold)
-            TextField("Search branches or enter a new name", text: $query)
-                .textFieldStyle(.roundedBorder)
-                .focused($searchFocused)
-                .onSubmit {
-                    if let selected { switchTo(selected, create: false) }
+        SearchPalette(
+            placeholder: "Switch branch or create a new one", query: $query,
+            items: choices, selection: $selected, isLoading: isLoading,
+            isBusy: model.isSwitchingBranch, error: loadError ?? model.errorMessage,
+            onClose: onClose, onSelect: switchTo
+        ) { choice in
+            HStack(spacing: 8) {
+                Image(systemName: choice.create ? "plus" : "arrow.triangle.branch")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 12, height: 12)
+                Text(choice.create ? "Create branch ‘\(choice.name)’" : choice.name)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+                if !choice.create, choice.name == model.snapshot.branch {
+                    Image(systemName: "checkmark").foregroundStyle(.secondary)
                 }
-            if isLoading {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List(matches, id: \.self, selection: $selected) { name in
-                    HStack {
-                        Text(name)
-                        Spacer()
-                        if name == model.snapshot.branch { Image(systemName: "checkmark") }
-                    }
-                    .tag(name)
-                    .onTapGesture(count: 2) { switchTo(name, create: false) }
-                }
-            }
-            if let error = loadError ?? model.errorMessage {
-                Text(error).foregroundStyle(.red).runeFont(size: 11).textSelection(.enabled)
-            }
-            HStack {
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Spacer()
-                Button("Create Branch…") { switchTo(query, create: true) }
-                    .disabled(query.isEmpty || branches.contains(query) || isLoading)
-                Button(model.isSwitchingBranch ? "Switching…" : "Switch") {
-                    if let selected { switchTo(selected, create: false) }
-                }
-                .disabled(selected == nil || isLoading)
             }
         }
-        .padding(20)
-        .frame(width: 460, height: 380)
-        .disabled(model.isSwitchingBranch)
-        .interactiveDismissDisabled(model.isSwitchingBranch)
-        .onChange(of: query) { selected = matches.first }
+        .onChange(of: query) { selected = choices.first?.id }
         .task {
-            searchFocused = true
             let rootURL = rootURL
             let result = await Task.detached(priority: .userInitiated) { GitRepository.branches(at: rootURL) }.value
             guard !Task.isCancelled else { return }
             branches = result.names
             loadError = result.error
-            selected = matches.first
             isLoading = false
-        }
-        .onKeyPress(keys: [.upArrow, .downArrow]) { event in
-            guard !model.isSwitchingBranch, !matches.isEmpty else { return .ignored }
-            let index = selected.flatMap { matches.firstIndex(of: $0) } ?? 0
-            selected = matches[min(max(0, index + (event.key == .upArrow ? -1 : 1)), matches.count - 1)]
-            return .handled
+            selected = choices.first?.id
         }
     }
 
-    private func switchTo(_ name: String, create: Bool) {
+    private func switchTo(_ choice: Choice) {
+        guard !model.isBusy else { return }
         Task {
-            if await model.switchBranch(name, create: create) { dismiss() }
+            if await model.switchBranch(choice.name, create: choice.create) { onClose() }
         }
     }
 }
@@ -428,6 +412,8 @@ private struct GitSidebarHeader: View, Equatable {
     let deletions: Int
     let hasUnstagedChanges: Bool
     let isDisabled: Bool
+    let canSwitchBranch: Bool
+    let onOpenBranches: () -> Void
     let onStageAll: () -> Void
 
     static func == (lhs: GitSidebarHeader, rhs: GitSidebarHeader) -> Bool {
@@ -436,18 +422,27 @@ private struct GitSidebarHeader: View, Equatable {
             lhs.additions == rhs.additions &&
             lhs.deletions == rhs.deletions &&
             lhs.hasUnstagedChanges == rhs.hasUnstagedChanges &&
-            lhs.isDisabled == rhs.isDisabled
+            lhs.isDisabled == rhs.isDisabled &&
+            lhs.canSwitchBranch == rhs.canSwitchBranch
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 10, weight: .semibold))
-
-                Text(branch)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                Button(action: onOpenBranches) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(branch)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .disabled(!canSwitchBranch)
+                .help("Switch Branch (⇧⌘B)")
 
                 Spacer(minLength: 4)
 

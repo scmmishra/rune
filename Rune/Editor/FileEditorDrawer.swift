@@ -115,6 +115,7 @@ struct FileEditorDrawer: View {
 }
 
 private struct DrawerEscapeMonitor: NSViewRepresentable {
+    @Environment(\.isEnabled) private var isEnabled
     let onEscape: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -128,6 +129,7 @@ private struct DrawerEscapeMonitor: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.isEnabled = isEnabled
         context.coordinator.onEscape = onEscape
     }
 
@@ -137,6 +139,8 @@ private struct DrawerEscapeMonitor: NSViewRepresentable {
 
     @MainActor
     final class Coordinator {
+        var isEnabled = true
+        private var didConsumeEscape = false
         var onEscape: () -> Void
 
         private weak var view: NSView?
@@ -154,10 +158,14 @@ private struct DrawerEscapeMonitor: NSViewRepresentable {
             // Source: https://developer.apple.com/documentation/appkit/nsevent/addlocalmonitorforevents(matching:handler:)
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
                 guard let self,
+                      self.isEnabled,
                       event.window === self.view?.window,
                       event.charactersIgnoringModifiers == "\u{1B}" else { return event }
 
+                if event.type == .keyDown { self.didConsumeEscape = true }
                 if event.type == .keyUp {
+                    guard self.didConsumeEscape else { return event }
+                    self.didConsumeEscape = false
                     self.onEscape()
                 }
                 return nil

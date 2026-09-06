@@ -60,6 +60,14 @@ final class GitSidebarModel: ObservableObject {
         cancelRefresh()
     }
 
+    func reload() {
+        // Invalidate both caches even if an in-flight Git operation defers the refresh.
+        needsFileIndex = true
+        needsHistory = true
+        contentRevision &+= 1
+        refresh()
+    }
+
     func switchBranch(_ name: String, create: Bool) async -> Bool {
         guard !isPerformingAction else { return false }
         cancelRefresh()

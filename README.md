@@ -34,6 +34,10 @@ rune path/to/project  # Open another project
 
 Press `Command+P` to find a file and `Command+,` to adjust Rune's font family and size.
 
+Press `Command+Shift+P` for the command palette: reload files and Git, open a
+project folder, or switch branches. Clicking the branch name also opens the
+branch palette. All palettes support search, arrow keys, Return, and Escape.
+
 Press `Command+Shift+O` to search recent projects, or `Command+Shift+B` to
 search local branches and switch or create a branch from the current HEAD.
 Git reports any local changes that prevent switching without discarding them.

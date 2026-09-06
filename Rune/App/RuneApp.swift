@@ -31,7 +31,7 @@ private struct WorkspaceWindow: View {
     var body: some View {
         Group {
             if let workspace {
-                WorkspaceView(directoryURL: workspace.directoryURL)
+                WorkspaceView(directoryURL: workspace.directoryURL, onOpenProject: chooseProject)
                     .id(workspace.path)
                     .background { WorkspaceFramePersistence(path: workspace.path) }
             } else if routedCommandLineDirectory {
@@ -83,6 +83,20 @@ private struct WorkspaceWindow: View {
             DispatchQueue.main.async {
                 dismiss()
             }
+        }
+    }
+
+    private func chooseProject() {
+        let panel = NSOpenPanel()
+        panel.title = "Open Project"
+        panel.prompt = "Open"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.begin { response in
+            guard response == .OK, let url = panel.url,
+                  let directory = WorkspaceIdentity(url: url) else { return }
+            open(directory)
         }
     }
 }
