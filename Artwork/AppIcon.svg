@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <title>Rune / Phosphor</title>
+  <desc>A green pixel Rune monogram glowing inside a graphite CRT screen.</desc>
+  <defs>
+    <linearGradient id="housing" x1="190" y1="68" x2="820" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#35453D"/>
+      <stop offset=".45" stop-color="#1C2922"/>
+      <stop offset="1" stop-color="#101B15"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="512" y1="68" x2="512" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B2CEB9" stop-opacity=".5"/>
+      <stop offset=".45" stop-color="#6C9A7D" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#74A384" stop-opacity=".25"/>
+    </linearGradient>
+    <linearGradient id="bezel" x1="512" y1="134" x2="512" y2="888" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#040A06"/>
+      <stop offset="1" stop-color="#4A6251"/>
+    </linearGradient>
+    <radialGradient id="screen">
+      <stop stop-color="#102D18"/>
+      <stop offset=".65" stop-color="#09170E"/>
+      <stop offset="1" stop-color="#040B07"/>
+    </radialGradient>
+    <linearGradient id="phosphor" x1="512" y1="296" x2="512" y2="728" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C0FFAD"/>
+      <stop offset=".45" stop-color="#70F886"/>
+      <stop offset="1" stop-color="#38CC65"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="512" y1="165" x2="512" y2="470" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D2FFE0" stop-opacity=".055"/>
+      <stop offset="1" stop-color="#D2FFE0" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="16" stdDeviation="12" flood-color="#020805" flood-opacity=".3"/>
+    </filter>
+    <filter id="glow" x="260" y="220" width="504" height="584" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <pattern id="scanlines" width="8" height="8" patternUnits="userSpaceOnUse">
+      <path d="M0 7H8" stroke="#000" stroke-opacity=".12"/>
+    </pattern>
+    <!-- A shared 48-unit grid keeps the pixel construction editable and consistent. -->
+    <pattern id="pixels" x="344" y="296" width="48" height="48" patternUnits="userSpaceOnUse">
+      <rect width="44" height="44" fill="white"/>
+    </pattern>
+    <mask id="pixel-mask">
+      <rect x="344" y="296" width="336" height="432" fill="url(#pixels)"/>
+    </mask>
+    <path id="mark" fill-rule="evenodd" d="M344 296H584V344H632V392H680V488H632V536H536V584H584V632H632V680H680V728H584V680H536V632H488V584H440V728H344ZM440 392V488H536V440H584V392Z"/>
+    <path id="screen-shape" d="M310 172Q512 158 714 172C800 178 842 218 850 304Q868 512 850 720C842 806 800 846 714 852Q512 866 310 852C224 846 182 806 174 720Q156 512 174 304C182 218 224 178 310 172Z"/>
+    <clipPath id="screen-clip"><use href="#screen-shape"/></clipPath>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="76" y="76" width="872" height="872" rx="204" fill="#0B130E"/>
+    <rect x="76" y="68" width="872" height="872" rx="204" fill="url(#housing)"/>
+    <rect x="79" y="71" width="866" height="866" rx="201" stroke="url(#edge)" stroke-width="3"/>
+    <rect x="137" y="134" width="750" height="754" rx="172" fill="url(#bezel)"/>
+    <rect x="145" y="143" width="734" height="734" rx="165" fill="#050C08"/>
+    <use href="#screen-shape" fill="url(#screen)"/>
+    <g clip-path="url(#screen-clip)">
+      <path d="M158 160H865V400Q512 350 158 460Z" fill="url(#glass)"/>
+      <use href="#mark" fill="#53FF79" opacity=".25" filter="url(#glow)"/>
+      <use href="#mark" fill="url(#phosphor)" mask="url(#pixel-mask)"/>
+      <path d="M168 170H856V856H168Z" fill="url(#scanlines)"/>
+    </g>
+    <use href="#screen-shape" stroke="#B4FFCC" stroke-opacity=".12" stroke-width="2"/>
+  </g>
+</svg>
