@@ -128,7 +128,7 @@ struct WorkspaceView: View {
                 }
 
                 if let directoryURL {
-                    ZStack {
+                    ZStack(alignment: .top) {
                         // Ghostty surfaces belong to their mounted platform views. Keep
                         // sessions mounted across preview changes, but stop hidden rendering.
                         // Source: libghostty-spm TerminalViewState.isSurfaceVisible (1.5.2).
@@ -163,6 +163,7 @@ struct WorkspaceView: View {
                     }
                     .disabled(isPalettePresented)
                     .frame(width: drawerWidth)
+                    .frame(maxHeight: .infinity, alignment: .top)
                     .padding(16)
                     // Translate without resizing: terminal columns and scrollback
                     // stay stable while the primary terminal becomes fully exposed.
