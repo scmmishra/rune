@@ -128,10 +128,15 @@ nonisolated struct GuideSnapshot: Sendable {
         You may read related repository files for context, but do not modify files, run tests, or use external services.
         The captured diff is authoritative even if the working tree changes while you read it.
         Each section must reference one or more exact reference IDs below. Use plain prose without Markdown headings.
-        Optionally include a small Mermaid flowchart or sequenceDiagram when it clarifies a section.
+        Prefer including at least one small Mermaid diagram for nontrivial behavioral or structural changes.
+        Look for changed control flow, data flow, state transitions, component relationships, or interactions between participants.
+        Put the diagram in the section where it adds the most understanding: use a flowchart for paths and relationships,
+        or a sequenceDiagram for interactions over time. Show the changed behavior, grounded in the captured code.
+        Avoid decorative diagrams, invented relationships, and repeating the same diagram across sections.
+        Skip diagrams when the changes are simple copy, formatting, or isolated edits with no meaningful flow or relationship.
         Use at most 12 nodes/participants and 24 statements; quote flowchart labels. No styling, links, HTML, or directives.
         Example: flowchart TD\n A["Read identity"] --> B["Restore session"]
-        Otherwise set mermaid to an empty string. Always explain the diagram in the section's prose.
+        For sections without a diagram, set mermaid to an empty string. Always explain each diagram in its section's prose.
         Return only the structured brief matching the supplied schema.
 
         CAPTURED DIFF REFERENCES:
