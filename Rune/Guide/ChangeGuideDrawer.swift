@@ -219,7 +219,9 @@ struct ChangeGuideDrawer: View {
                 if entry.guide.sections.indices.contains(model.selectedSection) {
                     let section = entry.guide.sections[model.selectedSection]
                     Text(section.title).runeFont(size: 23, weight: .semibold)
-                    Text(section.explanation).runeFont(size: 13).lineSpacing(5).textSelection(.enabled)
+                    GuideProse(text: section.explanation, references: entry.snapshot.references) {
+                        openedReference = $0
+                    }
                     if !section.mermaid.isEmpty {
                         GuideDiagramView(source: section.mermaid, explanation: section.explanation, model: model)
                     }
@@ -229,7 +231,9 @@ struct ChangeGuideDrawer: View {
                     }
                 } else {
                     Text(entry.guide.title).runeFont(size: 25, weight: .semibold)
-                    Text(entry.guide.overview).runeFont(size: 13).lineSpacing(5).textSelection(.enabled)
+                    GuideProse(text: entry.guide.overview, references: entry.snapshot.references) {
+                        openedReference = $0
+                    }
                     Text("\(entry.snapshot.files.count) files · \(entry.guide.sections.count) sections · Generated with \(entry.agent.rawValue)")
                         .runeFont(size: 11).foregroundStyle(.secondary)
                     Divider()
