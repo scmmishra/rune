@@ -115,9 +115,11 @@ struct FileEditorDrawer: View {
     }
 }
 
-private struct DrawerEscapeMonitor: NSViewRepresentable {
+struct DrawerEscapeMonitor: NSViewRepresentable {
     @Environment(\.isEnabled) private var isEnabled
     let onEscape: () -> Void
+    var handlesEscape = true
+    var hidesOnOutsideClick = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onEscape: onEscape)
@@ -132,6 +134,8 @@ private struct DrawerEscapeMonitor: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.isEnabled = isEnabled
         context.coordinator.onEscape = onEscape
+        context.coordinator.handlesEscape = handlesEscape
+        context.coordinator.hidesOnOutsideClick = hidesOnOutsideClick
     }
 
     static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
@@ -141,6 +145,8 @@ private struct DrawerEscapeMonitor: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         var isEnabled = true
+        var handlesEscape = true
+        var hidesOnOutsideClick = false
         private var didConsumeEscape = false
         var onEscape: () -> Void
 
@@ -157,11 +163,22 @@ private struct DrawerEscapeMonitor: NSViewRepresentable {
             // Keep the drawer alive until key-up so both halves of Escape are
             // consumed. Letting key-up escape can make a full-screen window exit.
             // Source: https://developer.apple.com/documentation/appkit/nsevent/addlocalmonitorforevents(matching:handler:)
-            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .leftMouseDown]) { [weak self] event in
                 guard let self,
                       self.isEnabled,
                       self.view?.window?.attachedSheet == nil,
-                      event.window === self.view?.window,
+                      NSApp.modalWindow == nil,
+                      let view = self.view, let window = view.window,
+                      event.window === window else { return event }
+
+                if event.type == .leftMouseDown {
+                    if self.hidesOnOutsideClick,
+                       !view.bounds.contains(view.convert(event.locationInWindow, from: nil)) {
+                        self.onEscape()
+                    }
+                    return event
+                }
+                guard self.handlesEscape,
                       event.charactersIgnoringModifiers == "\u{1B}" else { return event }
 
                 if event.type == .keyDown { self.didConsumeEscape = true }

@@ -29,7 +29,6 @@ struct WorkspaceView: View {
         isQuickOpenPresented || isBranchPickerPresented || isCommandPalettePresented || isProjectPickerPresented
     }
     @State private var isDrawerVisible = false
-    @State private var isTerminalParked = false
     @State private var drawerCleanupTask: Task<Void, Never>?
     @State private var diffSelections: [GitDiffSelection] = []
     @State private var fileSidebarWidth: CGFloat = 240
@@ -52,7 +51,6 @@ struct WorkspaceView: View {
     var body: some View {
         GeometryReader { geometry in
             let drawerWidth = min(max(480, geometry.size.width * 0.62), geometry.size.width * 0.78)
-            let parkedOffset = max(0, drawerWidth + 16 - min(gitSidebarWidth, geometry.size.width * 0.28))
             ZStack(alignment: .trailing) {
                 HStack(spacing: 0) {
                     Group {
@@ -79,7 +77,7 @@ struct WorkspaceView: View {
 
                     Group {
                         if let directoryURL {
-                            TerminalPane(focusRequest: terminalFocusRequest, terminal: terminals.primary.terminal, onFocus: parkTerminal)
+                            TerminalPane(focusRequest: terminalFocusRequest, terminal: terminals.primary.terminal)
                                 .id(directoryURL)
                         } else {
                             WorkspacePlaceholder()
@@ -136,23 +134,10 @@ struct WorkspaceView: View {
                             let visible = selectedTerminalID == session.id
                             TerminalDrawer(
                                 session: session,
-                                isVisible: visible && !isTerminalParked,
-                                onClose: closeDrawer,
-                                onFocus: restoreTerminal
+                                isVisible: visible,
+                                isSelected: visible,
+                                onClose: closeDrawer
                             )
-                                .accessibilityHidden(isTerminalParked)
-                                .overlay {
-                                    if visible && isTerminalParked {
-                                        // Intercept the first click so restoring the pane
-                                        // doesn't also reposition the terminal cursor.
-                                        Button(action: restoreTerminal) {
-                                            Color.clear.contentShape(Rectangle())
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help("Bring terminal forward")
-                                        .accessibilityLabel("Bring \(session.name) forward")
-                                    }
-                                }
                                 .opacity(visible ? 1 : 0)
                                 .allowsHitTesting(visible)
                                 .accessibilityHidden(!visible)
@@ -165,9 +150,7 @@ struct WorkspaceView: View {
                     .frame(width: drawerWidth)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(16)
-                    // Translate without resizing: terminal columns and scrollback
-                    // stay stable while the primary terminal becomes fully exposed.
-                    .offset(x: isDrawerVisible ? (isTerminalParked && selectedTerminalID != nil ? parkedOffset : 0) : geometry.size.width)
+                    .offset(x: isDrawerVisible ? 0 : geometry.size.width)
                     .opacity(isDrawerVisible ? 1 : 0)
                     .allowsHitTesting(isDrawerVisible)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -234,7 +217,6 @@ struct WorkspaceView: View {
             if isPresented { isHelpPresented = false }
         }
         .task { await terminals.monitorProcesses() }
-        .onChange(of: selectedTerminalID) { isTerminalParked = false }
         .onChange(of: terminals.supporting.map(\.id)) {
             if case let .terminal(id) = openDrawer,
                !terminals.supporting.contains(where: { $0.id == id }) {
@@ -378,7 +360,7 @@ struct WorkspaceView: View {
 
     private func showTerminal(_ session: TerminalSession) {
         if selectedTerminalID == session.id {
-            if isTerminalParked { restoreTerminal() } else { closeDrawer() }
+            closeDrawer()
             return
         }
         dismissPalettes()
@@ -387,16 +369,6 @@ struct WorkspaceView: View {
             openDrawer = .terminal(session.id)
             isDrawerVisible = true
         }
-    }
-
-    private func parkTerminal() {
-        guard selectedTerminalID != nil, !isPalettePresented else { return }
-        withAnimation(.snappy(duration: 0.18)) { isTerminalParked = true }
-    }
-
-    private func restoreTerminal() {
-        guard selectedTerminalID != nil, !isPalettePresented else { return }
-        withAnimation(.snappy(duration: 0.18)) { isTerminalParked = false }
     }
 
     private func removeTerminal(_ session: TerminalSession) {
