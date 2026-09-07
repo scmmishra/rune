@@ -59,6 +59,10 @@ final class ProjectCommands: ObservableObject {
         sessions.supporting.first { $0.savedCommandID == command.id }
     }
 
+    var allCommandsRunning: Bool {
+        !commands.isEmpty && commands.allSatisfy { session(for: $0)?.isCommandRunning == true }
+    }
+
     func save(_ command: ProjectCommand) async -> Bool {
         var updated = commands
         if let index = updated.firstIndex(where: { $0.id == command.id }) { updated[index] = command }
@@ -138,5 +142,14 @@ final class ProjectCommands: ObservableObject {
             if first == nil { first = session }
         }
         return first
+    }
+
+    func stopAll() async {
+        let running = commands.filter { session(for: $0)?.isCommandRunning == true }
+        await withTaskGroup(of: Void.self) { group in
+            for command in running {
+                group.addTask { _ = await self.stop(command) }
+            }
+        }
     }
 }

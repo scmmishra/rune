@@ -85,7 +85,6 @@ struct WorkspaceView: View {
                     Group {
                         if let directoryURL {
                             FileTreeView(terminals: {
-                                ProjectCommandsView(model: projectCommands, sessions: terminals, onSelect: showTerminal)
                                 TerminalSidebarView(
                                     sessions: terminals,
                                     selectedID: terminals.navigation.activeID,
@@ -94,6 +93,7 @@ struct WorkspaceView: View {
                                     onAdd: addTerminal,
                                     onRemove: removeTerminal
                                 )
+                                ProjectCommandsView(model: projectCommands, sessions: terminals, onSelect: showTerminal)
                             }, rootURL: directoryURL, onOpenFile: open, onOpenProjects: presentProjects)
                         } else {
                             Color.clear

@@ -15,10 +15,15 @@ struct ProjectCommandsView: View {
                 Spacer()
                 if !model.commands.isEmpty {
                     Button {
-                        if let session = model.runAll() { onSelect(session) }
-                    } label: { Image(systemName: "play.fill") }
-                    .help("Run All Commands")
-                    .accessibilityLabel("Run all commands")
+                        if model.allCommandsRunning {
+                            Task { await model.stopAll() }
+                        } else if let session = model.runAll() {
+                            onSelect(session)
+                        }
+                    } label: { Image(systemName: model.allCommandsRunning ? "stop.fill" : "play.fill") }
+                    .help(model.allCommandsRunning ? "Stop All Commands" : "Start All Commands")
+                    .accessibilityLabel(model.allCommandsRunning ? "Stop all commands" : "Start all commands")
+                    .disabled(!model.busyIDs.isEmpty)
                 }
                 Menu {
                     Button("Add Command…") {
@@ -50,7 +55,7 @@ struct ProjectCommandsView: View {
                 .frame(height: min(CGFloat(model.commands.count) * 30, 180))
                 .disabled(model.isSaving)
             }
-            if !model.procfiles.isEmpty {
+            if model.commands.isEmpty && !model.procfiles.isEmpty {
                 Button("Import from Procfile…") {
                     model.error = nil
                     Task { await model.discover(); isImporting = true }
