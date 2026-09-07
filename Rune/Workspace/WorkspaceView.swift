@@ -6,12 +6,17 @@ struct WorkspaceView: View {
     let onOpenProject: () -> Void
     let onOpenWorkspace: (WorkspaceIdentity) -> Void
     @StateObject private var terminals: TerminalSessions
+    @StateObject private var projectCommands: ProjectCommands
     @StateObject private var repository: GitSidebarModel
     @StateObject private var guide: ChangeGuideModel
 
     init(directoryURL: URL?, onOpenProject: @escaping () -> Void, onOpenWorkspace: @escaping (WorkspaceIdentity) -> Void) {
         _guide = StateObject(wrappedValue: ChangeGuideModel(rootURL: directoryURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)))
-        _terminals = StateObject(wrappedValue: TerminalSessions(workingDirectory: directoryURL))
+        let sessions = TerminalSessions(workingDirectory: directoryURL)
+        _terminals = StateObject(wrappedValue: sessions)
+        _projectCommands = StateObject(wrappedValue: ProjectCommands(
+            root: directoryURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath), sessions: sessions
+        ))
         self.directoryURL = directoryURL
         self.onOpenProject = onOpenProject
         self.onOpenWorkspace = onOpenWorkspace
@@ -80,6 +85,7 @@ struct WorkspaceView: View {
                     Group {
                         if let directoryURL {
                             FileTreeView(terminals: {
+                                ProjectCommandsView(model: projectCommands, sessions: terminals, onSelect: showTerminal)
                                 TerminalSidebarView(
                                     sessions: terminals,
                                     selectedID: terminals.navigation.activeID,
@@ -105,7 +111,8 @@ struct WorkspaceView: View {
                             TerminalPane(
                                 focusRequest: terminalFocusRequest,
                                 terminal: terminals.primary.terminal,
-                                onActivate: primaryTerminalActivated
+                                onActivate: primaryTerminalActivated,
+                                launchError: terminals.primary.launchError
                             )
                                 .id(directoryURL)
                         } else {
@@ -177,6 +184,14 @@ struct WorkspaceView: View {
                                 onClose: hideTerminalDrawer,
                                 onActivate: {
                                     if selectedTerminalID == session.id { showTerminal(session) }
+                                },
+                                onRunCommand: {
+                                    guard let command = projectCommands.commands.first(where: { $0.id == session.savedCommandID }) else { return }
+                                    Task { if let restarted = await projectCommands.restart(command) { showTerminal(restarted) } }
+                                },
+                                onStopCommand: {
+                                    guard let command = projectCommands.commands.first(where: { $0.id == session.savedCommandID }) else { return }
+                                    Task { _ = await projectCommands.stop(command) }
                                 }
                             )
                                 .opacity(visible ? 1 : 0)
@@ -278,6 +293,7 @@ struct WorkspaceView: View {
             if isPresented { isHelpPresented = false }
         }
         .task { await terminals.monitorProcesses() }
+        .task { if directoryURL != nil { await projectCommands.load() } }
         .onChange(of: terminals.supporting.map(\.id)) {
             if case let .terminal(id) = openDrawer,
                !terminals.supporting.contains(where: { $0.id == id }) {

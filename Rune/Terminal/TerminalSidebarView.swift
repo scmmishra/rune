@@ -7,6 +7,7 @@ struct TerminalSidebarView: View {
     let onSelect: (TerminalSession) -> Void
     let onAdd: () -> Void
     let onRemove: (TerminalSession) -> Void
+    private var interactiveSessions: [TerminalSession] { sessions.supporting.filter { $0.savedCommandID == nil } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -22,11 +23,11 @@ struct TerminalSidebarView: View {
             }
             .padding(.horizontal, 8)
 
-            if !sessions.supporting.isEmpty {
+            if !interactiveSessions.isEmpty {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(spacing: 2) {
-                            ForEach(sessions.supporting) { session in
+                            ForEach(interactiveSessions) { session in
                                 TerminalSessionRow(
                                     session: session,
                                     isSelected: selectedID == session.id,
@@ -39,7 +40,7 @@ struct TerminalSidebarView: View {
                             }
                         }
                     }
-                    .frame(height: min(CGFloat(sessions.supporting.count) * 30, 180))
+                    .frame(height: min(CGFloat(interactiveSessions.count) * 30, 180))
                     .onChange(of: selectedID) { _, id in
                         if let id { proxy.scrollTo(id) }
                     }
@@ -166,6 +167,7 @@ struct TerminalStatusDot: View {
     @ObservedObject var session: TerminalSession
 
     private var status: String {
+        if session.savedCommandID != nil { return session.commandStatus }
         if session.hasExited { return "Exited" }
         guard let process = session.processStatus else { return "Status unavailable" }
         if process.isIdle { return "Idle" }
@@ -174,9 +176,20 @@ struct TerminalStatusDot: View {
 
     var body: some View {
         Circle()
-            .fill(session.processStatus?.isRunning == true && !session.hasExited ? Color.green : Color.secondary.opacity(0.45))
+            .fill(color)
             .frame(width: 5, height: 5)
             .help(status)
             .accessibilityLabel(status)
+    }
+
+    private var color: Color {
+        if session.savedCommandID != nil {
+            if session.isStopping { return .orange }
+            if session.cleanupFailed { return .red }
+            if session.isCommandRunning { return .green }
+            if !session.wasStopped, let code = session.exitCode, code != 0 { return .red }
+            return .secondary.opacity(0.45)
+        }
+        return session.processStatus?.isRunning == true && !session.hasExited ? .green : .secondary.opacity(0.45)
     }
 }

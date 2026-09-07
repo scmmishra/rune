@@ -10,10 +10,14 @@ struct TerminalPane: View {
     var isVisible = true
     var isActive = true
     var onActivate: () -> Void = {}
+    var launchError: String?
     @Environment(\.runeTypography) private var typography
 
     var body: some View {
         TerminalSurfaceView(context: terminal)
+            .overlay {
+                if let launchError { Text(launchError).runeFont(size: 12).foregroundStyle(.red).padding(24) }
+            }
             .onChange(of: focusRequest) { if isVisible && isActive { terminal.requestFocus() } }
             .onChange(of: isVisible) {
                 terminal.isSurfaceVisible = isVisible
@@ -47,9 +51,11 @@ struct TerminalPane: View {
 
     private func applyTypography() {
         let fontSize = Float(typography.size(relativeTo: 12))
-        var surfaceConfiguration = terminal.configuration
-        surfaceConfiguration.fontSize = fontSize
-        terminal.configuration = surfaceConfiguration
+        if terminal.configuration.command == nil {
+            var surfaceConfiguration = terminal.configuration
+            surfaceConfiguration.fontSize = fontSize
+            terminal.configuration = surfaceConfiguration
+        }
 
         terminal.setTerminalConfiguration(
             TerminalConfiguration { builder in
@@ -62,16 +68,19 @@ struct TerminalPane: View {
                 }
             }
         )
+        if terminal.configuration.command != nil {
+            // Changing surface options rebuilds the PTY and reruns its command.
+            // Resize the existing font instead, including on the first appearance.
+            // Source: https://ghostty.org/docs/config/keybind/reference#set_font_size
+            terminal.surface?.performBindingAction("set_font_size:\(fontSize)")
+        }
     }
 }
 
 final class RuneTerminalView: TerminalView {
     var onActivate: (() -> Void)?
     private var isStopped = false
-    private var isTrackingProcess = false
-    private static var isAssociatingProcess = false
-    private static var canAssociateProcesses = true
-    private(set) var rootProcess: TerminalProcessMonitor.TerminationTarget?
+
 
     // Treat actual clicks as navigation intent. Ghostty's delayed published
     // focus changes can otherwise undo a keyboard switch during a handoff.
@@ -104,56 +113,13 @@ final class RuneTerminalView: TerminalView {
         MainActor.assumeIsolated { stop() }
     }
 
-    override func viewDidMoveToWindow() {
-        trackProcessCreation { super.viewDidMoveToWindow() }
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        trackProcessCreation { super.setFrameSize(newSize) }
-    }
-
-    override func layout() {
-        trackProcessCreation { super.layout() }
-    }
-
-    override func viewDidChangeBackingProperties() {
-        trackProcessCreation { super.viewDidChangeBackingProperties() }
-    }
-
     override var configuration: TerminalSurfaceOptions {
         get { super.configuration }
         set {
-            trackProcessCreation { super.configuration = newValue }
+            super.configuration = newValue
             if (delegate as? TerminalViewState)?.surface == nil, let layer {
                 Self.retireDisplayCallback(on: layer)
             }
-        }
-    }
-
-    private func trackProcessCreation(_ update: () -> Void) {
-        guard !isTrackingProcess, Self.canAssociateProcesses, rootProcess == nil, !isStopped,
-              (delegate as? TerminalViewState)?.surface == nil else { update(); return }
-        guard !Self.isAssociatingProcess else {
-            // Reentrant creation of another terminal makes the child set ambiguous.
-            Self.canAssociateProcesses = false
-            update()
-            return
-        }
-        isTrackingProcess = true
-        Self.isAssociatingProcess = true
-        defer {
-            isTrackingProcess = false
-            Self.isAssociatingProcess = false
-        }
-        let previous = TerminalProcessMonitor.childProcesses()
-        update()
-        guard Self.canAssociateProcesses, (delegate as? TerminalViewState)?.surface != nil else { return }
-        rootProcess = TerminalProcessMonitor.newlyStartedProcess(after: previous)
-        if rootProcess == nil {
-            // A delayed child could otherwise be mistaken for the next terminal's
-            // process, including in another window. Keep existing associations,
-            // but stop making new ones after any ambiguous or timed-out launch.
-            Self.canAssociateProcesses = false
         }
     }
 
@@ -161,7 +127,7 @@ final class RuneTerminalView: TerminalView {
         get { super.controller }
         set {
             guard !isStopped else { return }
-            trackProcessCreation { super.controller = newValue }
+            super.controller = newValue
             if newValue == nil, let layer { Self.retireDisplayCallback(on: layer) }
         }
     }

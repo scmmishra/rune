@@ -1,6 +1,5 @@
 import SwiftUI
 
-@main
 struct RuneApp: App {
     @StateObject private var updater = AppUpdater()
 

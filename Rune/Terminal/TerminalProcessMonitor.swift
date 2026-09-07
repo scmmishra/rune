@@ -32,7 +32,7 @@ nonisolated enum TerminalProcessMonitor {
         return result
     }
 
-    struct TerminationTarget: Sendable {
+    struct TerminationTarget: Codable, Sendable {
         let pid: pid_t
         let startedSeconds: Int
         let startedMicroseconds: Int32
@@ -52,7 +52,14 @@ nonisolated enum TerminalProcessMonitor {
     static func beginTermination(root: TerminationTarget?) -> [TerminationTarget] {
         guard let root, let rootInfo = info(root.pid), root.stillMatches(rootInfo),
               rootInfo.kp_eproc.e_ppid == getpid() else { return [] }
-        var targets = [root]
+        let targets = descendants(of: [root])
+        for target in targets.reversed() { signal(target, SIGTERM) }
+        return targets
+    }
+
+    private static func descendants(of roots: [TerminationTarget]) -> [TerminationTarget] {
+        var seen: Set<pid_t> = []
+        var targets = roots.filter { seen.insert($0.pid).inserted }
         var index = 0
         while index < targets.count {
             let parent = targets[index]
@@ -60,12 +67,69 @@ nonisolated enum TerminalProcessMonitor {
             guard let parentInfo = info(parent.pid), parent.stillMatches(parentInfo) else { continue }
             for child in children(of: parent.pid) {
                 guard let childInfo = info(child), childInfo.kp_eproc.e_ppid == parent.pid,
-                      !targets.contains(where: { $0.pid == child }) else { continue }
+                      seen.insert(child).inserted else { continue }
                 targets.append(TerminationTarget(childInfo))
             }
         }
-        for target in targets.reversed() { signal(target, SIGTERM) }
         return targets
+    }
+
+    static func cleanSession(root: TerminationTarget, sessionID: pid_t, recoveryFile: URL) -> Bool {
+        // Freeze the keeper before inspecting membership: it may have received
+        // its ACK but not spawned the user command when Rune's lifeline closes.
+        signal(root, SIGSTOP)
+        let freezeDeadline = ProcessInfo.processInfo.systemUptime + 2
+        while isAlive(root), let process = info(root.pid), process.kp_proc.p_stat != SSTOP,
+              ProcessInfo.processInfo.systemUptime < freezeDeadline {
+            usleep(1_000)
+        }
+        // Without a confirmed stop, the keeper could fork after the last sweep.
+        if isAlive(root), (info(root.pid)?.kp_proc.p_stat ?? 0) != SSTOP { return false }
+        var known: [pid_t: TerminationTarget] = [root.pid: root]
+        if let data = try? Data(contentsOf: recoveryFile),
+           let targets = try? JSONDecoder().decode([TerminationTarget].self, from: data) {
+            for target in targets where isAlive(target) { known[target.pid] = target }
+        }
+        var terminated: Set<pid_t> = []
+        let start = ProcessInfo.processInfo.systemUptime
+        repeat {
+            guard let processes = userProcesses() else {
+                // Keep cleanup authority alive across transient inspection errors.
+                Thread.sleep(forTimeInterval: 0.5)
+                continue
+            }
+            // Keep the original keeper alive until the final sweep. Session IDs
+            // alone are not sufficient identity after their original members exit.
+            let members = isAlive(root) ? processes.filter { getsid($0.kp_proc.p_pid) == sessionID }.map(TerminationTarget.init) : []
+            for target in descendants(of: Array(known.values).filter(isAlive) + members) { known[target.pid] = target }
+            let alive = known.values.filter(isAlive)
+            if alive.isEmpty { return true }
+            for target in alive where target.pid != root.pid {
+                if ProcessInfo.processInfo.systemUptime - start >= 0.5 { signal(target, SIGKILL) }
+                else if terminated.insert(target.pid).inserted { signal(target, SIGTERM) }
+            }
+            if alive.allSatisfy({ $0.pid == root.pid }) { signal(root, SIGKILL) }
+            Thread.sleep(forTimeInterval: 0.05)
+        } while ProcessInfo.processInfo.systemUptime - start < 5
+        // Preserve birth-time-checked targets for a later recovery attempt;
+        // never leave Stop waiting forever on a kernel inspection failure.
+        let remaining = descendants(of: Array(known.values).filter(isAlive))
+        try? JSONEncoder().encode(remaining).write(to: recoveryFile, options: .atomic)
+        return false
+    }
+
+    private static func userProcesses() -> [kinfo_proc]? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_UID, Int32(getuid())]
+        for _ in 0..<3 {
+            var size = 0
+            guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0 else { return nil }
+            var processes = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride + 32)
+            size = processes.count * MemoryLayout<kinfo_proc>.stride
+            let result = processes.withUnsafeMutableBytes { sysctl(&mib, UInt32(mib.count), $0.baseAddress, &size, nil, 0) }
+            if result == 0 { return Array(processes.prefix(size / MemoryLayout<kinfo_proc>.stride)) }
+            if errno != ENOMEM { return nil }
+        }
+        return nil
     }
 
     static func forceTermination(_ targets: [TerminationTarget]) {
@@ -89,26 +153,31 @@ nonisolated enum TerminalProcessMonitor {
         return pids.prefix(Int(count)).filter { $0 > 0 }
     }
 
-    static func childProcesses() -> Set<pid_t> { Set(children(of: getpid())) }
+    static func commandRoot(pid: pid_t, script: String) -> TerminationTarget? {
+        guard arguments(pid)?.contains(script) == true else { return nil }
+        return ownedRoot(pid: pid, owner: getpid())
+    }
 
-    static func newlyStartedProcess(after previous: Set<pid_t>) -> TerminationTarget? {
-        // Ghostty starts its PTY on an I/O thread just after surface creation.
-        // Bound the initial association wait to 20 ms; later panel switches do
-        // not enter this path. Ambiguity leaves the session unassociated.
-        let deadline = Date().addingTimeInterval(0.02)
-        repeat {
-            let candidates = childProcesses().subtracting(previous).compactMap { pid -> kinfo_proc? in
-                guard let process = info(pid) else { return nil }
-                let name = processName(process)
-                // The default macOS exec backend launches login. Excluding other
-                // child commands prevents a concurrent Git helper being claimed.
-                return name == "login" ? process : nil
-            }
-            if candidates.count > 1 { return nil }
-            if let candidate = candidates.first { return TerminationTarget(candidate) }
-            Thread.sleep(forTimeInterval: 0.001)
-        } while Date() < deadline
+    static func ownedRoot(pid: pid_t, owner: pid_t) -> TerminationTarget? {
+        guard owner > 1, var process = info(pid) else { return nil }
+        for _ in 0..<16 {
+            if process.kp_eproc.e_ppid == owner { return TerminationTarget(process) }
+            guard process.kp_eproc.e_ppid > 1, let parent = info(process.kp_eproc.e_ppid) else { return nil }
+            process = parent
+        }
         return nil
+    }
+
+    static func isAlive(_ target: TerminationTarget) -> Bool {
+        guard let process = info(target.pid), process.kp_proc.p_stat != SZOMB else { return false }
+        return target.stillMatches(process)
+    }
+
+    static func target(pid: pid_t) -> TerminationTarget? { info(pid).map(TerminationTarget.init) }
+
+    static func isLauncher(pid: pid_t, directory: URL) -> Bool {
+        guard let argv = arguments(pid) else { return false }
+        return argv.dropFirst().prefix(2).elementsEqual(["--rune-terminal-launch", directory.path])
     }
 
     private static func processName(_ process: kinfo_proc) -> String {

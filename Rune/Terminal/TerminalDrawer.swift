@@ -6,6 +6,8 @@ struct TerminalDrawer: View {
     let isParked: Bool
     let onClose: () -> Void
     var onActivate: () -> Void = {}
+    var onRunCommand: () -> Void = {}
+    var onStopCommand: () -> Void = {}
     @State private var isRenaming = false
     @State private var draftName = ""
     @FocusState private var isNameFocused: Bool
@@ -30,13 +32,31 @@ struct TerminalDrawer: View {
                         .runeFont(size: 12, weight: .medium)
                         .lineLimit(1)
                         .onTapGesture(count: 2, perform: beginRenaming)
-                        .help("Double-click to rename terminal")
+                        .help(session.savedCommandID == nil ? "Double-click to rename terminal" : "Edit the saved command to change its name")
                         .accessibilityAction(named: "Rename terminal", beginRenaming)
                 }
-                if session.hasExited {
+                if session.savedCommandID != nil {
+                    Text(session.commandStatus).runeFont(size: 11).foregroundStyle(.secondary)
+                } else if session.hasExited {
                     Text("Exited").runeFont(size: 11).foregroundStyle(.secondary)
                 }
                 Spacer()
+                if session.savedCommandID != nil {
+                    if session.isCommandRunning {
+                        Button(action: onStopCommand) { Image(systemName: "stop.fill") }
+                            .help("Stop command")
+                            .accessibilityLabel("Stop command")
+                            .buttonStyle(WorkspaceButtonStyle())
+                            .disabled(session.isStopping)
+                    }
+                    Button(action: onRunCommand) {
+                        Image(systemName: session.isCommandRunning ? "arrow.clockwise" : "play.fill")
+                    }
+                    .help(session.isCommandRunning ? "Restart command" : "Run command")
+                    .accessibilityLabel(session.isCommandRunning ? "Restart command" : "Run command")
+                    .buttonStyle(WorkspaceButtonStyle())
+                    .disabled(session.isStopping)
+                }
                 Button(action: onClose) { Image(systemName: "chevron.right") }
                     .buttonStyle(WorkspaceButtonStyle())
                     .help("Hide Terminal (session keeps running)")
@@ -50,7 +70,8 @@ struct TerminalDrawer: View {
                 terminal: session.terminal,
                 isVisible: isVisible,
                 isActive: !isParked,
-                onActivate: onActivate
+                onActivate: onActivate,
+                launchError: session.launchError
             )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
@@ -71,6 +92,7 @@ struct TerminalDrawer: View {
     }
 
     private func beginRenaming() {
+        guard session.savedCommandID == nil else { return }
         draftName = session.name
         isRenaming = true
         isNameFocused = true
