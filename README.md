@@ -36,7 +36,9 @@ Change Brief remembers its scope and comparison branch for each project. PR is d
 on the default branch. Enter a local or remote-tracking branch such as `main` or
 `origin/main` in **Compare against**; Rune uses local Git references without fetching.
 
-Briefs and diagram images are cached for the current workspace session. You can
+Briefs are saved locally across launches and reused when the captured diff matches.
+Rune keeps the 20 most recently saved briefs per project; diagram images are cached
+for the current workspace session. You can
 close the panel while generation runs. When files change, the brief keeps its
 captured diffs and offers **Refresh**. Open a code reference to see the full
 captured diff; **Back to Brief** or Escape returns to the same section.
@@ -50,7 +52,7 @@ To run the focused Git and agent-output checks:
 
 ```sh
 swiftc -parse-as-library Rune/Git/GitRepository.swift Rune/Guide/ChangeGuide.swift \
-  Rune/Guide/GuideAgent.swift Scripts/check-change-guide.swift -o /tmp/rune-guide-checks
+  Rune/Guide/GuideAgent.swift Rune/Guide/GuideBriefCache.swift Scripts/check-change-guide.swift -o /tmp/rune-guide-checks
 /tmp/rune-guide-checks
 ```
 

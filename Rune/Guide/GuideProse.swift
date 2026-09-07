@@ -30,8 +30,8 @@ struct GuideProse: View {
             // Only captured reference IDs become links; never open agent-supplied URLs.
             result[run.range].link = nil
             if run.inlinePresentationIntent?.contains(.code) == true {
-                result[run.range].foregroundColor = .purple
-                result[run.range].backgroundColor = Color.purple.opacity(0.10)
+                result[run.range].foregroundColor = Color.blue.opacity(0.8)
+                result[run.range].backgroundColor = Color.blue.opacity(0.06)
                 result[run.range].font = .system(size: typography.size(relativeTo: 13), design: .monospaced)
             }
         }

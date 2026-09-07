@@ -61,6 +61,23 @@ struct ChangeGuideChecks {
         let section = ChangeGuide.Section(title: "Greeting", explanation: "Updates the greeting.", mermaid: "", references: [staged.references[0].id])
         let guide = ChangeGuide(title: "Greeting change", overview: "Updates the greeting.", sections: [section])
         try guide.validate(against: staged)
+        let storage = root.appending(path: "brief-cache")
+        let cache = GuideBriefCache(rootURL: root, storageURL: storage)
+        try cache.save(guide: guide, agent: .codex, snapshot: staged)
+        let reopened = GuideBriefCache(rootURL: root, storageURL: storage)
+        precondition(reopened.load(snapshot: staged)?.guide.title == guide.title, "Saved briefs must survive a new cache instance")
+        precondition(reopened.load(snapshot: working) == nil, "Different diffs must not reuse a saved brief")
+        let otherProject = GuideBriefCache(rootURL: root.appending(path: "other"), storageURL: storage)
+        precondition(otherProject.load(snapshot: staged) == nil, "Project caches must stay separate")
+        try Data("broken json".utf8).write(to: cache.directory.appending(path: staged.fingerprint + ".json"))
+        precondition(reopened.load(snapshot: staged) == nil, "Corrupt cache entries must be ignored")
+        for index in 0..<23 {
+            let snapshot = GuideSnapshot(scope: .staged, branch: "cache-test-\(index)", files: staged.files)
+            try cache.save(guide: guide, agent: .codex, snapshot: snapshot)
+        }
+        let savedFiles = try FileManager.default.contentsOfDirectory(at: cache.directory, includingPropertiesForKeys: nil)
+        precondition(savedFiles.count == 20, "Saved history must remain bounded")
+        print("Brief cache checks passed: persistence, diff matching, project isolation, corrupt files, and eviction.")
         let encoded = try JSONEncoder().encode(guide)
         _ = try GuideAgent.codex.decode(encoded)
         let envelope = "{\"is_error\":false,\"structured_output\":\(String(decoding: encoded, as: UTF8.self))}"

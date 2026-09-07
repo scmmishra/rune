@@ -16,6 +16,7 @@ final class ChangeGuideModel: ObservableObject {
         didSet { preferences.set(comparisonBranch, forKey: preferenceKey + ".comparison"); invalidate() }
     }
     @Published private(set) var allowsPR = false
+    private let cache: GuideBriefCache
     private let preferences: UserDefaults
     private let preferenceKey: String
     private var needsDefaultComparison: Bool
@@ -38,6 +39,7 @@ final class ChangeGuideModel: ObservableObject {
     private let images = NSCache<NSString, NSImage>()
 
     init(rootURL: URL, preferences: UserDefaults = .standard) {
+        cache = GuideBriefCache(rootURL: rootURL)
         self.preferences = preferences
         preferenceKey = "changeGuide." + rootURL.standardizedFileURL.resolvingSymlinksInPath().path
         needsDefaultComparison = preferences.object(forKey: preferenceKey + ".comparison") == nil
@@ -62,9 +64,13 @@ final class ChangeGuideModel: ObservableObject {
         isChecking = true
         currentSnapshot = nil
         errorMessage = nil
+        let cache = cache
         let capture = Task.detached(priority: .utility) {
             let branches = GitRepository.guideBranches(at: rootURL)
-            let result = Result { try GuideSnapshot.capture(at: rootURL, scope: scope, comparison: useDefaultComparison ? branches.comparison : comparison) }
+            let result = Result {
+                let snapshot = try GuideSnapshot.capture(at: rootURL, scope: scope, comparison: useDefaultComparison ? branches.comparison : comparison)
+                return (snapshot, cache.load(snapshot: snapshot))
+            }
             return (branches, result)
         }
         // SwiftUI cancels superseded checks; propagate that to the off-main Git work.
@@ -81,7 +87,13 @@ final class ChangeGuideModel: ObservableObject {
         }
         isChecking = false
         switch result.1 {
-        case let .success(snapshot): currentSnapshot = snapshot
+        case let .success((snapshot, saved)):
+            currentSnapshot = snapshot
+            if entry?.snapshot.fingerprint != snapshot.fingerprint,
+               let saved, let agent = GuideAgent(rawValue: saved.agentName) {
+                entries[scope] = Entry(guide: saved.guide, snapshot: snapshot, agent: agent)
+                selectedSection = -1
+            }
         case let .failure(error): errorMessage = error.localizedDescription
         }
     }
@@ -97,6 +109,11 @@ final class ChangeGuideModel: ObservableObject {
                 try Task.checkCancellation()
                 entries[snapshot.scope] = Entry(guide: guide, snapshot: snapshot, agent: agent)
                 selectedSection = -1
+                let cache = cache
+                // Persistence must not block the UI or discard a successfully generated brief on disk errors.
+                await Task.detached(priority: .utility) {
+                    try? cache.save(guide: guide, agent: agent, snapshot: snapshot)
+                }.value
             } catch is CancellationError {
                 // Cancelling a refresh preserves the previous readable guide.
             } catch {

@@ -84,6 +84,9 @@ struct ChangeGuideDrawer: View {
                 model.generate(rootURL: rootURL, agent: preferredAgent)
             }
         }
+        .onChange(of: model.entry?.snapshot.fingerprint) {
+            openedReference = nil
+        }
         .onChange(of: model.paletteRequestID) {
             openedReference = nil
         }
@@ -308,9 +311,7 @@ private struct GuideDiagramView: View {
                 GuideProgressView().frame(height: 100)
             }
         }
-        .padding(16)
         .frame(maxWidth: .infinity)
-        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
         .task(id: "\(colorScheme):\(source)") {
             image = nil
             failed = false
