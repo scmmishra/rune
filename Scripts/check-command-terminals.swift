@@ -76,6 +76,17 @@ struct CommandTerminalChecks {
                     window.contentView = NSHostingView(rootView: TestPane(terminal: interactive.terminal, typography: typography))
                     window.orderBack(nil)
                     try await Task.sleep(for: .seconds(1))
+                    let originalSurface = interactive.terminal.surface
+                    let originalProcess = interactive.rootProcess?.pid
+                    let initialSize = interactive.terminal.surfaceSize!
+                    precondition(interactive.terminal.sendKey(.digit0, modifiers: .super_))
+                    try await Task.sleep(for: .milliseconds(250))
+                    let resetSize = interactive.terminal.surfaceSize!
+                    precondition(initialSize.cellWidthPixels == resetSize.cellWidthPixels
+                                 && initialSize.cellHeightPixels == resetSize.cellHeightPixels,
+                                 "Command-0 must preserve the initial saved font size")
+                    precondition(interactive.terminal.surface === originalSurface)
+                    precondition(interactive.rootProcess?.pid == originalProcess)
                     let marker = root.appendingPathComponent("rune-shell-" + UUID().uuidString)
                     defer { try? FileManager.default.removeItem(at: marker) }
                     precondition(interactive.terminal.paste(text: "cd /; printf ok > " + CommandExecution.quote(marker.path)))

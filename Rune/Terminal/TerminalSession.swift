@@ -76,7 +76,6 @@ final class TerminalSession: ObservableObject, Identifiable {
         )
         terminal.configuration = TerminalSurfaceOptions(
             backend: .exec,
-            fontSize: execution == nil ? 12 : nil,
             workingDirectory: workingDirectory?.path,
             command: processGuardian?.launchCommand(execution?.launchCommand ?? "\(CommandExecution.quote(ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh")) -l", shellIntegration: execution == nil),
             waitAfterCommand: execution == nil ? nil : true
