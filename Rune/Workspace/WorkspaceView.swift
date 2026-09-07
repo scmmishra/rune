@@ -7,9 +7,10 @@ struct WorkspaceView: View {
     let onOpenWorkspace: (WorkspaceIdentity) -> Void
     @StateObject private var terminals: TerminalSessions
     @StateObject private var repository: GitSidebarModel
-    @StateObject private var guide = ChangeGuideModel()
+    @StateObject private var guide: ChangeGuideModel
 
     init(directoryURL: URL?, onOpenProject: @escaping () -> Void, onOpenWorkspace: @escaping (WorkspaceIdentity) -> Void) {
+        _guide = StateObject(wrappedValue: ChangeGuideModel(rootURL: directoryURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)))
         _terminals = StateObject(wrappedValue: TerminalSessions(workingDirectory: directoryURL))
         self.directoryURL = directoryURL
         self.onOpenProject = onOpenProject
@@ -154,6 +155,14 @@ struct WorkspaceView: View {
                     .frame(width: gitWidth)
                 }
 
+                if isGuideOpen && isDrawerVisible && !isPalettePresented {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { closeDrawer() }
+                        .accessibilityLabel("Dismiss change brief")
+                        .zIndex(0.5)
+                }
+
                 if let directoryURL {
                     ZStack(alignment: .top) {
                         // Ghostty surfaces belong to their mounted platform views. Keep
@@ -216,6 +225,15 @@ struct WorkspaceView: View {
                             CommandPalette(
                                 canSwitchBranch: repository.snapshot.isRepository && !repository.isBusy,
                                 canHideTerminal: selectedTerminalID != nil,
+                                rootURL: directoryURL,
+                                canShowGuide: repository.snapshot.isRepository,
+                                guide: guide,
+                                onSelectGuide: { scope in
+                                    guide.scope = scope
+                                    guide.openFromPalette = true
+                                    guide.paletteRequestID = UUID()
+                                    showGuide()
+                                },
                                 terminals: terminals,
                                 onClose: { isCommandPalettePresented = false },
                                 onSelect: performCommand,
@@ -343,6 +361,7 @@ struct WorkspaceView: View {
     private func performCommand(_ command: WorkspaceCommand) {
         isCommandPalettePresented = false
         switch command {
+        case .changeGuide: showGuide()
         case .reload: repository.reload()
         case .hideTerminal: hideTerminalDrawer()
         case .openProject: presentProjects()

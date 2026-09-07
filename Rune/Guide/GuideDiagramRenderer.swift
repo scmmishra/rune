@@ -17,7 +17,7 @@ nonisolated enum GuideDiagramRenderer {
         case let .sequenceDiagram(model): withinLimit = model.actors.count <= 12 && model.messages.count <= 24
         default: withinLimit = false
         }
-        guard withinLimit else { throw GuideError.message("This diagram is too complex for an inline guide.") }
+        guard withinLimit else { throw GuideError.message("This diagram is too complex for an inline brief.") }
         let renderer = MermaidImageRenderer(theme: dark ? .zincDark : .zincLight)
         guard let prepared = try renderer.prepare(from: source) else { return nil }
         let bounds = prepared.bounds

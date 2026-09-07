@@ -6,16 +6,33 @@ struct ChangeGuideDrawer: View {
     @ObservedObject var model: ChangeGuideModel
     let onClose: () -> Void
     @EnvironmentObject private var repository: GitSidebarModel
+    @AppStorage(GuideAgent.preferenceKey) private var preferredAgent = GuideAgent.defaultPreference
     @State private var openedReference: GuideSnapshot.Reference?
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
+            if model.scope == .pr {
+                HStack(spacing: 10) {
+                    Text("Compare against")
+                    TextField("Branch or remote branch", text: $model.comparisonBranch)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 220)
+                        .disabled(model.isGenerating)
+                    Text("Committed changes since the branches diverged")
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .runeFont(size: 11)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                Divider()
+            }
             if let reference = openedReference, let entry = model.entry {
                 HStack {
                     Button { openedReference = nil } label: {
-                        Label("Back to Guide", systemImage: "chevron.left")
+                        Label("Back to Brief", systemImage: "chevron.left")
                     }
                     .buttonStyle(.plain)
                     Spacer()
@@ -30,6 +47,9 @@ struct ChangeGuideDrawer: View {
                     fileURL: rootURL.appending(path: reference.path),
                     isEditable: false, presentation: .diff
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // AppKit rulers can draw beyond their SwiftUI host; keep them below the guide headers.
+                .clipped()
             } else if let entry = model.entry {
                 status
                 HStack(spacing: 0) {
@@ -53,8 +73,23 @@ struct ChangeGuideDrawer: View {
                 if openedReference != nil { openedReference = nil } else { onClose() }
             }
         }
-        .task(id: "\(model.scope.rawValue):\(repository.contentRevision)") {
+        .task(id: "\(model.scope.rawValue):\(model.comparisonBranch):\(repository.contentRevision):\(model.paletteRequestID)") {
+            if model.scope == .pr {
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            }
             await model.check(rootURL: rootURL)
+            guard !Task.isCancelled, model.openFromPalette else { return }
+            model.openFromPalette = false
+            if model.entry == nil {
+                model.generate(rootURL: rootURL, agent: preferredAgent)
+            }
+        }
+        .onChange(of: model.paletteRequestID) {
+            openedReference = nil
+        }
+        .onChange(of: model.comparisonBranch) {
+            openedReference = nil
+            model.selectedSection = -1
         }
         .onChange(of: model.scope) {
             openedReference = nil
@@ -64,35 +99,38 @@ struct ChangeGuideDrawer: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Label("Change Guide", systemImage: "sparkles")
+            Label("Change Brief", systemImage: "sparkles")
                 .runeFont(size: 12, weight: .medium)
             Picker("Changes", selection: $model.scope) {
-                ForEach(GuideScope.allCases) { Text($0.rawValue).tag($0) }
+                ForEach(GuideScope.allCases) { scope in
+                    Text(scope.rawValue).tag(scope)
+                        .disabled(scope == .pr && !model.allowsPR)
+                }
             }
             .labelsHidden()
             .frame(width: 135)
             .disabled(model.isGenerating)
             Spacer(minLength: 0)
-            Picker("Agent", selection: $model.agent) {
+            Picker("Agent", selection: $preferredAgent) {
                 ForEach(GuideAgent.allCases) { Text($0.rawValue).tag($0) }
             }
             .labelsHidden()
             .frame(width: 125)
             .disabled(model.isGenerating)
             if model.isGenerating {
-                ProgressView().controlSize(.small)
+                GuideProgressView()
                 Button("Cancel", action: model.cancel)
             } else {
-                Button(model.entry == nil ? "Generate Guide" : "Refresh") {
+                Button(model.entry == nil ? "Generate Brief" : "Refresh") {
                     openedReference = nil
-                    model.generate(rootURL: rootURL)
+                    model.generate(rootURL: rootURL, agent: preferredAgent)
                 }
                 .disabled(model.isChecking || model.currentSnapshot == nil)
             }
             Button(action: onClose) { Image(systemName: "xmark") }
                 .buttonStyle(WorkspaceButtonStyle())
-                .help("Close Guide (Esc)")
-                .accessibilityLabel("Close guide")
+                .help("Close Brief (Esc)")
+                .accessibilityLabel("Close brief")
         }
         .controlSize(.small)
         .padding(.horizontal, 14)
@@ -105,8 +143,8 @@ struct ChangeGuideDrawer: View {
             HStack(spacing: 8) {
                 Image(systemName: model.errorMessage == nil ? "info.circle" : "exclamationmark.triangle")
                 Text(model.errorMessage ?? (model.isGenerating
-                    ? "Generating with \(model.agent.rawValue)… You can keep working while it runs."
-                    : "Changes have updated. Refresh the guide when you’re ready; these diffs show the captured version."))
+                    ? "Generating with \((model.generatingAgent ?? preferredAgent).rawValue)… You can keep working while it runs."
+                    : "Changes have updated. Refresh the brief when you’re ready; these diffs show the captured version."))
                 Spacer(minLength: 0)
             }
             .runeFont(size: 11)
@@ -125,13 +163,13 @@ struct ChangeGuideDrawer: View {
             Text(model.isGenerating ? "Putting the changes together" : "Understand your changes")
                 .runeFont(size: 20, weight: .medium)
             Text(model.isGenerating
-                 ? "\(model.agent.rawValue) is reading the diff and related code. You can close this panel and return when it’s ready."
+                 ? "\((model.generatingAgent ?? preferredAgent).rawValue) is reading the diff and related code. You can close this panel and return when it’s ready."
                  : "Get a reading order, focused explanations, and diagrams linked to the code that changed.")
                 .multilineTextAlignment(.center)
                 .runeFont(size: 13)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 390)
-            if model.isGenerating || model.isChecking { ProgressView().controlSize(.small) }
+            if model.isGenerating || model.isChecking { GuideProgressView() }
             if let error = model.errorMessage {
                 Text(error).runeFont(size: 12).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).frame(maxWidth: 430)
@@ -156,7 +194,7 @@ struct ChangeGuideDrawer: View {
             }
             .padding(10)
         }
-        .frame(width: 190)
+        .frame(width: 237.5)
         .background(Color.primary.opacity(0.025))
     }
 
@@ -263,7 +301,7 @@ private struct GuideDiagramView: View {
                 Label("Diagram unavailable. The explanation above covers this change.", systemImage: "text.alignleft")
                     .runeFont(size: 11).foregroundStyle(.secondary)
             } else {
-                ProgressView().controlSize(.small).frame(height: 100)
+                GuideProgressView().frame(height: 100)
             }
         }
         .padding(16)

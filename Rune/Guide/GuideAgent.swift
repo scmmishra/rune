@@ -3,6 +3,9 @@ import Foundation
 nonisolated enum GuideAgent: String, CaseIterable, Identifiable, Sendable {
     case codex = "Codex"
     case claude = "Claude Code"
+    static let preferenceKey = "guideAgent"
+    static let defaultPreference: GuideAgent = allCases.first(where: { $0.executable != nil }) ?? .codex
+
     var id: String { rawValue }
     var command: String { self == .codex ? "codex" : "claude" }
 
@@ -48,7 +51,7 @@ nonisolated enum GuideAgent: String, CaseIterable, Identifiable, Sendable {
         }
         let response = try JSONDecoder().decode(Response.self, from: data)
         guard response.is_error != true, let guide = response.structured_output else {
-            throw GuideError.message(response.result.map { String($0.prefix(600)) } ?? "Claude Code did not return a guide. Check your login and try again.")
+            throw GuideError.message(response.result.map { String($0.prefix(600)) } ?? "Claude Code did not return a brief. Check your login and try again.")
         }
         return guide
     }

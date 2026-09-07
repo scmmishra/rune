@@ -40,14 +40,13 @@ struct GitSidebarView: View {
             header
             Button(action: onOpenGuide) {
                 HStack {
-                    Label("Change Guide", systemImage: "sparkles")
+                    Label("Change Brief", systemImage: "sparkles")
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                 }
                 .runeFont(size: 11, weight: .medium)
                 .padding(9)
                 .contentShape(Rectangle())
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 10)

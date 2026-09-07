@@ -2,11 +2,12 @@ import AppKit
 import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
-    case reload, openProject, switchBranch, hideTerminal
+    case reload, openProject, switchBranch, hideTerminal, changeGuide
 
     var id: Self { self }
     var title: String {
         switch self {
+        case .changeGuide: "Show Change Brief…"
         case .reload: "Reload Files and Git"
         case .openProject: "Open Project…"
         case .switchBranch: "Switch Branch…"
@@ -15,6 +16,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
     }
     var symbol: String {
         switch self {
+        case .changeGuide: "sparkles"
         case .reload: "arrow.clockwise"
         case .openProject: "folder"
         case .switchBranch: "arrow.triangle.branch"
@@ -26,19 +28,27 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
 struct CommandPalette: View {
     let canSwitchBranch: Bool
     let canHideTerminal: Bool
+    let rootURL: URL
+    let canShowGuide: Bool
+    @ObservedObject var guide: ChangeGuideModel
+    let onSelectGuide: (GuideScope) -> Void
     @ObservedObject var terminals: TerminalSessions
     let onClose: () -> Void
     let onSelect: (WorkspaceCommand) -> Void
     let onSelectTerminal: (TerminalSession) -> Void
+    @State private var choosingGuideScope = false
+    @State private var guideBranches: GitGuideBranches?
     @State private var query = ""
     @State private var selection: Entry.ID? = "command:reload"
 
     private enum Entry: Identifiable {
+        case scope(GuideScope)
         case command(WorkspaceCommand)
         case terminal(TerminalSession)
 
         var id: String {
             switch self {
+            case let .scope(scope): "scope:" + scope.rawValue
             case let .command(command): "command:" + command.rawValue
             case let .terminal(session): "terminal:" + session.id.uuidString
             }
@@ -46,6 +56,7 @@ struct CommandPalette: View {
 
         var title: String {
             switch self {
+            case let .scope(scope): scope.rawValue
             case let .command(command): command.title
             case let .terminal(session): "Switch to \(session.name)"
             }
@@ -53,14 +64,23 @@ struct CommandPalette: View {
 
         var symbol: String {
             switch self {
+            case .scope: "arrow.triangle.branch"
             case let .command(command): command.symbol
             case .terminal: "terminal"
             }
         }
     }
 
+    private var prDescription: String {
+        guard let branches = guideBranches else { return "Checking branch…" }
+        guard branches.allowsPR else { return "Requires a non-default branch" }
+        let comparison = guide.comparisonBranch.isEmpty ? branches.comparison : guide.comparisonBranch
+        return "Compare against " + comparison
+    }
+
     private var matches: [Entry] {
-        let commands = WorkspaceCommand.allCases
+        let commands: [Entry] = choosingGuideScope ? GuideScope.allCases.map(Entry.scope) : WorkspaceCommand.allCases
+            .filter { $0 != .changeGuide || canShowGuide }
             .filter { $0 != .switchBranch || canSwitchBranch }
             .filter { $0 != .hideTerminal || canHideTerminal }
             .map(Entry.command) + terminals.all.map(Entry.terminal)
@@ -77,9 +97,17 @@ struct CommandPalette: View {
 
     var body: some View {
         SearchPalette(
-            placeholder: "Run a command", query: $query, items: matches,
-            selection: $selection, onClose: onClose, onSelect: { entry in
+            placeholder: choosingGuideScope ? "Change Brief: choose changes" : "Run a command", query: $query, items: matches,
+            selection: $selection, isEnabled: { entry in
+                if case .scope(.pr) = entry { return guideBranches?.allowsPR == true }
+                return true
+            }, onClose: onClose, onSelect: { entry in
                 switch entry {
+                case .command(.changeGuide) where !guide.isGenerating:
+                    choosingGuideScope = true
+                    query = ""
+                    selection = "scope:" + (guide.scope == .pr && guideBranches?.allowsPR != true ? GuideScope.workingTree : guide.scope).rawValue
+                case let .scope(scope): onSelectGuide(scope)
                 case let .command(command): onSelect(command)
                 case let .terminal(session): onSelectTerminal(session)
                 }
@@ -91,6 +119,10 @@ struct CommandPalette: View {
                     .frame(width: 12, height: 12)
                 Text(command.title)
                 Spacer(minLength: 0)
+                if case .scope(.pr) = command {
+                    Text(prDescription)
+                        .foregroundStyle(.secondary)
+                }
                 if case let .terminal(session) = command,
                    let number = terminals.navigation.shortcutNumber(for: session.id) {
                     Text("⌘\(number)").foregroundStyle(.secondary)
@@ -98,6 +130,11 @@ struct CommandPalette: View {
                     Text("⌘`").foregroundStyle(.secondary)
                 }
             }
+        }
+        .task {
+            guideBranches = await Task.detached(priority: .utility) {
+                GitRepository.guideBranches(at: rootURL)
+            }.value
         }
         .onChange(of: query) { selection = matches.first?.id }
         .onChange(of: canSwitchBranch) { selection = matches.first?.id }
@@ -225,6 +262,7 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
     var isLoading = false
     var isBusy = false
     var error: String?
+    var isEnabled: (Item) -> Bool = { _ in true }
     let onClose: () -> Void
     let onSelect: (Item) -> Void
     @ViewBuilder let row: (Item) -> Row
@@ -237,7 +275,7 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 PaletteSearchField(placeholder: placeholder, text: $query, isEnabled: !isBusy,
                     onMove: moveSelection, onClose: onClose, onSubmit: {
-                        guard !isBusy, let item = items.first(where: { $0.id == selection }) else { return }
+                        guard !isBusy, let item = items.first(where: { $0.id == selection }), isEnabled(item) else { return }
                         onSelect(item)
                     })
             }
@@ -249,7 +287,7 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
                     LazyVStack(spacing: 0) {
                         ForEach(items) { item in
                             Button {
-                                guard !isBusy else { return }
+                                guard !isBusy, isEnabled(item) else { return }
                                 selection = item.id
                                 onSelect(item)
                             } label: {
@@ -270,7 +308,7 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .disabled(isBusy)
+                            .disabled(isBusy || !isEnabled(item))
                             .id(item.id)
                         }
                     }
@@ -321,10 +359,11 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
     }
 
     private func moveSelection(_ direction: Int) {
-        guard !isBusy, !items.isEmpty else { return }
-        let index = selection.flatMap { selected in items.firstIndex { $0.id == selected } }
-        let next = direction < 0 ? max(0, (index ?? 1) - 1) : min(items.count - 1, (index ?? -1) + 1)
-        selection = items[next].id
+        let enabledItems = items.filter(isEnabled)
+        guard !isBusy, !enabledItems.isEmpty else { return }
+        let index = selection.flatMap { selected in enabledItems.firstIndex { $0.id == selected } }
+        let next = direction < 0 ? max(0, (index ?? 1) - 1) : min(enabledItems.count - 1, (index ?? -1) + 1)
+        selection = enabledItems[next].id
     }
 }
 

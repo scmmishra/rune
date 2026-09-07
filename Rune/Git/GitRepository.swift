@@ -690,3 +690,76 @@ nonisolated struct GitDiffCount: Sendable, Equatable {
         return (lhs ?? 0) + (rhs ?? 0)
     }
 }
+
+nonisolated struct GitGuideBranches: Sendable {
+    let current: String
+    let defaultBranch: String
+    let comparison: String
+    var allowsPR: Bool { !current.isEmpty && !defaultBranch.isEmpty && current != defaultBranch }
+}
+
+extension GitRepository {
+    nonisolated static func guideBranches(at rootURL: URL) -> GitGuideBranches {
+        func value(_ args: [String]) -> String {
+            let result = runGit(args, at: rootURL, readOnly: true)
+            return result.status == 0 ? String(decoding: result.data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        }
+        let current = value(["symbolic-ref", "--quiet", "--short", "HEAD"])
+        for remote in preferredRemoteNames(at: rootURL) {
+            let prefix = "refs/remotes/\(remote)/"
+            let reference = value(["symbolic-ref", "--quiet", prefix + "HEAD"])
+            if reference.hasPrefix(prefix) {
+                return GitGuideBranches(current: current, defaultBranch: String(reference.dropFirst(prefix.count)),
+                                        comparison: String(reference.dropFirst("refs/remotes/".count)))
+            }
+        }
+        // Repositories without a remote HEAD still commonly have a local main or master.
+        for branch in ["main", "master"] {
+            if !value(["rev-parse", "--verify", "refs/heads/" + branch]).isEmpty {
+                return GitGuideBranches(current: current, defaultBranch: branch, comparison: branch)
+            }
+        }
+        return GitGuideBranches(current: current, defaultBranch: "", comparison: "")
+    }
+
+    nonisolated static func guidePRDiff(at rootURL: URL, comparison: String) throws -> (branch: String, files: [(path: String, patch: String)]) {
+        func git(_ args: [String]) throws -> Data {
+            try Task.checkCancellation()
+            let result = runGit(args, at: rootURL, readOnly: true)
+            guard result.status == 0 else {
+                throw GuideComparisonError.message("Cannot compare against \(comparison). Check that the branch exists locally and shares history with HEAD.")
+            }
+            return result.data
+        }
+        func revision(_ ref: String) throws -> String {
+            String(decoding: try git(["rev-parse", "--verify", "--end-of-options", ref + "^{commit}"]), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let branches = guideBranches(at: rootURL)
+        guard branches.allowsPR else { throw GuideComparisonError.message("PR briefs require a non-default branch and a known default branch.") }
+        guard !comparison.isEmpty else { throw GuideComparisonError.message("Enter a branch to compare against.") }
+        let head = try revision("HEAD")
+        let base = try revision(comparison)
+        // Compare from the merge base, matching Git's triple-dot pull request semantics.
+        let ancestor = String(decoding: try git(["merge-base", base, head]), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        let paths = try git(["diff", "--name-only", "-z", "--no-renames", ancestor, head, "--"])
+            .split(separator: 0).map { String(decoding: $0, as: UTF8.self) }
+        guard !paths.isEmpty else { throw GuideComparisonError.message("There are no committed PR changes to explain.") }
+        guard paths.count <= 100 else { throw GuideComparisonError.message("This PR has too many files for a brief.") }
+        var size = 0
+        let files = try paths.sorted().map { path in
+            let patch = try git(["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--unified=3", ancestor, head, "--", ":(literal)" + path])
+            size += patch.count
+            guard size <= 250_000 else { throw GuideComparisonError.message("This PR diff is too large for a brief.") }
+            return (path: path, patch: String(decoding: patch, as: UTF8.self))
+        }
+        return (branches.current + ":" + ancestor + ":" + head, files)
+    }
+}
+
+private nonisolated enum GuideComparisonError: LocalizedError {
+    case message(String)
+    var errorDescription: String? {
+        switch self { case let .message(message): message }
+    }
+}
