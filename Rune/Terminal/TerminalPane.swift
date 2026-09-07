@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import GhosttyTerminal
+import ObjectiveC
 
 struct TerminalPane: View {
     var focusRequest: Int = 0
@@ -74,6 +75,20 @@ final class RuneTerminalView: TerminalView {
     private static var canAssociateProcesses = true
     private(set) var rootProcess: TerminalProcessMonitor.TerminationTarget?
 
+    override var layer: CALayer? {
+        get { super.layer }
+        set {
+            if let outgoing = super.layer, outgoing !== newValue {
+                Self.retireDisplayCallback(on: outgoing)
+            }
+            super.layer = newValue
+        }
+    }
+
+    deinit {
+        MainActor.assumeIsolated { stop() }
+    }
+
     override func viewDidMoveToWindow() {
         trackProcessCreation { super.viewDidMoveToWindow() }
     }
@@ -92,7 +107,12 @@ final class RuneTerminalView: TerminalView {
 
     override var configuration: TerminalSurfaceOptions {
         get { super.configuration }
-        set { trackProcessCreation { super.configuration = newValue } }
+        set {
+            trackProcessCreation { super.configuration = newValue }
+            if (delegate as? TerminalViewState)?.surface == nil, let layer {
+                Self.retireDisplayCallback(on: layer)
+            }
+        }
     }
 
     private func trackProcessCreation(_ update: () -> Void) {
@@ -127,6 +147,7 @@ final class RuneTerminalView: TerminalView {
         set {
             guard !isStopped else { return }
             trackProcessCreation { super.controller = newValue }
+            if newValue == nil, let layer { Self.retireDisplayCallback(on: layer) }
         }
     }
 
@@ -136,6 +157,26 @@ final class RuneTerminalView: TerminalView {
         // Source: libghostty-spm TerminalSurfaceCoordinator.rebuildIfReady (1.5.2).
         isStopped = true
         super.controller = nil
+        if let layer { Self.retireDisplayCallback(on: layer) }
+    }
+
+    private static func retireDisplayCallback(on layer: CALayer) {
+        // Ghostty 1.3.1 leaves raw renderer pointers on IOSurfaceLayer after
+        // freeing the renderer. Core Animation can still display a retained
+        // layer during a later transaction. Clear these only after teardown
+        // has joined the renderer thread (including replacement during rebuild).
+        // Source: src/renderer/metal/IOSurfaceLayer.zig in libghostty-spm 1.5.2.
+        guard NSStringFromClass(type(of: layer)) == "IOSurfaceLayer" else { return }
+        for name in ["display_cb", "display_ctx"] {
+            guard let ivar = class_getInstanceVariable(type(of: layer), name) else { continue }
+            // These ivars hold C pointers, despite their Objective-C encoding;
+            // object_setIvar/KVC would apply object ownership to raw addresses.
+            Unmanaged.passUnretained(layer).toOpaque().storeBytes(
+                of: Optional<UnsafeRawPointer>.none,
+                toByteOffset: ivar_getOffset(ivar),
+                as: Optional<UnsafeRawPointer>.self
+            )
+        }
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
