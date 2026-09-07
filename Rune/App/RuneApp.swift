@@ -4,6 +4,11 @@ import SwiftUI
 struct RuneApp: App {
     @StateObject private var updater = AppUpdater()
 
+    init() {
+        // Keep project windows separate even when macOS prefers opening windows as tabs.
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
     var body: some Scene {
         WindowGroup("Rune", id: "workspace", for: WorkspaceIdentity.self) { $workspace in
             WorkspaceWindow(workspace: $workspace)
