@@ -4,6 +4,7 @@ struct TerminalDrawer: View {
     @ObservedObject var session: TerminalSession
     let isVisible: Bool
     let onClose: () -> Void
+    var onFocus: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,7 +26,7 @@ struct TerminalDrawer: View {
             .frame(height: 38)
 
             Divider()
-            TerminalPane(terminal: session.terminal, isVisible: isVisible)
+            TerminalPane(terminal: session.terminal, isVisible: isVisible, onFocus: onFocus)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
         }

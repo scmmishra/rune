@@ -7,10 +7,19 @@ struct TerminalPane: View {
     @State private var didRequestInitialFocus = false
     @ObservedObject var terminal: TerminalViewState
     var isVisible = true
+    var onFocus: () -> Void = {}
     @Environment(\.runeTypography) private var typography
 
     var body: some View {
         TerminalSurfaceView(context: terminal)
+            .onChange(of: terminal.isFocused) {
+                // Ghostty publishes focus on the next runloop turn. Check the
+                // native responder too, so a stale notification cannot move a pane.
+                if terminal.isFocused, let view = terminal.attachedPlatformView,
+                   view.window?.firstResponder === view {
+                    onFocus()
+                }
+            }
             .onChange(of: focusRequest) { if isVisible { terminal.requestFocus() } }
             .onChange(of: isVisible) {
                 terminal.isSurfaceVisible = isVisible
