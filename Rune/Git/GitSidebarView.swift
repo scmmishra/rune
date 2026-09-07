@@ -8,6 +8,7 @@ struct GitSidebarView: View {
     let onOpenFile: (URL) -> Void
     let onOpenDiff: (GitDiffSelection, [GitDiffSelection]) -> Void
     let onOpenCommit: (GitCommit) -> Void
+    let onOpenGuide: () -> Void
 
     @EnvironmentObject private var model: GitSidebarModel
     @State private var commitMessage = ""
@@ -21,7 +22,8 @@ struct GitSidebarView: View {
         onSelectionsChange: @escaping ([GitDiffSelection]) -> Void,
         onOpenFile: @escaping (URL) -> Void,
         onOpenDiff: @escaping (GitDiffSelection, [GitDiffSelection]) -> Void,
-        onOpenCommit: @escaping (GitCommit) -> Void
+        onOpenCommit: @escaping (GitCommit) -> Void,
+        onOpenGuide: @escaping () -> Void
     ) {
         self.rootURL = rootURL
         self.onOpenBranches = onOpenBranches
@@ -30,11 +32,27 @@ struct GitSidebarView: View {
         self.onOpenFile = onOpenFile
         self.onOpenDiff = onOpenDiff
         self.onOpenCommit = onOpenCommit
+        self.onOpenGuide = onOpenGuide
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
+            Button(action: onOpenGuide) {
+                HStack {
+                    Label("Change Guide", systemImage: "sparkles")
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                }
+                .runeFont(size: 11, weight: .medium)
+                .padding(9)
+                .contentShape(Rectangle())
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 6)
+            .disabled(!model.snapshot.isRepository)
 
             GeometryReader { geometry in
                 VStack(spacing: 0) {

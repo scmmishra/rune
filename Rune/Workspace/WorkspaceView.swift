@@ -7,6 +7,7 @@ struct WorkspaceView: View {
     let onOpenWorkspace: (WorkspaceIdentity) -> Void
     @StateObject private var terminals: TerminalSessions
     @StateObject private var repository: GitSidebarModel
+    @StateObject private var guide = ChangeGuideModel()
 
     init(directoryURL: URL?, onOpenProject: @escaping () -> Void, onOpenWorkspace: @escaping (WorkspaceIdentity) -> Void) {
         _terminals = StateObject(wrappedValue: TerminalSessions(workingDirectory: directoryURL))
@@ -49,6 +50,11 @@ struct WorkspaceView: View {
         case .diff, .commit: return true
         default: return false
         }
+    }
+
+    private var isGuideOpen: Bool {
+        if case .guide = openDrawer { return true }
+        return false
     }
 
     private var isTerminalParked: Bool {
@@ -137,7 +143,8 @@ struct WorkspaceView: View {
                                 },
                                 onOpenCommit: { commit in
                                     showCommit(commit)
-                                }
+                                },
+                                onOpenGuide: showGuide
                             )
                             .id(directoryURL)
                         } else {
@@ -172,7 +179,7 @@ struct WorkspaceView: View {
                         }
                     }
                     .disabled(isPalettePresented)
-                    .frame(width: drawerWidth)
+                    .frame(width: isGuideOpen ? min(1100, geometry.size.width - 32) : drawerWidth)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(16)
                     .offset(x: isDrawerVisible
@@ -273,6 +280,7 @@ struct WorkspaceView: View {
         .onAppear { if directoryURL != nil { repository.start() } }
         .onDisappear {
             repository.stop()
+            guide.cancel()
             drawerCleanupTask?.cancel()
             terminals.stopAll()
         }
@@ -366,6 +374,15 @@ struct WorkspaceView: View {
         }
     }
 
+    private func showGuide() {
+        dismissPalettes()
+        drawerCleanupTask?.cancel()
+        withAnimation(.snappy(duration: 0.18)) {
+            openDrawer = .guide
+            isDrawerVisible = true
+        }
+    }
+
     private func showCommit(_ commit: GitCommit) {
         drawerCleanupTask?.cancel()
         withAnimation(.snappy(duration: 0.22)) {
@@ -377,6 +394,8 @@ struct WorkspaceView: View {
     @ViewBuilder
     private func drawer(_ drawer: WorkspaceDrawer, rootURL: URL) -> some View {
         switch drawer {
+        case .guide:
+            ChangeGuideDrawer(rootURL: rootURL, model: guide, onClose: closeDrawer)
         case let .file(fileURL):
             FileEditorDrawer(fileURL: fileURL, onClose: closeDrawer)
         case let .diff(change, area):
@@ -530,6 +549,7 @@ struct WorkspaceView: View {
 }
 
 private enum WorkspaceDrawer {
+    case guide
     case terminal(UUID)
     case file(URL)
     case diff(GitChange, GitChange.Area)

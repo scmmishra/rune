@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        C30000000000000000000001 /* BeautifulMermaid in Frameworks */ = {isa = PBXBuildFile; productRef = C30000000000000000000002 /* BeautifulMermaid */; };
 		B20000000000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000002 /* Sparkle */; };
 		A10000000000000000000014 /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* GhosttyTerminal */; };
 		A10000000000000000000017 /* SwiftTreeSitter in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000021 /* SwiftTreeSitter */; };
@@ -45,6 +46,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                C30000000000000000000001 /* BeautifulMermaid in Frameworks */,
 				B20000000000000000000001 /* Sparkle in Frameworks */,
 				A10000000000000000000014 /* GhosttyTerminal in Frameworks */,
 				A10000000000000000000017 /* SwiftTreeSitter in Frameworks */,
@@ -93,6 +95,7 @@
 			);
 			name = Rune;
 			packageProductDependencies = (
+                C30000000000000000000002 /* BeautifulMermaid */,
 				B20000000000000000000002 /* Sparkle */,
 				A10000000000000000000016 /* GhosttyTerminal */,
 				A10000000000000000000021 /* SwiftTreeSitter */,
@@ -129,6 +132,7 @@
 			mainGroup = A10000000000000000000007;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+                C30000000000000000000003 /* beautiful-mermaid-swift */,
 				B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				A10000000000000000000015 /* XCRemoteSwiftPackageReference "libghostty-spm" */,
 				A1000000000000000000001C /* XCRemoteSwiftPackageReference "swift-tree-sitter" */,
@@ -167,6 +171,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+        C30000000000000000000003 /* beautiful-mermaid-swift */ = {
+            isa = XCRemoteSwiftPackageReference;
+            repositoryURL = "https://github.com/lukilabs/beautiful-mermaid-swift";
+            requirement = { kind = exactVersion; version = 1.0.4; };
+        };
 		B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
@@ -215,6 +224,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+        C30000000000000000000002 /* BeautifulMermaid */ = {
+            isa = XCSwiftPackageProductDependency;
+            package = C30000000000000000000003 /* beautiful-mermaid-swift */;
+            productName = BeautifulMermaid;
+        };
 		B20000000000000000000002 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
