@@ -35,11 +35,24 @@ struct WorkspaceView: View {
     @State private var gitSidebarWidth: CGFloat = 240
     @State private var dragStart: CGFloat?
     @State private var terminalFocusRequest = 0
+    @State private var isCommandHeld = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var selectedDiff: GitDiffSelection? {
         guard isDrawerVisible, case let .diff(change, area) = openDrawer else { return nil }
         return GitDiffSelection(change: change, area: area)
+    }
+
+    private var isGitPreviewVisible: Bool {
+        guard isDrawerVisible else { return false }
+        switch openDrawer {
+        case .diff, .commit: return true
+        default: return false
+        }
+    }
+
+    private var isTerminalParked: Bool {
+        selectedTerminalID != nil && terminals.navigation.activeID == terminals.primary.id
     }
 
     private enum Layout {
@@ -51,6 +64,10 @@ struct WorkspaceView: View {
     var body: some View {
         GeometryReader { geometry in
             let drawerWidth = min(max(480, geometry.size.width * 0.62), geometry.size.width * 0.78)
+            let gitWidth = min(gitSidebarWidth, geometry.size.width * 0.28)
+            // Leave a slice over the Git sidebar while revealing all of primary.
+            // Translation preserves both PTY sizes, avoiding terminal reflow.
+            let parkedOffset = drawerWidth + Layout.workspaceInset - gitWidth
             ZStack(alignment: .trailing) {
                 HStack(spacing: 0) {
                     Group {
@@ -58,7 +75,8 @@ struct WorkspaceView: View {
                             FileTreeView(terminals: {
                                 TerminalSidebarView(
                                     sessions: terminals,
-                                    selectedID: selectedTerminalID,
+                                    selectedID: terminals.navigation.activeID,
+                                    showsShortcuts: isCommandHeld,
                                     onSelect: showTerminal,
                                     onAdd: addTerminal,
                                     onRemove: removeTerminal
@@ -77,7 +95,11 @@ struct WorkspaceView: View {
 
                     Group {
                         if let directoryURL {
-                            TerminalPane(focusRequest: terminalFocusRequest, terminal: terminals.primary.terminal)
+                            TerminalPane(
+                                focusRequest: terminalFocusRequest,
+                                terminal: terminals.primary.terminal,
+                                onActivate: primaryTerminalActivated
+                            )
                                 .id(directoryURL)
                         } else {
                             WorkspacePlaceholder()
@@ -122,7 +144,7 @@ struct WorkspaceView: View {
                             Color.clear
                         }
                     }
-                    .frame(width: min(gitSidebarWidth, geometry.size.width * 0.28))
+                    .frame(width: gitWidth)
                 }
 
                 if let directoryURL {
@@ -135,8 +157,11 @@ struct WorkspaceView: View {
                             TerminalDrawer(
                                 session: session,
                                 isVisible: visible,
-                                isSelected: visible,
-                                onClose: closeDrawer
+                                isParked: isTerminalParked,
+                                onClose: hideTerminalDrawer,
+                                onActivate: {
+                                    if selectedTerminalID == session.id { showTerminal(session) }
+                                }
                             )
                                 .opacity(visible ? 1 : 0)
                                 .allowsHitTesting(visible)
@@ -150,7 +175,9 @@ struct WorkspaceView: View {
                     .frame(width: drawerWidth)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(16)
-                    .offset(x: isDrawerVisible ? 0 : geometry.size.width)
+                    .offset(x: isDrawerVisible
+                        ? (isTerminalParked ? parkedOffset : 0)
+                        : geometry.size.width)
                     .opacity(isDrawerVisible ? 1 : 0)
                     .allowsHitTesting(isDrawerVisible)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -181,8 +208,11 @@ struct WorkspaceView: View {
                         } else if isCommandPalettePresented {
                             CommandPalette(
                                 canSwitchBranch: repository.snapshot.isRepository && !repository.isBusy,
+                                canHideTerminal: selectedTerminalID != nil,
+                                terminals: terminals,
                                 onClose: { isCommandPalettePresented = false },
-                                onSelect: performCommand
+                                onSelect: performCommand,
+                                onSelectTerminal: showTerminal
                             )
                         } else if isBranchPickerPresented {
                             BranchPickerView(rootURL: directoryURL, onClose: { isBranchPickerPresented = false })
@@ -201,6 +231,7 @@ struct WorkspaceView: View {
                     .zIndex(2)
                 }
             }
+            .clipped()
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .background {
@@ -209,7 +240,12 @@ struct WorkspaceView: View {
                 onCommands: presentCommands,
                 onProjects: presentProjects,
                 onBranches: presentBranches,
-                onNewTerminal: addTerminal
+                onNewTerminal: addTerminal,
+                onSelectTerminal: selectTerminal,
+                onCycleTerminal: cycleTerminal,
+                onTogglePrimaryTerminal: togglePrimaryTerminal,
+                preservesPreviewHunkShortcuts: isGitPreviewVisible && !isPalettePresented,
+                isCommandHeld: $isCommandHeld
             )
         }
         .transaction { if reduceMotion { $0.animation = nil } }
@@ -220,7 +256,17 @@ struct WorkspaceView: View {
         .onChange(of: terminals.supporting.map(\.id)) {
             if case let .terminal(id) = openDrawer,
                !terminals.supporting.contains(where: { $0.id == id }) {
-                closeDrawer()
+                if terminals.navigation.activeID == terminals.primary.id {
+                    // A parked session exiting must not take focus from a
+                    // palette, editor, or the primary terminal being used.
+                    drawerCleanupTask?.cancel()
+                    withAnimation(.snappy(duration: 0.22)) {
+                        openDrawer = nil
+                        isDrawerVisible = false
+                    }
+                } else {
+                    showTerminal(terminals.active)
+                }
             }
         }
         .environmentObject(repository)
@@ -290,6 +336,7 @@ struct WorkspaceView: View {
         isCommandPalettePresented = false
         switch command {
         case .reload: repository.reload()
+        case .hideTerminal: hideTerminalDrawer()
         case .openProject: presentProjects()
         case .switchBranch:
             guard repository.snapshot.isRepository, !repository.isBusy else { return }
@@ -359,20 +406,69 @@ struct WorkspaceView: View {
     }
 
     private func showTerminal(_ session: TerminalSession) {
-        if selectedTerminalID == session.id {
-            closeDrawer()
-            return
-        }
         dismissPalettes()
         drawerCleanupTask?.cancel()
         withAnimation(.snappy(duration: 0.22)) {
-            openDrawer = .terminal(session.id)
-            isDrawerVisible = true
+            terminals.select(session)
+            if session.id == terminals.primary.id {
+                // Keep the displayed secondary mounted and visible while primary
+                // takes focus. Its parked position follows the active session.
+                if selectedTerminalID == nil {
+                    openDrawer = nil
+                    isDrawerVisible = false
+                }
+            } else {
+                openDrawer = .terminal(session.id)
+                isDrawerVisible = true
+            }
+        }
+        // Also focus an already-visible session, e.g. after using the file tree
+        // or a palette. New surfaces replay this request when they attach.
+        // Source: libghostty-spm 1.5.2, TerminalViewState.requestFocus().
+        session.terminal.requestFocus()
+    }
+
+    private func hideTerminalDrawer() {
+        guard selectedTerminalID != nil else { return }
+        dismissPalettes()
+        drawerCleanupTask?.cancel()
+        withAnimation(.easeOut(duration: 0.09)) {
+            openDrawer = nil
+            isDrawerVisible = false
+            terminals.select(terminals.primary)
+        }
+        terminals.primary.terminal.requestFocus()
+    }
+
+    private func primaryTerminalActivated() {
+        if selectedTerminalID != nil {
+            showTerminal(terminals.primary)
+        } else {
+            terminals.select(terminals.primary)
         }
     }
 
+    private func selectTerminal(_ number: Int) {
+        guard directoryURL != nil,
+              let id = terminals.navigation.sessionID(forShortcut: number),
+              let session = terminals.all.first(where: { $0.id == id }) else { return }
+        showTerminal(session)
+    }
+
+    private func cycleTerminal(_ direction: Int) {
+        guard directoryURL != nil else { return }
+        let id = terminals.navigation.neighbor(in: direction)
+        guard let session = terminals.all.first(where: { $0.id == id }) else { return }
+        showTerminal(session)
+    }
+
+    private func togglePrimaryTerminal() {
+        guard directoryURL != nil,
+              let session = terminals.all.first(where: { $0.id == terminals.navigation.toggleTarget }) else { return }
+        showTerminal(session)
+    }
+
     private func removeTerminal(_ session: TerminalSession) {
-        if case let .terminal(id) = openDrawer, id == session.id { closeDrawer() }
         Task { await terminals.terminate(session) }
     }
 
@@ -386,6 +482,7 @@ struct WorkspaceView: View {
             try? await Task.sleep(for: Layout.drawerCloseDuration)
             guard !Task.isCancelled else { return }
             openDrawer = nil
+            terminals.select(terminals.primary)
             terminalFocusRequest += 1
         }
     }

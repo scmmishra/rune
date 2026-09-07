@@ -3,6 +3,7 @@ import SwiftUI
 struct TerminalSidebarView: View {
     @ObservedObject var sessions: TerminalSessions
     let selectedID: UUID?
+    let showsShortcuts: Bool
     let onSelect: (TerminalSession) -> Void
     let onAdd: () -> Void
     let onRemove: (TerminalSession) -> Void
@@ -22,19 +23,27 @@ struct TerminalSidebarView: View {
             .padding(.horizontal, 8)
 
             if !sessions.supporting.isEmpty {
-                ScrollView {
-                    VStack(spacing: 2) {
-                        ForEach(sessions.supporting) { session in
-                            TerminalSessionRow(
-                                session: session,
-                                isSelected: selectedID == session.id,
-                                onSelect: { onSelect(session) },
-                                onRemove: { onRemove(session) }
-                            )
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 2) {
+                            ForEach(sessions.supporting) { session in
+                                TerminalSessionRow(
+                                    session: session,
+                                    isSelected: selectedID == session.id,
+                                    shortcutNumber: sessions.navigation.shortcutNumber(for: session.id),
+                                    showsShortcut: showsShortcuts,
+                                    onSelect: { onSelect(session) },
+                                    onRemove: { onRemove(session) }
+                                )
+                                .id(session.id)
+                            }
                         }
                     }
+                    .frame(height: min(CGFloat(sessions.supporting.count) * 30, 180))
+                    .onChange(of: selectedID) { _, id in
+                        if let id { proxy.scrollTo(id) }
+                    }
                 }
-                .frame(height: min(CGFloat(sessions.supporting.count) * 30, 180))
             }
         }
         .padding(.horizontal, 6)
@@ -45,6 +54,8 @@ struct TerminalSidebarView: View {
 private struct TerminalSessionRow: View {
     @ObservedObject var session: TerminalSession
     let isSelected: Bool
+    let shortcutNumber: Int?
+    let showsShortcut: Bool
     let onSelect: () -> Void
     let onRemove: () -> Void
     @State private var isRenaming = false
@@ -52,6 +63,10 @@ private struct TerminalSessionRow: View {
 
     @State private var isConfirmingClose = false
     @State private var isClosing = false
+
+    private var isShortcutVisible: Bool {
+        showsShortcut && shortcutNumber != nil && !isConfirmingClose
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -92,6 +107,9 @@ private struct TerminalSessionRow: View {
             }
             .help(isConfirmingClose ? "End processes and remove terminal" : "Close terminal…")
             .accessibilityLabel(isConfirmingClose ? "Confirm close terminal" : "Close terminal")
+            .opacity(isShortcutVisible ? 0 : 1)
+            .allowsHitTesting(!isShortcutVisible)
+            .accessibilityHidden(isShortcutVisible)
         }
         .runeFont(size: 11)
         .padding(.horizontal, 8)
@@ -100,6 +118,22 @@ private struct TerminalSessionRow: View {
         .background(Color.primary.opacity(isSelected && !isConfirmingClose ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 5))
         .buttonStyle(.plain)
         .disabled(isClosing)
+        .overlay(alignment: .trailing) {
+            if let shortcutNumber {
+                Text("⌘\(shortcutNumber)")
+                    .runeFont(size: 10, weight: .medium)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+                    .padding(.trailing, 7)
+                    .opacity(isShortcutVisible ? 1 : 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .help(shortcutNumber.map { "Switch to \(session.name) (⌘\($0))" } ?? "Switch to \(session.name)")
         .contextMenu {
             Button("Rename…") {
                 draftName = session.name

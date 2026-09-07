@@ -3,9 +3,9 @@ import SwiftUI
 struct TerminalDrawer: View {
     @ObservedObject var session: TerminalSession
     let isVisible: Bool
-    var isSelected = true
+    let isParked: Bool
     let onClose: () -> Void
-    var onFocus: () -> Void = {}
+    var onActivate: () -> Void = {}
     @State private var isRenaming = false
     @State private var draftName = ""
     @FocusState private var isNameFocused: Bool
@@ -46,7 +46,12 @@ struct TerminalDrawer: View {
             .frame(height: 38)
 
             Divider()
-            TerminalPane(terminal: session.terminal, isVisible: isVisible, onFocus: onFocus)
+            TerminalPane(
+                terminal: session.terminal,
+                isVisible: isVisible,
+                isActive: !isParked,
+                onActivate: onActivate
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
         }
@@ -57,14 +62,6 @@ struct TerminalDrawer: View {
                 .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.22), radius: 24, y: 8)
-        .background {
-            DrawerEscapeMonitor(
-                onEscape: onClose,
-                handlesEscape: !isRenaming,
-                hidesOnOutsideClick: true
-            )
-            .disabled(!isSelected)
-        }
         .onChange(of: isNameFocused) {
             if !isNameFocused { finishRenaming() }
         }

@@ -80,12 +80,18 @@ final class TerminalSession: ObservableObject, Identifiable {
 final class TerminalSessions: ObservableObject {
     let primary: TerminalSession
     @Published private(set) var supporting: [TerminalSession] = []
+    @Published private(set) var navigation: TerminalNavigation
     private let workingDirectory: URL?
     private var nextNumber = 1
 
+    var all: [TerminalSession] { [primary] + supporting }
+    var active: TerminalSession { all.first { $0.id == navigation.activeID } ?? primary }
+
     init(workingDirectory: URL?) {
         self.workingDirectory = workingDirectory
-        primary = TerminalSession(name: "Main Terminal", workingDirectory: workingDirectory, detectsAgent: false)
+        let primary = TerminalSession(name: "Main Terminal", workingDirectory: workingDirectory, detectsAgent: false)
+        self.primary = primary
+        navigation = TerminalNavigation(primaryID: primary.id)
     }
 
     func add() -> TerminalSession {
@@ -95,12 +101,19 @@ final class TerminalSessions: ObservableObject {
             guard let self, let session else { return }
             self.remove(session)
         }
+        navigation.add(session.id)
         supporting.append(session)
         return session
     }
 
+    func select(_ session: TerminalSession) {
+        navigation.select(session.id)
+    }
+
     func remove(_ session: TerminalSession) {
+        guard session.id != primary.id else { return }
         session.stop()
+        navigation.remove(session.id)
         supporting.removeAll { $0.id == session.id }
     }
 

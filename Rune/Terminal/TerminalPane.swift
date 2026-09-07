@@ -8,40 +8,37 @@ struct TerminalPane: View {
     @State private var didRequestInitialFocus = false
     @ObservedObject var terminal: TerminalViewState
     var isVisible = true
-    var onFocus: () -> Void = {}
+    var isActive = true
+    var onActivate: () -> Void = {}
     @Environment(\.runeTypography) private var typography
 
     var body: some View {
         TerminalSurfaceView(context: terminal)
-            .onChange(of: terminal.isFocused) {
-                // Ghostty publishes focus on the next runloop turn. Check the
-                // native responder too, so a stale notification cannot move a pane.
-                if terminal.isFocused, let view = terminal.attachedPlatformView,
-                   view.window?.firstResponder === view {
-                    onFocus()
-                }
-            }
-            .onChange(of: focusRequest) { if isVisible { terminal.requestFocus() } }
+            .onChange(of: focusRequest) { if isVisible && isActive { terminal.requestFocus() } }
             .onChange(of: isVisible) {
                 terminal.isSurfaceVisible = isVisible
-                if isVisible {
+                if isVisible && isActive {
                     terminal.requestFocus()
-                } else if let view = terminal.attachedPlatformView,
+                } else if !isVisible, let view = terminal.attachedPlatformView,
                           view.window?.firstResponder === view {
                     view.window?.makeFirstResponder(nil)
                 }
             }
             .accessibilityLabel("Terminal")
             .onAppear {
+                (terminal.attachedPlatformView as? RuneTerminalView)?.onActivate = onActivate
                 applyTypography()
                 terminal.isSurfaceVisible = isVisible
                 // Request focus once, not on subsequent updates that could interrupt a palette.
                 // Ghostty's imperative focus API avoids SwiftUI FocusState resets
                 // resigning the native responder immediately after a session switch.
                 // Source: libghostty-spm TerminalViewState.requestFocus (1.5.2).
-                guard isVisible, !didRequestInitialFocus else { return }
+                guard isVisible, isActive, !didRequestInitialFocus else { return }
                 didRequestInitialFocus = true
                 terminal.requestFocus()
+            }
+            .onDisappear {
+                (terminal.attachedPlatformView as? RuneTerminalView)?.onActivate = nil
             }
             .onChange(of: typography) {
                 applyTypography()
@@ -69,11 +66,29 @@ struct TerminalPane: View {
 }
 
 final class RuneTerminalView: TerminalView {
+    var onActivate: (() -> Void)?
     private var isStopped = false
     private var isTrackingProcess = false
     private static var isAssociatingProcess = false
     private static var canAssociateProcesses = true
     private(set) var rootProcess: TerminalProcessMonitor.TerminationTarget?
+
+    // Treat actual clicks as navigation intent. Ghostty's delayed published
+    // focus changes can otherwise undo a keyboard switch during a handoff.
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        onActivate?()
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        super.rightMouseDown(with: event)
+        onActivate?()
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        super.otherMouseDown(with: event)
+        onActivate?()
+    }
 
     override var layer: CALayer? {
         get { super.layer }

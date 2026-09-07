@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
-    case reload, openProject, switchBranch
+    case reload, openProject, switchBranch, hideTerminal
 
     var id: Self { self }
     var title: String {
@@ -10,6 +10,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .reload: "Reload Files and Git"
         case .openProject: "Open Project…"
         case .switchBranch: "Switch Branch…"
+        case .hideTerminal: "Hide Secondary Terminal"
         }
     }
     var symbol: String {
@@ -17,22 +18,55 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .reload: "arrow.clockwise"
         case .openProject: "folder"
         case .switchBranch: "arrow.triangle.branch"
+        case .hideTerminal: "rectangle.righthalf.inset.filled"
         }
     }
 }
 
 struct CommandPalette: View {
     let canSwitchBranch: Bool
+    let canHideTerminal: Bool
+    @ObservedObject var terminals: TerminalSessions
     let onClose: () -> Void
     let onSelect: (WorkspaceCommand) -> Void
+    let onSelectTerminal: (TerminalSession) -> Void
     @State private var query = ""
-    @State private var selection: WorkspaceCommand? = .reload
+    @State private var selection: Entry.ID? = "command:reload"
 
-    private var matches: [WorkspaceCommand] {
-        let commands = WorkspaceCommand.allCases.filter { $0 != .switchBranch || canSwitchBranch }
+    private enum Entry: Identifiable {
+        case command(WorkspaceCommand)
+        case terminal(TerminalSession)
+
+        var id: String {
+            switch self {
+            case let .command(command): "command:" + command.rawValue
+            case let .terminal(session): "terminal:" + session.id.uuidString
+            }
+        }
+
+        var title: String {
+            switch self {
+            case let .command(command): command.title
+            case let .terminal(session): "Switch to \(session.name)"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case let .command(command): command.symbol
+            case .terminal: "terminal"
+            }
+        }
+    }
+
+    private var matches: [Entry] {
+        let commands = WorkspaceCommand.allCases
+            .filter { $0 != .switchBranch || canSwitchBranch }
+            .filter { $0 != .hideTerminal || canHideTerminal }
+            .map(Entry.command) + terminals.all.map(Entry.terminal)
         guard !query.isEmpty else { return commands }
         let bytes = Array(query.lowercased().utf8)
-        return commands.compactMap { command -> (WorkspaceCommand, Int)? in
+        return commands.compactMap { command -> (Entry, Int)? in
             let name = command.title.lowercased()
             guard let score = FuzzyMatcher.pathScore(bytes, path: name, filename: name) else { return nil }
             return (command, score)
@@ -44,7 +78,12 @@ struct CommandPalette: View {
     var body: some View {
         SearchPalette(
             placeholder: "Run a command", query: $query, items: matches,
-            selection: $selection, onClose: onClose, onSelect: onSelect
+            selection: $selection, onClose: onClose, onSelect: { entry in
+                switch entry {
+                case let .command(command): onSelect(command)
+                case let .terminal(session): onSelectTerminal(session)
+                }
+            }
         ) { command in
             HStack(spacing: 8) {
                 Image(systemName: command.symbol)
@@ -52,10 +91,20 @@ struct CommandPalette: View {
                     .frame(width: 12, height: 12)
                 Text(command.title)
                 Spacer(minLength: 0)
+                if case let .terminal(session) = command,
+                   let number = terminals.navigation.shortcutNumber(for: session.id) {
+                    Text("⌘\(number)").foregroundStyle(.secondary)
+                } else if case let .terminal(session) = command, session.id == terminals.primary.id {
+                    Text("⌘`").foregroundStyle(.secondary)
+                }
             }
         }
-        .onChange(of: query) { selection = matches.first }
-        .onChange(of: canSwitchBranch) { selection = matches.first }
+        .onChange(of: query) { selection = matches.first?.id }
+        .onChange(of: canSwitchBranch) { selection = matches.first?.id }
+        .onChange(of: canHideTerminal) { selection = matches.first?.id }
+        .onChange(of: terminals.supporting.map(\.id)) {
+            if !matches.contains(where: { $0.id == selection }) { selection = matches.first?.id }
+        }
     }
 }
 

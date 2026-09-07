@@ -42,6 +42,9 @@ private struct WorkspaceHelpView: View {
                     shortcut("Switch project", keys: "⇧⌘O")
                     shortcut("Switch branch", keys: "⇧⌘B")
                     shortcut("New terminal", keys: "⇧⌘T")
+                    shortcut("Toggle main terminal", keys: "⌘`")
+                    shortcut("Supporting terminals", keys: "⌘1–9")
+                    shortcut("Previous / next terminal", keys: "⌥⌘↑ / ↓")
                     shortcut("Settings", keys: "⌘,")
                 }
 
@@ -65,7 +68,9 @@ private struct WorkspaceHelpView: View {
                     Text("Getting around").runeFont(size: 11, weight: .semibold)
                     Text("Click the project or branch name to switch. Choose Directory… opens any project folder.")
                     Text("In palettes, use ↑↓ to select and Return to open. Press Escape or click outside to dismiss.")
-                    Text("Supporting terminals open in the floating pane. Hide it to keep them running. Click a row’s close button twice to end its processes, or exit the shell to remove it. Right-click to rename.")
+                    Text("Hold Command to see terminal shortcuts. Switch to any terminal by name in the command palette. In terminals, ⌥⌘↑↓ cycles sessions and Escape goes to the running application. In diff previews, ⌥⌘↑↓ navigates hunks.")
+                    Text("Use ⌘` to focus the main terminal and slide the supporting terminal partly off the right edge. Its width stays unchanged. Toggle again, select its shortcut, or click the visible strip to bring it back.")
+                    Text("Hide a supporting terminal with its header chevron or “Hide Secondary Terminal” in the command palette. It keeps running. Click a row’s close button twice to end its processes, or exit the shell to remove it. Right-click to rename.")
                     Text("Drag the edges beside the terminal to resize the sidebars. Rune remembers your layout.")
                 }
                 .foregroundStyle(.secondary)
