@@ -32,7 +32,12 @@ struct TerminalDrawer: View {
                         .runeFont(size: 12, weight: .medium)
                         .lineLimit(1)
                         .onTapGesture(count: 2, perform: beginRenaming)
+                        // Activate immediately without waiting for the rename gesture to fail.
+                        .simultaneousGesture(TapGesture().onEnded {
+                            if !isRenaming { onActivate() }
+                        })
                         .help(session.savedCommandID == nil ? "Double-click to rename terminal" : "Edit the saved command to change its name")
+                        .accessibilityAction(named: "Focus terminal", onActivate)
                         .accessibilityAction(named: "Rename terminal", beginRenaming)
                 }
                 if session.savedCommandID != nil {

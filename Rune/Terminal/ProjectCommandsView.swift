@@ -17,8 +17,8 @@ struct ProjectCommandsView: View {
                     Button {
                         if model.allCommandsRunning {
                             Task { await model.stopAll() }
-                        } else if let session = model.runAll() {
-                            onSelect(session)
+                        } else {
+                            _ = model.runAll()
                         }
                     } label: { Image(systemName: model.allCommandsRunning ? "stop.fill" : "play.fill") }
                     .help(model.allCommandsRunning ? "Stop All Commands" : "Start All Commands")
@@ -98,12 +98,12 @@ struct ProjectCommandsView: View {
                     command: command, session: session,
                     isSelected: sessions.navigation.activeID == session.id,
                     onSelect: { onSelect(session) },
-                    onRun: { if let session = model.run(command) { onSelect(session) } },
+                    onRun: { _ = model.run(command) },
                     onStop: { Task { _ = await model.stop(command) } }
                 )
             } else {
                 Button {
-                    if let session = model.run(command) { onSelect(session) }
+                    _ = model.run(command)
                 } label: {
                     HStack(spacing: 8) {
                         Circle().fill(Color.secondary.opacity(0.45)).frame(width: 5, height: 5)
@@ -122,11 +122,11 @@ struct ProjectCommandsView: View {
         .buttonStyle(.plain)
         .disabled(model.busyIDs.contains(command.id))
         .contextMenu {
-            Button("Run") { if let session = model.run(command) { onSelect(session) } }
+            Button("Run") { _ = model.run(command) }
             Button("Stop") { Task { _ = await model.stop(command) } }
                 .disabled(model.session(for: command)?.isCommandRunning != true)
             Button("Restart") {
-                Task { if let session = await model.restart(command) { onSelect(session) } }
+                Task { _ = await model.restart(command) }
             }
             Divider()
             Button("Edit…") { model.error = nil; editing = command }
