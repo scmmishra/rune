@@ -7,79 +7,113 @@ struct TerminalTabBar: View {
     let onClose: (TerminalSession) -> Void
 
     static let height: CGFloat = 38
+    private static let barHeight: CGFloat = 30
 
     var body: some View {
         ScrollViewReader { proxy in
-                ScrollView(.horizontal) {
-                    HStack(spacing: 4) {
-                        ForEach(Array(sessions.all.enumerated()), id: \.element.id) { index, session in
-                            TerminalTab(
-                                session: session,
-                                isPrimary: session.id == sessions.primary.id,
-                                shortcutNumber: index < 9 ? index + 1 : nil,
-                                isSelected: session.id == sessions.navigation.activeID,
-                                onSelect: { onSelect(session) },
-                                onClose: { onClose(session) }
-                            )
-                            .id(session.id)
-                        }
-                        Button(action: onAdd) { Image(systemName: "plus").frame(width: 28, height: 28) }
-                            .buttonStyle(WorkspaceButtonStyle())
-                            .help("New Terminal (⇧⌘T)")
-                            .accessibilityLabel("New terminal")
+            ScrollView(.horizontal) {
+                HStack(spacing: 4) {
+                    ForEach(Array(sessions.all.enumerated()), id: \.element.id) { index, session in
+                        TerminalTab(
+                            session: session,
+                            isPrimary: session.id == sessions.primary.id,
+                            shortcutNumber: index < 9 ? index + 1 : nil,
+                            isSelected: session.id == sessions.navigation.activeID,
+                            onSelect: { onSelect(session) },
+                            onClose: { onClose(session) }
+                        )
+                        .id(session.id)
                     }
+                    Button(action: onAdd) {
+                        Image(systemName: "plus")
+                            .runeFont(size: 11)
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(WorkspaceButtonStyle())
+                    .help("New Terminal (⇧⌘T)")
+                    .accessibilityLabel("New terminal")
+                    .padding(.leading, 2)
                 }
-                .scrollIndicators(.hidden)
-                .onAppear { proxy.scrollTo(sessions.navigation.activeID) }
-                .onChange(of: sessions.navigation.activeID) {
-                    proxy.scrollTo(sessions.navigation.activeID)
-                }
+                .padding(.horizontal, 2)
+                .frame(height: Self.barHeight)
+            }
+            .scrollIndicators(.hidden)
+            .onAppear { proxy.scrollTo(sessions.navigation.activeID) }
+            .onChange(of: sessions.navigation.activeID) {
+                proxy.scrollTo(sessions.navigation.activeID)
+            }
         }
-        .frame(height: Self.height)
+        .frame(height: Self.barHeight)
+        .padding(.bottom, Self.height - Self.barHeight)
     }
 }
 
 private struct TerminalTab: View {
-    private static let width: CGFloat = 160
+    // Fixed-width tabs keep the row on a steady rhythm; the bar scrolls once they overflow.
+    private static let width: CGFloat = 140
     @ObservedObject var session: TerminalSession
     let isPrimary: Bool
     let shortcutNumber: Int?
     let isSelected: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
+    @State private var isHovered = false
     @State private var isConfirmingClose = false
     @State private var isRenaming = false
     @State private var draftName = ""
 
     private var title: String { isPrimary ? session.customName ?? "Terminal" : session.name }
+    // The close affordance only appears on hover, so the slot stays reserved to keep titles still.
+    private var showsClose: Bool { isHovered && !session.isStopping }
 
     var body: some View {
-        HStack(spacing: 4) {
-            Button(action: onSelect) {
-                HStack(spacing: 6) {
-                    TerminalStatusDot(session: session)
-                    Text(title).lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, 10)
-                .padding(.trailing, 2)
-                .frame(maxWidth: .infinity)
-                .frame(height: 28)
-                .contentShape(Rectangle())
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                TerminalStatusDot(session: session)
+                    .opacity(isSelected || isHovered ? 1 : 0.55)
+                    .saturation(isSelected || isHovered ? 1 : 0.7)
+                Text(title)
+                    .runeFont(size: 11, weight: isSelected ? .medium : .regular)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                Spacer(minLength: 0)
+                Color.clear.frame(width: 16, height: 16)
             }
-            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            .padding(.leading, 10)
+            .padding(.trailing, 6)
+            .frame(width: Self.width, height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .overlay(alignment: .trailing) {
             Button { isConfirmingClose = true } label: {
-                Image(systemName: "xmark").frame(width: 20, height: 24)
+                Image(systemName: "xmark")
+                    .runeFont(size: 9, weight: .medium)
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
             }
-            .padding(.trailing, 4)
+            .buttonStyle(.plain)
+            .padding(.trailing, 6)
+            .opacity(showsClose ? 1 : 0)
+            .allowsHitTesting(showsClose)
             .accessibilityLabel("Close \(title)")
+            .accessibilityHidden(!showsClose)
             .help("Close terminal…")
             .disabled(session.isStopping)
         }
-        .runeFont(size: 11, weight: isSelected ? .medium : .regular)
-        .buttonStyle(.plain)
-        .frame(width: Self.width)
-        .background(Color.primary.opacity(isSelected ? 0.09 : 0.035), in: RoundedRectangle(cornerRadius: 6))
+        .background {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(isSelected ? 0.09 : isHovered ? 0.055 : 0.025))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(Color.primary.opacity(isSelected ? 0.12 : 0.05), lineWidth: 1)
+        }
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isSelected)
+        .animation(.easeOut(duration: 0.12), value: isHovered)
         .help(shortcutNumber.map { "\(title) (⌘\($0))" } ?? title)
         .contextMenu {
             if session.savedCommandID == nil {
