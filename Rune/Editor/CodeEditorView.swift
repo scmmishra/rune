@@ -53,11 +53,24 @@ enum PreviewAction { case find, previousHunk, nextHunk }
 func dismissPreviewFindBar(in view: NSView?) -> Bool {
     guard let view else { return false }
     if let scroll = view as? NSScrollView, scroll.isFindBarVisible {
-        scroll.isFindBarVisible = false
+        clearPreviewFind(in: scroll)
         scroll.window?.makeFirstResponder(scroll.documentView)
         return true
     }
     return view.subviews.contains { dismissPreviewFindBar(in: $0) }
+}
+
+private func clearPreviewFind(in scroll: NSScrollView) {
+    if let textView = scroll.documentView as? NSTextView {
+        let item = NSMenuItem()
+        item.tag = NSTextFinder.Action.hideFindInterface.rawValue
+        textView.performFindPanelAction(item)
+        // AppKit's floating find indicator can outlive the SwiftUI preview.
+        // A zero-length range removes it immediately, including during teardown.
+        // Source: https://developer.apple.com/documentation/appkit/nstextview/showfindindicator(for:)
+        textView.showFindIndicator(for: NSRange(location: 0, length: 0))
+    }
+    scroll.isFindBarVisible = false
 }
 
 // Only immutable copies cross the actor boundary; mutable parser state stays in the worker.
@@ -107,6 +120,8 @@ struct NativeCodeEditorView: NSViewRepresentable {
 
     static func dismantleNSView(_ view: NSScrollView, coordinator: Coordinator) {
         coordinator.highlightTask?.cancel()
+        clearPreviewFind(in: view)
+        (view.documentView as? NSTextView)?.isIncrementalSearchingEnabled = false
     }
 
     func makeNSView(context: Context) -> NSScrollView {

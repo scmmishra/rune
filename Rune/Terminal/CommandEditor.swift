@@ -19,22 +19,41 @@ struct CommandEditor: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(model.commands.contains(where: { $0.id == draft.id }) ? "Edit Command" : "Add Command")
                 .runeFont(size: 16, weight: .semibold)
-            Form {
-                TextField("Name", text: $draft.name)
-                TextField("Command", text: $draft.command, axis: .vertical)
-                    .lineLimit(2...5)
-                TextField("Working directory", text: $draft.workingDirectory)
-                Toggle("Start automatically when this project opens", isOn: $draft.autoStart)
+            // Stacked labels keep the form inside the sheet at larger font sizes.
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Name")
+                    TextField("Name", text: $draft.name).labelsHidden()
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Command")
+                    TextField("Command", text: $draft.command, axis: .vertical)
+                        .labelsHidden()
+                        .lineLimit(2...5)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Working directory")
+                    TextField("Working directory", text: $draft.workingDirectory).labelsHidden()
+                }
+                Toggle(isOn: $draft.autoStart) {
+                    Text("Start automatically when this project opens")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .toggleStyle(.checkbox)
             }
             .textFieldStyle(.roundedBorder)
             Text("Use . for the project root, a relative path, or an absolute path. Changes apply on the next run.")
                 .runeFont(size: 11)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             if let error = model.error {
                 Text(error).foregroundStyle(.red).runeFont(size: 11)
             }
+            if let validation {
+                Text(validation).runeFont(size: 11).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack {
-                if let validation { Text(validation).runeFont(size: 11).foregroundStyle(.secondary) }
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Save") {
@@ -46,6 +65,7 @@ struct CommandEditor: View {
                 .disabled(validation != nil || model.isSaving)
             }
         }
+        .runeFont(size: 12)
         .padding(24)
         .frame(width: 480)
     }
