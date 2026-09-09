@@ -108,11 +108,12 @@ struct WorkspaceView: View {
 
                     Group {
                         if let directoryURL {
-                            TerminalPane(
+                            PrimaryTerminalPane(
+                                session: terminals.primary,
                                 focusRequest: terminalFocusRequest,
-                                terminal: terminals.primary.terminal,
+                                isActive: terminals.navigation.activeID == terminals.primary.id && !isPalettePresented,
                                 onActivate: primaryTerminalActivated,
-                                launchError: terminals.primary.launchError
+                                onRestart: terminals.restartPrimary
                             )
                                 .id(directoryURL)
                         } else {

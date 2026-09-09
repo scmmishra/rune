@@ -4,7 +4,7 @@ import GhosttyTerminal
 
 @MainActor
 final class TerminalSession: ObservableObject, Identifiable {
-    let id = UUID()
+    let id: UUID
     let terminal: TerminalViewState
     private let defaultName: String
     @Published var customName: String?
@@ -47,7 +47,8 @@ final class TerminalSession: ObservableObject, Identifiable {
     @Published var needsCloseConfirmation = false
 
     init(name: String, workingDirectory: URL?, detectsAgent: Bool = true,
-         savedCommandID: UUID? = nil, execution: CommandExecution? = nil) {
+         savedCommandID: UUID? = nil, execution: CommandExecution? = nil, id: UUID = UUID()) {
+        self.id = id
         self.defaultName = name
         self.savedCommandID = savedCommandID
         self.execution = execution
@@ -154,12 +155,15 @@ final class TerminalSession: ObservableObject, Identifiable {
 
 @MainActor
 final class TerminalSessions: ObservableObject {
-    let primary: TerminalSession
+    @Published private(set) var primary: TerminalSession
     @Published private(set) var supporting: [TerminalSession] = []
     @Published private(set) var navigation: TerminalNavigation
     private let workingDirectory: URL?
     private var nextNumber = 1
     private var commandObservations: [UUID: AnyCancellable] = [:]
+    private var isShuttingDown = false
+    private var primaryRestartedAt: ContinuousClock.Instant?
+    private static let minimumPrimaryLifetime: Duration = .seconds(5)
 
     var all: [TerminalSession] { [primary] + supporting }
     var active: TerminalSession { all.first { $0.id == navigation.activeID } ?? primary }
@@ -169,6 +173,31 @@ final class TerminalSessions: ObservableObject {
         let primary = TerminalSession(name: "Main Terminal", workingDirectory: workingDirectory, detectsAgent: false)
         self.primary = primary
         navigation = TerminalNavigation(primaryID: primary.id)
+        observePrimaryExit()
+    }
+
+    private func observePrimaryExit() {
+        primary.onExit = { [weak self, weak session = primary] in
+            // Leave Ghostty's close callback before replacing its native surface.
+            Task { @MainActor [weak self, weak session] in
+                guard let self, let session, self.primary === session, !self.isShuttingDown else { return }
+                if let restartedAt = self.primaryRestartedAt,
+                   restartedAt.duration(to: .now) < Self.minimumPrimaryLifetime { return }
+                self.restartPrimary()
+            }
+        }
+    }
+
+    func restartPrimary() {
+        guard !isShuttingDown, primary.hasExited else { return }
+        let id = primary.id
+        primary.onExit = nil
+        primary.stop()
+        primaryRestartedAt = .now
+        // Keep shortcuts and parked-terminal navigation stable across shell lifetimes.
+        primary = TerminalSession(name: "Main Terminal", workingDirectory: workingDirectory,
+                                  detectsAgent: false, id: id)
+        observePrimaryExit()
     }
 
     func add() -> TerminalSession {
@@ -205,7 +234,9 @@ final class TerminalSessions: ObservableObject {
     }
 
     func terminate(_ session: TerminalSession) async {
-        if await session.stopCommand() { remove(session) }
+        if await session.stopCommand() {
+            if session === primary { session.onExit?() } else { remove(session) }
+        }
     }
 
     func monitorProcesses() async {
@@ -229,6 +260,8 @@ final class TerminalSessions: ObservableObject {
     }
 
     func stopAll() {
+        isShuttingDown = true
+        primary.onExit = nil
         primary.stop()
         supporting.forEach { $0.stop() }
     }

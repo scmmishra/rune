@@ -3,6 +3,32 @@ import SwiftUI
 import GhosttyTerminal
 import ObjectiveC
 
+struct PrimaryTerminalPane: View {
+    @ObservedObject var session: TerminalSession
+    let focusRequest: Int
+    let isActive: Bool
+    let onActivate: () -> Void
+    let onRestart: () -> Void
+
+    var body: some View {
+        TerminalPane(focusRequest: focusRequest, terminal: session.terminal,
+                     isActive: isActive, onActivate: onActivate)
+            // A respawn needs a fresh platform view even though the navigation ID is unchanged.
+            .id(ObjectIdentifier(session))
+            .overlay {
+                if session.hasExited {
+                    VStack(spacing: 12) {
+                        Text(session.launchError ?? "The shell exited.")
+                        Button("Restart Terminal", action: onRestart)
+                    }
+                    .runeFont(size: 12)
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
+    }
+}
+
 struct TerminalPane: View {
     var focusRequest: Int = 0
     @State private var didRequestInitialFocus = false

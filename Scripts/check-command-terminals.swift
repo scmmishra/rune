@@ -21,6 +21,35 @@ struct CommandTerminalChecks {
         Task { @MainActor in
             do {
                 let root = URL(fileURLWithPath: "/tmp", isDirectory: true)
+                let sessions = TerminalSessions(workingDirectory: root)
+                let originalPrimary = sessions.primary
+                let supporting = sessions.add()
+                sessions.select(supporting)
+                originalPrimary.terminal.onClose?(false)
+                try await Task.sleep(for: .milliseconds(50))
+                precondition(sessions.primary !== originalPrimary, "Main shell exit must respawn")
+                precondition(sessions.primary.id == originalPrimary.id, "Respawn must preserve navigation identity")
+                precondition(sessions.active === supporting, "Respawn must not select the main terminal")
+                let replacement = sessions.primary
+                replacement.terminal.onClose?(false)
+                try await Task.sleep(for: .milliseconds(50))
+                precondition(sessions.primary === replacement && replacement.hasExited,
+                             "An immediately exiting replacement must wait for manual restart")
+                sessions.restartPrimary()
+                precondition(sessions.primary !== replacement && !sessions.primary.hasExited,
+                             "Manual restart must recover from a rapid exit")
+                supporting.terminal.onClose?(false)
+                precondition(sessions.supporting.isEmpty, "Supporting terminals must still close normally")
+                sessions.stopAll()
+
+                let closingSessions = TerminalSessions(workingDirectory: root)
+                let closingPrimary = closingSessions.primary
+                closingPrimary.terminal.onClose?(false)
+                closingSessions.stopAll()
+                try await Task.sleep(for: .milliseconds(50))
+                precondition(closingSessions.primary === closingPrimary, "Shutdown must cancel a queued respawn")
+                print("Main terminal respawn, rapid-exit recovery, navigation, and shutdown checks passed")
+
                 let typography = TestTypography()
                 let execution = try CommandExecution(command: "printf 'Rune saved command output\\n'; sleep 1; exit 7", shell: "/bin/zsh")
                 let session = TerminalSession(name: "Test", workingDirectory: root, detectsAgent: false, savedCommandID: UUID(), execution: execution)
