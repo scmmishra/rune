@@ -45,7 +45,6 @@ struct GitSidebarView: View {
             VStack(spacing: WorkspaceMetrics.groupGap) {
                 VStack(spacing: 0) {
                     header
-                    changeBriefButton
                     changesList
                     commitArea
                 }
@@ -84,24 +83,6 @@ struct GitSidebarView: View {
         }
     }
 
-    private var changeBriefButton: some View {
-        Button(action: onOpenGuide) {
-            HStack(spacing: 6) {
-                Label("Change Brief", systemImage: "sparkles")
-                Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-            }
-            .runeFont(size: 11, weight: .medium)
-            .padding(.horizontal, 9)
-            .frame(height: 30)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(GitRowButtonStyle())
-        .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
-        .padding(.bottom, 6)
-        .disabled(!model.snapshot.isRepository)
-    }
-
     private var changesList: some View {
         ScrollViewReader { proxy in
         ScrollView {
@@ -111,6 +92,7 @@ struct GitSidebarView: View {
                         "STAGED",
                         changes: model.snapshot.staged,
                         area: .staged,
+                        showsBrief: leadingSection == "STAGED",
                         bulkActionTitle: "Unstage All",
                         bulkAction: {
                             Task { await model.unstageAll() }
@@ -119,11 +101,13 @@ struct GitSidebarView: View {
                 }
 
                 if !model.snapshot.unstaged.isEmpty {
-                    section("CHANGES", changes: model.snapshot.unstaged, area: .unstaged)
+                    section("CHANGES", changes: model.snapshot.unstaged, area: .unstaged,
+                            showsBrief: leadingSection == "CHANGES")
                 }
 
                 if !model.snapshot.untracked.isEmpty {
-                    section("UNTRACKED", changes: model.snapshot.untracked, area: .unstaged)
+                    section("UNTRACKED", changes: model.snapshot.untracked, area: .unstaged,
+                            showsBrief: leadingSection == "UNTRACKED")
                 }
 
                 if model.hasLoaded, model.snapshot.changes.isEmpty, model.errorMessage == nil {
@@ -176,10 +160,18 @@ struct GitSidebarView: View {
         .equatable()
     }
 
+    /// The topmost section carries the brief action, so it never claims a row of its own.
+    private var leadingSection: String {
+        if !model.snapshot.staged.isEmpty { return "STAGED" }
+        if !model.snapshot.unstaged.isEmpty { return "CHANGES" }
+        return "UNTRACKED"
+    }
+
     private func section(
         _ title: String,
         changes: [GitChange],
         area: GitChange.Area,
+        showsBrief: Bool = false,
         bulkActionTitle: String? = nil,
         bulkAction: (() -> Void)? = nil
     ) -> some View {
@@ -190,6 +182,17 @@ struct GitSidebarView: View {
                 Text("\(changes.count)")
                     .foregroundStyle(.tertiary)
                 Spacer(minLength: 4)
+                if showsBrief {
+                    Button(action: onOpenGuide) {
+                        HStack(spacing: 3) {
+                            Text("Brief")
+                            Image(systemName: "sparkles")
+                        }
+                    }
+                    .buttonStyle(GitSectionActionStyle())
+                    .disabled(!model.snapshot.isRepository)
+                    .help("Open the change brief")
+                }
                 if let bulkActionTitle, let bulkAction {
                     Button(bulkActionTitle, action: bulkAction)
                         .buttonStyle(GitSectionActionStyle())
