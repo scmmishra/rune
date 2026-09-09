@@ -12,6 +12,8 @@ struct GitSidebarView: View {
 
     @EnvironmentObject private var model: GitSidebarModel
     @State private var commitMessage = ""
+    @State private var isComposingCommit = false
+    @FocusState private var isCommitFocused: Bool
     @State private var pendingDiscard: GitChange?
     let onOpenBranches: () -> Void
 
@@ -39,16 +41,17 @@ struct GitSidebarView: View {
         VStack(spacing: 0) {
             header
             Button(action: onOpenGuide) {
-                HStack {
+                HStack(spacing: 6) {
                     Label("Change Brief", systemImage: "sparkles")
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                 }
                 .runeFont(size: 11, weight: .medium)
-                .padding(9)
+                .padding(.horizontal, 9)
+                .frame(height: 30)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GitRowButtonStyle())
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
             .disabled(!model.snapshot.isRepository)
@@ -68,6 +71,11 @@ struct GitSidebarView: View {
             }
         }
         .onChange(of: diffSelections, initial: true) { onSelectionsChange(diffSelections) }
+        .animation(.easeOut(duration: 0.16), value: isComposingCommit)
+        .onChange(of: isCommitFocused) {
+            // Leave an in-progress draft expanded; only an empty field folds away.
+            if !isCommitFocused && !hasCommitMessage { isComposingCommit = false }
+        }
         .confirmationDialog(
             "Discard changes to \(pendingDiscard?.path ?? "this file")?",
             isPresented: Binding(
@@ -169,20 +177,23 @@ struct GitSidebarView: View {
         bulkAction: (() -> Void)? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
+            HStack(spacing: 6) {
                 Text(title)
-                Spacer()
+                    .tracking(0.7)
+                Text("\(changes.count)")
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 4)
                 if let bulkActionTitle, let bulkAction {
                     Button(bulkActionTitle, action: bulkAction)
-                        .buttonStyle(.plain)
+                        .buttonStyle(GitSectionActionStyle())
                         .disabled(model.isBusy)
-                } else {
-                    Text("\(changes.count)")
                 }
             }
             .runeFont(size: 9, weight: .semibold)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 4)
+            .padding(.leading, 4)
+            .padding(.trailing, 1)
+            .frame(height: 18)
 
             ForEach(changes) { change in
                 GitChangeRow(
@@ -276,10 +287,12 @@ struct GitSidebarView: View {
         )
     }
 
-    private var commitArea: some View {
-        let hasCommitMessage = !commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var hasCommitMessage: Bool {
+        !commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
-        return VStack(spacing: 8) {
+    private var commitArea: some View {
+        VStack(spacing: 8) {
             if let errorMessage = model.errorMessage {
                 Text(errorMessage)
                     .runeFont(size: 10)
@@ -288,60 +301,109 @@ struct GitSidebarView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            ZStack(alignment: .topLeading) {
-                if commitMessage.isEmpty {
-                    Text("Commit message")
-                        .runeFont(size: 11)
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 7)
-                        .padding(.top, 6)
-                        .allowsHitTesting(false)
-                }
-
-                TextEditor(text: $commitMessage)
-                    .runeFont(size: 11)
-                    .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 2)
-                    .padding(.top, 8)
-                    .frame(minHeight: 54, maxHeight: 72)
+            if isComposingCommit {
+                commitEditor
+                commitButton
+            } else {
+                collapsedCommitRow
             }
+        }
+        .padding(10)
+    }
+
+    // Rests as a single-line field that matches the editor's box, so clicking it reads
+    // as the same input growing rather than a button swapping for a form.
+    private var collapsedCommitRow: some View {
+        Button {
+            isComposingCommit = true
+            isCommitFocused = true
+        } label: {
+            HStack(spacing: 0) {
+                Text(hasCommitMessage ? commitMessage : "Commit message")
+                    .runeFont(size: 11)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(hasCommitMessage ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 7)
+            .frame(height: 28)
+            .frame(maxWidth: .infinity)
             .background {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color.primary.opacity(0.055))
             }
-
-            Button {
-                Task {
-                    if await model.commitStaged(message: commitMessage) {
-                        commitMessage = ""
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    if model.isCommitting {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Text(model.isCommitting ? "Committing…" : "Commit Staged")
-                        .frame(maxWidth: .infinity)
-                }
-                .runeFont(size: 11, weight: .medium)
-                .foregroundStyle(hasCommitMessage ? Color.primary : Color.secondary)
-                .padding(.vertical, 4)
-                .background {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.primary.opacity(hasCommitMessage ? 0.12 : 0.055))
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(
-                !hasCommitMessage ||
-                    model.snapshot.staged.isEmpty ||
-                    model.isBusy ||
-                    !model.snapshot.isRepository
-            )
+            .contentShape(Rectangle())
         }
-        .padding(10)
+        .buttonStyle(.plain)
+        .disabled(model.isBusy || !model.snapshot.isRepository)
+        .help("Write a commit message for the staged changes")
+    }
+
+    private var commitEditor: some View {
+        ZStack(alignment: .topLeading) {
+            if commitMessage.isEmpty {
+                Text("Commit message")
+                    .runeFont(size: 11)
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 7)
+                    .padding(.top, 6)
+                    .allowsHitTesting(false)
+            }
+
+            TextEditor(text: $commitMessage)
+                .runeFont(size: 11)
+                .scrollContentBackground(.hidden)
+                .focused($isCommitFocused)
+                .padding(.horizontal, 2)
+                .padding(.top, 8)
+                .frame(minHeight: 54, maxHeight: 72)
+        }
+        .background {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.primary.opacity(0.055))
+        }
+    }
+
+    private var commitButton: some View {
+        // The accent treatment only appears once the commit would actually go through.
+        let isCommitReady = hasCommitMessage && !model.snapshot.staged.isEmpty && !model.isBusy
+
+        return Button(action: commit) {
+            HStack(spacing: 6) {
+                if model.isCommitting {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text(model.isCommitting ? "Committing…" : "Commit Staged")
+                    .frame(maxWidth: .infinity)
+            }
+            .runeFont(size: 11, weight: .medium)
+            .foregroundStyle(isCommitReady ? Color.accentColor : Color.secondary)
+            .padding(.vertical, 5)
+            .background {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isCommitReady ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.055))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.accentColor.opacity(isCommitReady ? 0.35 : 0), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.return, modifiers: .command)
+        .disabled(!isCommitReady || !model.snapshot.isRepository)
+        .help("Commit staged changes (⌘↩)")
+    }
+
+    private func commit() {
+        Task {
+            if await model.commitStaged(message: commitMessage) {
+                commitMessage = ""
+                isCommitFocused = false
+                isComposingCommit = false
+            }
+        }
     }
 
     private var historyArea: some View {
@@ -499,8 +561,7 @@ private struct GitSidebarHeader: View, Equatable {
 
                     if hasUnstagedChanges {
                         Button("Stage All", action: onStageAll)
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
+                            .buttonStyle(GitSectionActionStyle())
                             .disabled(isDisabled)
                     }
                 }
@@ -764,6 +825,53 @@ private extension GitFileState {
             .red
         case .modified, .renamed, .copied, .typeChanged:
             .yellow
+        }
+    }
+}
+
+
+/// Full-width sidebar rows that light up on hover, matching the change and commit lists.
+private struct GitRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { Chrome(configuration: configuration) }
+
+    private struct Chrome: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var isHovered = false
+
+        var body: some View {
+            configuration.label
+                .background(
+                    Color.primary.opacity(isEnabled ? (configuration.isPressed ? 0.09 : isHovered ? 0.055 : 0.025) : 0.02),
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                )
+                .opacity(isEnabled ? 1 : 0.45)
+                .onHover { isHovered = $0 }
+        }
+    }
+}
+
+/// Compact text actions inside section headers, which are too short for WorkspaceButtonStyle's 24pt box.
+private struct GitSectionActionStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { Chrome(configuration: configuration) }
+
+    private struct Chrome: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var isHovered = false
+
+        var body: some View {
+            configuration.label
+                .padding(.horizontal, 5)
+                .frame(height: 16)
+                .background(
+                    Color.primary.opacity(isEnabled ? (configuration.isPressed ? 0.12 : isHovered ? 0.07 : 0) : 0),
+                    in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+                )
+                .foregroundStyle(isHovered && isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                .opacity(isEnabled ? 1 : 0.45)
+                .contentShape(Rectangle())
+                .onHover { isHovered = $0 }
         }
     }
 }
