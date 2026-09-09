@@ -15,7 +15,7 @@ enum TerminalLayout: String, CaseIterable {
 
     var caption: String {
         switch self {
-        case .slideovers: "Keep your main terminal in view"
+        case .slideovers: "Recommended. Keep your main terminal in view."
         case .tabs: "Give each terminal the full space"
         }
     }

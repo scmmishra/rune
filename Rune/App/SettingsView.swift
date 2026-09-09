@@ -120,14 +120,6 @@ private struct TerminalLayoutCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if layout == .slideovers {
-                Text("Recommended")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.08), in: Capsule())
-            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
