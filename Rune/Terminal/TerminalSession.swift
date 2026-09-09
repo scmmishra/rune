@@ -166,6 +166,9 @@ final class TerminalSessions: ObservableObject {
     private static let minimumPrimaryLifetime: Duration = .seconds(5)
 
     var all: [TerminalSession] { [primary] + supporting }
+    /// Sessions that get a tab. A saved command is a process you watch, not a shell
+    /// you work in, so it only ever appears beside the panel.
+    var tabbed: [TerminalSession] { all.filter { $0.savedCommandID == nil } }
     var active: TerminalSession { all.first { $0.id == navigation.activeID } ?? primary }
     /// The session filling the terminal panel.
     var panel: TerminalSession { all.first { $0.id == navigation.panelID } ?? primary }

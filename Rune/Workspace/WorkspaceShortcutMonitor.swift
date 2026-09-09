@@ -41,6 +41,9 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
         }
 
         var parent: WorkspaceShortcutMonitor
+        /// Set the moment this monitor opens a preview, so Escape and Return work
+        /// without waiting for the view's state to travel back through SwiftUI.
+        private var armedHere = false
         var monitor: Any?
         private var windowObservers: [NSObjectProtocol] = []
 
@@ -73,19 +76,19 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
 
                 // A preview holds Escape and Return only until the next keystroke,
                 // so a shell or editor in the panel keeps both keys.
-                if event.type == .keyDown, self.parent.isPeekArmed {
+                if event.type == .keyDown, self.armedHere || self.parent.isPeekArmed {
                     let bare = modifiersOnly(event).isEmpty
                     if bare, event.keyCode == 53 {
-                        self.parent.isPeekArmed = false
+                        self.disarm()
                         self.parent.onDismissPeek()
                         return nil
                     }
                     if bare, event.keyCode == 36 {
-                        self.parent.isPeekArmed = false
+                        self.disarm()
                         self.parent.onPromotePeek()
                         return nil
                     }
-                    if TerminalShortcut.matching(event) == nil { self.parent.isPeekArmed = false }
+                    if TerminalShortcut.matching(event) == nil { self.disarm() }
                 }
 
                 if let shortcut = TerminalShortcut.matching(event) {
@@ -96,7 +99,9 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
                     if event.type == .keyDown, !event.isARepeat {
                         switch shortcut {
                         case let .select(number): self.parent.onSelectTerminal(number)
-                        case let .peek(number): self.parent.onPeekTerminal(number)
+                        case let .peek(number):
+                            self.parent.onPeekTerminal(number)
+                            self.armedHere = true
                         case let .cycle(direction): self.parent.onCycleTerminal(direction)
                         case .togglePrimary: self.parent.onTogglePrimaryTerminal()
                         }
@@ -118,6 +123,11 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
                 if event.type == .keyDown, !event.isARepeat { action() }
                 return nil
             }
+        }
+
+        private func disarm() {
+            armedHere = false
+            if parent.isPeekArmed { parent.isPeekArmed = false }
         }
 
         private func setCommandHeld(_ held: Bool) {

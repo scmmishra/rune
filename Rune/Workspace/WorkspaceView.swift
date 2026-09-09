@@ -198,8 +198,9 @@ struct WorkspaceView: View {
                             isPreview: isPeek,
                             onClose: { closeTerminalSurface(session) },
                             onActivate: {
-                                // Clicking a peek focuses it where it is; only a tab
-                                // click brings a session into the panel.
+                                // Clicking a shell preview promotes it. A command has
+                                // nowhere to be promoted to, so it stays put.
+                                guard session.savedCommandID == nil else { return }
                                 showTerminal(session)
                             },
                             onRunCommand: {
@@ -510,16 +511,18 @@ struct WorkspaceView: View {
     private func peekTerminal(_ session: TerminalSession) {
         dismissPalettes()
         withAnimation(.snappy(duration: 0.22)) { terminals.peek(session) }
-        let isOpen = terminals.navigation.isPeeked(session.id)
-        armedPeekID = isOpen ? session.id : nil
-        isPeekArmed = isOpen
+        // Only a shell preview arms Escape and Return: a command peek has no promote
+        // target, and it is usually opened while you are typing somewhere else.
+        let armable = terminals.navigation.isPeeked(session.id) && session.savedCommandID == nil
+        armedPeekID = armable ? session.id : nil
+        isPeekArmed = armable
     }
 
     private func peekTerminal(_ number: Int) {
         guard directoryURL != nil else { return }
         let index = number - 1
-        guard terminals.all.indices.contains(index) else { return }
-        peekTerminal(terminals.all[index])
+        guard terminals.tabbed.indices.contains(index) else { return }
+        peekTerminal(terminals.tabbed[index])
     }
 
     /// Escape on a just-opened preview.
@@ -530,7 +533,7 @@ struct WorkspaceView: View {
 
     /// Return on a just-opened preview: it takes the panel.
     private func promotePeek() {
-        guard let session = armedPeek else { return }
+        guard let session = armedPeek, session.savedCommandID == nil else { return }
         armedPeekID = nil
         isPeekArmed = false
         showTerminal(session)
@@ -547,6 +550,11 @@ struct WorkspaceView: View {
     }
 
     private func showTerminal(_ session: TerminalSession) {
+        guard session.savedCommandID == nil else {
+            // A running command never takes the panel, however it was opened.
+            peekTerminal(session)
+            return
+        }
         dismissPalettes()
         drawerCleanupTask?.cancel()
         terminals.select(session)
@@ -595,8 +603,8 @@ struct WorkspaceView: View {
     private func selectTerminal(_ number: Int) {
         guard directoryURL != nil else { return }
         let index = number - 1
-        guard terminals.all.indices.contains(index) else { return }
-        showTerminal(terminals.all[index])
+        guard terminals.tabbed.indices.contains(index) else { return }
+        showTerminal(terminals.tabbed[index])
     }
 
     private func cycleTerminal(_ direction: Int) {

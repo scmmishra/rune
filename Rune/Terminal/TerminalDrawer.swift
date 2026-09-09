@@ -69,10 +69,12 @@ struct TerminalDrawer: View {
                     .disabled(session.isStopping)
                 }
                 if !isTabbed {
-                    Button(action: onClose) { Image(systemName: "xmark") }
+                    // The session keeps running, so this reads as putting the preview
+                    // away rather than as a terminate.
+                    Button(action: onClose) { Image(systemName: "sidebar.right") }
                         .buttonStyle(WorkspaceButtonStyle())
-                        .help("Close this peek (the session keeps running)")
-                        .accessibilityLabel("Close peek")
+                        .help("Dismiss this preview (the session keeps running)")
+                        .accessibilityLabel("Dismiss preview")
                 }
             }
             .padding(.horizontal, 12)

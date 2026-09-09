@@ -20,7 +20,7 @@ struct TerminalTabBar: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 HStack(spacing: 4) {
-                    ForEach(Array(sessions.all.enumerated()), id: \.element.id) { index, session in
+                    ForEach(Array(sessions.tabbed.enumerated()), id: \.element.id) { index, session in
                         TerminalTab(
                             session: session,
                             isPrimary: session.id == sessions.primary.id,
