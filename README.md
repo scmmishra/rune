@@ -39,3 +39,8 @@ under the MIT license and its [elk-swift](https://github.com/lukilabs/elk-swift)
 layout dependency under the Eclipse Public License 2.0. The unmodified elk-swift
 1.0.2 source is available at its [tagged source repository](https://github.com/lukilabs/elk-swift/tree/1.0.2).
 License texts and source links are included in the app’s resources.
+
+## License
+
+Rune is released under the [MIT License](LICENSE). Third-party components retain
+their own licenses as noted in Credits above.
