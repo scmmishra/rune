@@ -191,12 +191,14 @@ final class TerminalSessions: ObservableObject {
     func restartPrimary() {
         guard !isShuttingDown, primary.hasExited else { return }
         let id = primary.id
+        let customName = primary.customName
         primary.onExit = nil
         primary.stop()
         primaryRestartedAt = .now
         // Keep shortcuts and parked-terminal navigation stable across shell lifetimes.
         primary = TerminalSession(name: "Main Terminal", workingDirectory: workingDirectory,
                                   detectsAgent: false, id: id)
+        primary.customName = customName
         observePrimaryExit()
     }
 
@@ -235,7 +237,9 @@ final class TerminalSessions: ObservableObject {
 
     func terminate(_ session: TerminalSession) async {
         if await session.stopCommand() {
-            if session === primary { session.onExit?() } else { remove(session) }
+            // Explicit closing always replaces the main shell, even during the
+            // automatic respawn cooldown used for failing shell startup.
+            if session === primary { restartPrimary() } else { remove(session) }
         }
     }
 

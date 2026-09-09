@@ -6,13 +6,14 @@ import ObjectiveC
 struct PrimaryTerminalPane: View {
     @ObservedObject var session: TerminalSession
     let focusRequest: Int
+    var isVisible = true
     let isActive: Bool
     let onActivate: () -> Void
     let onRestart: () -> Void
 
     var body: some View {
         TerminalPane(focusRequest: focusRequest, terminal: session.terminal,
-                     isActive: isActive, onActivate: onActivate)
+                     isVisible: isVisible, isActive: isActive, onActivate: onActivate)
             // A respawn needs a fresh platform view even though the navigation ID is unchanged.
             .id(ObjectIdentifier(session))
             .overlay {

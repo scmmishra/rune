@@ -4,6 +4,7 @@ struct TerminalDrawer: View {
     @ObservedObject var session: TerminalSession
     let isVisible: Bool
     let isParked: Bool
+    var isTabbed = false
     let onClose: () -> Void
     var onActivate: () -> Void = {}
     var onRunCommand: () -> Void = {}
@@ -11,6 +12,8 @@ struct TerminalDrawer: View {
     @State private var isRenaming = false
     @State private var draftName = ""
     @FocusState private var isNameFocused: Bool
+
+    private var showsHeader: Bool { !isTabbed || session.savedCommandID != nil }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -62,15 +65,21 @@ struct TerminalDrawer: View {
                     .buttonStyle(WorkspaceButtonStyle())
                     .disabled(session.isStopping)
                 }
-                Button(action: onClose) { Image(systemName: "chevron.right") }
-                    .buttonStyle(WorkspaceButtonStyle())
-                    .help("Hide Terminal (session keeps running)")
-                    .accessibilityLabel("Hide terminal")
+                if !isTabbed {
+                    Button(action: onClose) { Image(systemName: "chevron.right") }
+                        .buttonStyle(WorkspaceButtonStyle())
+                        .help("Hide Terminal (session keeps running)")
+                        .accessibilityLabel("Hide terminal")
+                }
             }
             .padding(.horizontal, 12)
-            .frame(height: 38)
+            .frame(height: showsHeader ? 38 : 0)
+            .clipped()
+            .opacity(showsHeader ? 1 : 0)
+            .allowsHitTesting(showsHeader)
+            .accessibilityHidden(!showsHeader)
 
-            Divider()
+            if showsHeader { Divider() }
             TerminalPane(
                 terminal: session.terminal,
                 isVisible: isVisible,
@@ -82,12 +91,13 @@ struct TerminalDrawer: View {
                 .clipped()
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: isTabbed ? 14 : 12, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: isTabbed ? 14 : 12, style: .continuous)
+                .stroke(Color.primary.opacity(isTabbed ? 0.10 : 0.12), lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.22), radius: 24, y: 8)
+        .shadow(color: .black.opacity(isTabbed ? 0 : 0.22), radius: 24, y: 8)
+        .onChange(of: isTabbed) { finishRenaming() }
         .onChange(of: isNameFocused) {
             if !isNameFocused { finishRenaming() }
         }

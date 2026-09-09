@@ -11,6 +11,42 @@ struct TestPane: View {
     var body: some View { TerminalPane(terminal: terminal).environment(\.runeTypography, typography.value) }
 }
 
+@MainActor final class TestTerminalLayout: ObservableObject {
+    @Published var value = TerminalLayout.slideovers
+}
+
+struct TestTerminalLayouts: View {
+    @ObservedObject var sessions: TerminalSessions
+    @ObservedObject var layout: TestTerminalLayout
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            VStack(spacing: 0) {
+                if layout.value == .tabs {
+                    TerminalTabBar(sessions: sessions, onSelect: sessions.select,
+                                   onAdd: { _ = sessions.add() }, onClose: sessions.remove)
+                }
+                let visible = layout.value == .slideovers || sessions.active === sessions.primary
+                PrimaryTerminalPane(session: sessions.primary, focusRequest: 0, isVisible: visible,
+                                    isActive: sessions.active === sessions.primary,
+                                    onActivate: { sessions.select(sessions.primary) }, onRestart: sessions.restartPrimary)
+                    .opacity(visible ? 1 : 0)
+            }
+            ForEach(sessions.supporting) { session in
+                let visible = sessions.active === session
+                TerminalDrawer(session: session, isVisible: visible, isParked: false,
+                               isTabbed: layout.value == .tabs, onClose: {},
+                               onActivate: { sessions.select(session) })
+                    .frame(width: layout.value == .tabs ? 640 : 400,
+                           height: layout.value == .tabs ? 400 - TerminalTabBar.height : 368)
+                    .padding(.top, layout.value == .tabs ? TerminalTabBar.height : 0)
+                    .opacity(visible ? 1 : 0)
+                    .allowsHitTesting(visible)
+            }
+        }
+    }
+}
+
 @main
 struct CommandTerminalChecks {
     @MainActor static func main() {
@@ -136,6 +172,44 @@ struct CommandTerminalChecks {
                     interactive.stop()
                     window.orderOut(nil)
                 }
+                setenv("SHELL", "/bin/zsh", 1)
+                let layoutSessions = TerminalSessions(workingDirectory: root)
+                let layout = TestTerminalLayout()
+                let secondary = layoutSessions.add()
+                window.contentView = NSHostingView(rootView: TestTerminalLayouts(sessions: layoutSessions, layout: layout))
+                window.orderBack(nil)
+                try await Task.sleep(for: .seconds(1))
+                let primaryView = layoutSessions.primary.terminal.attachedPlatformView!
+                let secondaryView = secondary.terminal.attachedPlatformView!
+                let primarySurface = layoutSessions.primary.terminal.surface!
+                let secondarySurface = secondary.terminal.surface!
+                let primaryPID = layoutSessions.primary.rootProcess!.pid
+                let secondaryPID = secondary.rootProcess!.pid
+                precondition(secondary.terminal.paste(text: "printf 'layout-output-marker\\n'"))
+                precondition(secondary.terminal.sendKey(.enter))
+                try await Task.sleep(for: .milliseconds(150))
+                for mode in [TerminalLayout.tabs, .slideovers, .tabs] {
+                    layoutSessions.select(secondary)
+                    layout.value = mode
+                    try await Task.sleep(for: .milliseconds(150))
+                    precondition(layoutSessions.primary.terminal.attachedPlatformView === primaryView)
+                    precondition(secondary.terminal.attachedPlatformView === secondaryView)
+                    precondition(layoutSessions.primary.terminal.surface === primarySurface)
+                    precondition(secondary.terminal.surface === secondarySurface)
+                    precondition(layoutSessions.primary.rootProcess?.pid == primaryPID)
+                    precondition(secondary.rootProcess?.pid == secondaryPID, "Layout switches must not restart shells")
+                    precondition(layoutSessions.primary.terminal.isSurfaceVisible == (mode == .slideovers))
+                    precondition(secondary.terminal.isSurfaceVisible)
+                }
+                precondition(secondarySurface.performBindingAction("select_all"))
+                precondition(secondarySurface.readSelection()?.contains("layout-output-marker") == true,
+                             "Terminal output must survive layout switches")
+                layoutSessions.select(layoutSessions.primary)
+                try await Task.sleep(for: .milliseconds(150))
+                precondition(layoutSessions.primary.terminal.isSurfaceVisible && !secondary.terminal.isSurfaceVisible)
+                layoutSessions.stopAll()
+                window.orderOut(nil)
+                print("Terminal layouts passed: stable views, surfaces, processes, output, and hidden-tab visibility")
                 print("Ghostty command integration checks passed: exit status, retained output, typography, stop, and shutdown.")
                 exit(0)
             } catch { print(error); exit(1) }

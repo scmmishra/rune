@@ -16,5 +16,7 @@ xcrun swiftc -parse-as-library -swift-version 6 -default-isolation MainActor \
     Rune/Terminal/TerminalProcessMonitor.swift Rune/Terminal/TerminalAgent.swift Rune/Terminal/TerminalProcessGuardian.swift \
     Rune/Terminal/TerminalSession.swift Rune/Terminal/TerminalNavigation.swift \
     Rune/Terminal/TerminalPane.swift Rune/App/TypographyPreferences.swift \
+    Rune/Terminal/TerminalDrawer.swift Rune/Terminal/TerminalLayout.swift \
+    Rune/Terminal/TerminalTabBar.swift Rune/Terminal/TerminalSidebarView.swift Rune/App/WorkspaceControls.swift \
     Scripts/check-command-terminals.swift -o "$checks_dir/check-command-terminals"
 "$checks_dir/check-command-terminals"
