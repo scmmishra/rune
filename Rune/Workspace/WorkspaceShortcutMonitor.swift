@@ -8,10 +8,15 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
     let onBranches: () -> Void
     let onNewTerminal: () -> Void
     let onSelectTerminal: (Int) -> Void
+    let onPeekTerminal: (Int) -> Void
+    let onDismissPeek: () -> Void
+    let onPromotePeek: () -> Void
     let onCycleTerminal: (Int) -> Void
     let onTogglePrimaryTerminal: () -> Void
     var preservesPreviewHunkShortcuts = false
     @Binding var isCommandHeld: Bool
+    /// True while a freshly opened preview still owns Escape and Return.
+    @Binding var isPeekArmed: Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -31,6 +36,10 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
 
     @MainActor
     final class Coordinator {
+        fileprivate func modifiersOnly(_ event: NSEvent) -> NSEvent.ModifierFlags {
+            event.modifierFlags.intersection([.command, .shift, .option, .control])
+        }
+
         var parent: WorkspaceShortcutMonitor
         var monitor: Any?
         private var windowObservers: [NSObjectProtocol] = []
@@ -62,6 +71,23 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
                 self.setCommandHeld(canHandle && event.modifierFlags.contains(.command))
                 guard canHandle, event.type != .flagsChanged else { return event }
 
+                // A preview holds Escape and Return only until the next keystroke,
+                // so a shell or editor in the panel keeps both keys.
+                if event.type == .keyDown, self.parent.isPeekArmed {
+                    let bare = modifiersOnly(event).isEmpty
+                    if bare, event.keyCode == 53 {
+                        self.parent.isPeekArmed = false
+                        self.parent.onDismissPeek()
+                        return nil
+                    }
+                    if bare, event.keyCode == 36 {
+                        self.parent.isPeekArmed = false
+                        self.parent.onPromotePeek()
+                        return nil
+                    }
+                    if TerminalShortcut.matching(event) == nil { self.parent.isPeekArmed = false }
+                }
+
                 if let shortcut = TerminalShortcut.matching(event) {
                     // Preserve hunk navigation in previews, but never let a
                     // visible preview take terminal cycling from a focused shell.
@@ -70,6 +96,7 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
                     if event.type == .keyDown, !event.isARepeat {
                         switch shortcut {
                         case let .select(number): self.parent.onSelectTerminal(number)
+                        case let .peek(number): self.parent.onPeekTerminal(number)
                         case let .cycle(direction): self.parent.onCycleTerminal(direction)
                         case .togglePrimary: self.parent.onTogglePrimaryTerminal()
                         }

@@ -2,6 +2,7 @@ import AppKit
 
 nonisolated enum TerminalShortcut: Equatable {
     case select(Int)
+    case peek(Int)
     case cycle(Int)
     case togglePrimary
 
@@ -10,10 +11,11 @@ nonisolated enum TerminalShortcut: Equatable {
         if modifiers == .command, event.charactersIgnoringModifiers == "`" {
             return .togglePrimary
         }
-        if modifiers == .command,
-           let characters = event.charactersIgnoringModifiers,
+        if let characters = event.charactersIgnoringModifiers,
            let number = Int(characters), (1...9).contains(number) {
-            return .select(number)
+            // Command opens a session in the panel; adding Option opens it beside.
+            if modifiers == .command { return .select(number) }
+            if modifiers == [.command, .option] { return .peek(number) }
         }
         // Arrow events also carry function/numeric-pad flags. Only compare the
         // shortcut modifiers, and route before Ghostty's native key equivalents.

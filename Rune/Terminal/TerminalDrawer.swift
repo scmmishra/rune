@@ -5,6 +5,9 @@ struct TerminalDrawer: View {
     let isVisible: Bool
     let isParked: Bool
     var isTabbed = false
+    /// A peek is a read-only preview: it never takes the keyboard, and a click
+    /// promotes it into the panel rather than focusing it in place.
+    var isPreview = false
     let onClose: () -> Void
     var onActivate: () -> Void = {}
     var onRunCommand: () -> Void = {}
@@ -66,10 +69,10 @@ struct TerminalDrawer: View {
                     .disabled(session.isStopping)
                 }
                 if !isTabbed {
-                    Button(action: onClose) { Image(systemName: "chevron.right") }
+                    Button(action: onClose) { Image(systemName: "xmark") }
                         .buttonStyle(WorkspaceButtonStyle())
-                        .help("Hide Terminal (session keeps running)")
-                        .accessibilityLabel("Hide terminal")
+                        .help("Close this peek (the session keeps running)")
+                        .accessibilityLabel("Close peek")
                 }
             }
             .padding(.horizontal, 12)
@@ -82,13 +85,23 @@ struct TerminalDrawer: View {
             if showsHeader { Divider() }
             TerminalPane(
                 terminal: session.terminal,
+                // A preview keeps rendering live output; it just never takes focus,
+                // which is what isActive gates.
                 isVisible: isVisible,
-                isActive: !isParked,
-                onActivate: onActivate,
+                isActive: !isParked && !isPreview,
+                onActivate: isPreview ? {} : onActivate,
                 launchError: session.launchError
             )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
+                .overlay {
+                    if isPreview {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture(perform: onActivate)
+                            .help("Click or press Return to open this terminal in the panel")
+                    }
+                }
         }
         .background(TerminalSurface.color)
         // Tabbed sessions fill the terminal panel below the tab row, so they take the

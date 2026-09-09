@@ -1,8 +1,11 @@
+import AppKit
 import SwiftUI
 
 struct TerminalTabBar: View {
     @ObservedObject var sessions: TerminalSessions
+    var showsShortcuts = false
     let onSelect: (TerminalSession) -> Void
+    let onPeek: (TerminalSession) -> Void
     let onAdd: () -> Void
     let onClose: (TerminalSession) -> Void
 
@@ -22,8 +25,12 @@ struct TerminalTabBar: View {
                             session: session,
                             isPrimary: session.id == sessions.primary.id,
                             shortcutNumber: index < 9 ? index + 1 : nil,
-                            isSelected: session.id == sessions.navigation.activeID,
+                            showsShortcut: showsShortcuts,
+                            isSelected: session.id == sessions.navigation.panelID,
+                            isPeeked: sessions.navigation.isPeeked(session.id),
+                            isFocused: session.id == sessions.navigation.activeID,
                             onSelect: { onSelect(session) },
+                            onPeek: { onPeek(session) },
                             onClose: { onClose(session) }
                         )
                         .id(session.id)
@@ -61,8 +68,12 @@ private struct TerminalTab: View {
     @ObservedObject var session: TerminalSession
     let isPrimary: Bool
     let shortcutNumber: Int?
+    let showsShortcut: Bool
     let isSelected: Bool
+    let isPeeked: Bool
+    let isFocused: Bool
     let onSelect: () -> Void
+    let onPeek: () -> Void
     let onClose: () -> Void
     @State private var isHovered = false
     @State private var isConfirmingClose = false
@@ -74,16 +85,16 @@ private struct TerminalTab: View {
     private var showsClose: Bool { isHovered && !session.isStopping }
 
     var body: some View {
-        Button(action: onSelect) {
+        Button(action: { NSEvent.modifierFlags.contains(.option) ? onPeek() : onSelect() }) {
             HStack(spacing: 6) {
                 TerminalStatusDot(session: session)
                     .opacity(isSelected || isHovered ? 1 : 0.55)
                     .saturation(isSelected || isHovered ? 1 : 0.7)
                 Text(title)
-                    .runeFont(size: 11, weight: isSelected ? .medium : .regular)
+                    .runeFont(size: 11, weight: isSelected || isPeeked ? .medium : .regular)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(isSelected || isPeeked ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                 Spacer(minLength: 0)
                 Color.clear.frame(width: 16, height: 16)
             }
@@ -95,6 +106,18 @@ private struct TerminalTab: View {
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .overlay(alignment: .trailing) {
+            if let shortcutNumber, showsShortcut {
+                Text("\(shortcutNumber)")
+                    .runeFont(size: 9, weight: .semibold)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+                    .padding(.trailing, 5)
+                    .transition(.opacity)
+                    .accessibilityHidden(true)
+            }
+        }
+        .overlay(alignment: .trailing) {
             Button { isConfirmingClose = true } label: {
                 Image(systemName: "xmark")
                     .runeFont(size: 9, weight: .medium)
@@ -103,7 +126,7 @@ private struct TerminalTab: View {
             }
             .buttonStyle(.plain)
             .padding(.trailing, 6)
-            .opacity(showsClose ? 1 : 0)
+            .opacity(showsClose && !showsShortcut ? 1 : 0)
             .allowsHitTesting(showsClose)
             .accessibilityLabel("Close \(title)")
             .accessibilityHidden(!showsClose)
@@ -116,12 +139,18 @@ private struct TerminalTab: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(Color.primary.opacity(isSelected ? 0.12 : 0.05), lineWidth: 1)
+                .stroke(
+                    isPeeked ? Color.accentColor.opacity(isFocused ? 0.85 : 0.45)
+                             : Color.primary.opacity(isSelected ? 0.12 : 0.05),
+                    lineWidth: isPeeked ? 1.5 : 1
+                )
         }
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isSelected)
+        .animation(.easeOut(duration: 0.12), value: isPeeked)
+        .animation(.easeOut(duration: 0.12), value: showsShortcut)
         .animation(.easeOut(duration: 0.12), value: isHovered)
-        .help(shortcutNumber.map { "\(title) (⌘\($0))" } ?? title)
+        .help(shortcutNumber.map { "\(title) (⌘\($0), peek beside with ⌥⌘\($0))" } ?? title)
         .contextMenu {
             if session.savedCommandID == nil {
                 Button("Rename…") {

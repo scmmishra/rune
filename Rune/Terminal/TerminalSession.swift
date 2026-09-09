@@ -167,6 +167,22 @@ final class TerminalSessions: ObservableObject {
 
     var all: [TerminalSession] { [primary] + supporting }
     var active: TerminalSession { all.first { $0.id == navigation.activeID } ?? primary }
+    /// The session filling the terminal panel.
+    var panel: TerminalSession { all.first { $0.id == navigation.panelID } ?? primary }
+    /// Sessions open beside the panel, in column order.
+    var peeked: [TerminalSession] { navigation.peekedIDs.compactMap { id in all.first { $0.id == id } } }
+    /// A peek column past this many slots leaves each terminal too short to read.
+    static let peekLimit = 3
+
+    func peek(_ session: TerminalSession) {
+        navigation.peek(session.id, limit: Self.peekLimit)
+    }
+
+    func closePeek(_ session: TerminalSession) { navigation.closePeek(session.id) }
+
+    func focus(_ session: TerminalSession) { navigation.focusOnly(session.id) }
+
+    func focusNextSurface() { navigation.focusNextSurface() }
 
     init(workingDirectory: URL?) {
         self.workingDirectory = workingDirectory
