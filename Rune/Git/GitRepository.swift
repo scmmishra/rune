@@ -2,7 +2,7 @@ import Foundation
 
 nonisolated enum GitRepository {
     static func branches(at rootURL: URL) -> (names: [String], error: String?) {
-        let result = runGit(["for-each-ref", "--format=%(refname:short)", "refs/heads/"], at: rootURL, readOnly: true)
+        let result = runGit(["for-each-ref", "--sort=refname", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads/"], at: rootURL, readOnly: true)
         guard result.status == 0 else { return ([], errorMessage(from: result.data)) }
         return (String(decoding: result.data, as: UTF8.self).split(separator: "\n").map(String.init), nil)
     }

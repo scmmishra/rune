@@ -385,12 +385,13 @@ struct BranchPickerView: View {
 
     private var choices: [Choice] {
         let queryBytes = Array(query.lowercased().utf8)
-        let matches = branches.compactMap { name -> (String, Int)? in
-            guard !query.isEmpty else { return (name, 0) }
+        // Preserve Git's newest-first order when search relevance is equal.
+        let matches = branches.enumerated().compactMap { index, name -> (name: String, score: Int, recency: Int)? in
+            guard !query.isEmpty else { return (name, 0, index) }
             guard let score = FuzzyMatcher.pathScore(queryBytes, path: name.lowercased(), filename: name.lowercased()) else { return nil }
-            return (name, score)
-        }.sorted { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }
-        var result = matches.map { Choice(name: $0.0) }
+            return (name, score, index)
+        }.sorted { $0.score == $1.score ? $0.recency < $1.recency : $0.score > $1.score }
+        var result = matches.map { Choice(name: $0.name) }
         if !isLoading, loadError == nil, !query.isEmpty, !branches.contains(query) {
             result.append(Choice(name: query, create: true))
         }
