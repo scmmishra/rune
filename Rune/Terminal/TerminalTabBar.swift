@@ -6,8 +6,12 @@ struct TerminalTabBar: View {
     let onAdd: () -> Void
     let onClose: (TerminalSession) -> Void
 
-    static let height: CGFloat = 38
-    private static let barHeight: CGFloat = 30
+    /// Total space the bar occupies inside the terminal panel, padding included, so
+    /// tabbed sessions can be offset by exactly what the primary pane is.
+    static let height: CGFloat = stripInset * 2 + WorkspaceMetrics.headerHeight
+    /// Even margin on all four sides of the tab row.
+    private static let stripInset: CGFloat = 6
+    private static let barHeight: CGFloat = WorkspaceMetrics.headerHeight
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -44,7 +48,10 @@ struct TerminalTabBar: View {
             }
         }
         .frame(height: Self.barHeight)
-        .padding(.bottom, Self.height - Self.barHeight)
+        .padding(Self.stripInset)
+        // The strip reads as the panel's chrome rather than as part of the terminal
+        // grid below it, without nesting a container inside a character grid.
+        .background(Color.primary.opacity(0.03))
     }
 }
 

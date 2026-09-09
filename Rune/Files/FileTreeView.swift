@@ -6,11 +6,11 @@ struct FileTreeView<Terminals: View>: View {
     let rootURL: URL
     let onOpenFile: (URL) -> Void
     let onOpenProjects: () -> Void
-    @State private var isFullScreen = false
+    let topInset: CGFloat
     @State private var isTitleHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: WorkspaceMetrics.groupGap) {
             Text(rootURL.lastPathComponent)
                 .runeFont(size: 12, weight: .medium)
                 .lineLimit(1)
@@ -20,7 +20,7 @@ struct FileTreeView<Terminals: View>: View {
                         .fill(Color.primary.opacity(isTitleHovered ? 0.06 : 0))
                         .padding(-4)
                 }
-                .padding(.leading, 12)
+                .padding(.horizontal, WorkspaceMetrics.columnInset)
                 .onHover { isTitleHovered = $0 }
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onOpenProjects)
@@ -28,17 +28,29 @@ struct FileTreeView<Terminals: View>: View {
                 .accessibilityLabel("Switch project, " + rootURL.lastPathComponent)
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction { onOpenProjects() }
+                .frame(height: WorkspaceMetrics.headerHeight, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+                .workspaceGroup()
 
             terminals()
 
-            Divider()
+            VStack(alignment: .leading, spacing: 4) {
+                Text("FILES")
+                    .runeFont(size: 10, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
 
-            FileTreeContents(rootURL: rootURL, onOpenFile: onOpenFile)
-                .id(rootURL)
-                .safeAreaPadding(.bottom, 48)
+                FileTreeContents(rootURL: rootURL, onOpenFile: onOpenFile)
+                    .id(rootURL)
+                    .safeAreaPadding(.bottom, 48)
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .workspaceGroup()
         }
-        .padding(.top, isFullScreen ? 12 : 38)
-        .background { WindowFullScreenObserver(isFullScreen: $isFullScreen) }
+        .padding(.top, topInset)
     }
 }
 
@@ -77,7 +89,7 @@ private struct FileTreeContents: View {
                     .id(visibleItem.item.url)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
         }
         .focusable()
         .focusEffectDisabled()
@@ -179,10 +191,10 @@ private struct FileTreeContents: View {
         )
         .background {
             if selectedURL == url {
-                RoundedRectangle(cornerRadius: 3)
+                RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius)
                     .fill(Color.accentColor.opacity(hasKeyboardFocus ? 0.20 : 0.10))
             } else if hoveredURL == url {
-                RoundedRectangle(cornerRadius: 3)
+                RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius)
                     .fill(Color.primary.opacity(0.04))
             }
         }

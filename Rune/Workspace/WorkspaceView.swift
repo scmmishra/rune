@@ -25,6 +25,8 @@ struct WorkspaceView: View {
         ))
     }
     @State private var openDrawer: WorkspaceDrawer?
+    // One observer for the whole workspace so every column's header band shifts together.
+    @State private var isWindowFullScreen = false
     @State private var isQuickOpenPresented = false
     @State private var isBranchPickerPresented = false
     @State private var isCommandPalettePresented = false
@@ -83,6 +85,7 @@ struct WorkspaceView: View {
             // Leave a slice over the Git sidebar while revealing all of primary.
             // Translation preserves both PTY sizes, avoiding terminal reflow.
             let parkedOffset = drawerWidth + Layout.workspaceInset - gitWidth
+            let headerTop = WorkspaceMetrics.titleBarClearance(isFullScreen: isWindowFullScreen)
             ZStack(alignment: .trailing) {
                 HStack(spacing: 0) {
                     Group {
@@ -99,16 +102,21 @@ struct WorkspaceView: View {
                                     )
                                 }
                                 ProjectCommandsView(model: projectCommands, sessions: terminals, onSelect: showTerminal)
-                            }, rootURL: directoryURL, onOpenFile: open, onOpenProjects: presentProjects)
+                            }, rootURL: directoryURL, onOpenFile: open, onOpenProjects: presentProjects,
+                               topInset: 0)
                         } else {
                             Color.clear
                         }
                     }
-                    .frame(width: fileWidth)
                     .overlay(alignment: .bottomLeading) {
                         WorkspaceHelpButton(isPresented: $isHelpPresented)
                             .padding(12)
                     }
+                    .padding(.top, headerTop)
+                    .padding(.bottom, WorkspaceMetrics.outerMargin)
+                    .padding(.leading, WorkspaceMetrics.outerMargin)
+                    .padding(.trailing, WorkspaceMetrics.panelGap)
+                    .frame(width: fileWidth)
                     sidebarDivider(width: $fileSidebarWidth, direction: 1, availableWidth: geometry.size.width)
 
                     Group {
@@ -132,25 +140,23 @@ struct WorkspaceView: View {
                                 .opacity(visible ? 1 : 0)
                                 .allowsHitTesting(visible)
                                 .accessibilityHidden(!visible)
-                                .background(Color(nsColor: .textBackgroundColor))
-                                .clipShape(RoundedRectangle(cornerRadius: Layout.workspaceCornerRadius, style: .continuous))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: Layout.workspaceCornerRadius, style: .continuous)
-                                        .stroke(Color.primary.opacity(0.10), lineWidth: 1)
-                                }
                             }
                         } else {
                             WorkspacePlaceholder()
                         }
                     }
+                    .workspacePanel(isVisible: directoryURL != nil, fill: TerminalSurface.color)
+                    .padding(.top, headerTop)
+                    .padding(.bottom, WorkspaceMetrics.outerMargin)
+                    .padding(.horizontal, WorkspaceMetrics.panelGap)
                     .frame(minWidth: min(480, geometry.size.width * 0.40))
-                    .padding(.vertical, Layout.workspaceInset)
 
                     sidebarDivider(width: $gitSidebarWidth, direction: -1, availableWidth: geometry.size.width)
                     Group {
                         if let directoryURL {
                             GitSidebarView(
                                 rootURL: directoryURL,
+                                topInset: 0,
                                 onOpenBranches: {
                                     presentBranches()
                                 },
@@ -170,6 +176,10 @@ struct WorkspaceView: View {
                             Color.clear
                         }
                     }
+                    .padding(.top, headerTop)
+                    .padding(.bottom, WorkspaceMetrics.outerMargin)
+                    .padding(.leading, WorkspaceMetrics.panelGap)
+                    .padding(.trailing, WorkspaceMetrics.outerMargin)
                     .frame(width: gitWidth)
                 }
 
@@ -207,11 +217,19 @@ struct WorkspaceView: View {
                                 Task { _ = await projectCommands.stop(command) }
                             }
                         )
-                            .frame(width: terminalLayout == .tabs ? terminalWidth : drawerWidth,
-                                   height: max(0, geometry.size.height - 32 - (terminalLayout == .tabs ? TerminalTabBar.height : 0)))
-                            .padding(.top, terminalLayout == .tabs ? TerminalTabBar.height : 0)
-                            .padding(.vertical, 16)
-                            .padding(.trailing, terminalLayout == .tabs ? gitWidth + 4 : 16)
+                            .frame(
+                                width: terminalLayout == .tabs
+                                    ? terminalWidth - WorkspaceMetrics.panelGap * 2
+                                    : drawerWidth,
+                                height: terminalLayout == .tabs
+                                    ? max(0, geometry.size.height - headerTop - WorkspaceMetrics.outerMargin - TerminalTabBar.height)
+                                    : max(0, geometry.size.height - 32)
+                            )
+                            .padding(.top, terminalLayout == .tabs ? headerTop + TerminalTabBar.height : 16)
+                            .padding(.bottom, terminalLayout == .tabs ? WorkspaceMetrics.outerMargin : 16)
+                            .padding(.trailing, terminalLayout == .tabs
+                                     ? gitWidth + 4 + WorkspaceMetrics.panelGap
+                                     : 16)
                             .offset(x: visible ? (isTerminalParked ? parkedOffset : 0) : geometry.size.width)
                             .opacity(visible ? 1 : 0)
                             .allowsHitTesting(visible)
@@ -298,6 +316,7 @@ struct WorkspaceView: View {
             .clipped()
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .background { WindowFullScreenObserver(isFullScreen: $isWindowFullScreen) }
         .background {
             WorkspaceShortcutMonitor(
                 onQuickOpen: presentQuickOpen,

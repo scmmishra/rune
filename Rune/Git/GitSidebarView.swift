@@ -3,6 +3,7 @@ import SwiftUI
 
 struct GitSidebarView: View {
     let rootURL: URL
+    let topInset: CGFloat
     let selectedDiff: GitDiffSelection?
     let onSelectionsChange: ([GitDiffSelection]) -> Void
     let onOpenFile: (URL) -> Void
@@ -19,6 +20,7 @@ struct GitSidebarView: View {
 
     init(
         rootURL: URL,
+        topInset: CGFloat,
         onOpenBranches: @escaping () -> Void,
         selectedDiff: GitDiffSelection?,
         onSelectionsChange: @escaping ([GitDiffSelection]) -> Void,
@@ -28,6 +30,7 @@ struct GitSidebarView: View {
         onOpenGuide: @escaping () -> Void
     ) {
         self.rootURL = rootURL
+        self.topInset = topInset
         self.onOpenBranches = onOpenBranches
         self.selectedDiff = selectedDiff
         self.onSelectionsChange = onSelectionsChange
@@ -38,37 +41,22 @@ struct GitSidebarView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Button(action: onOpenGuide) {
-                HStack(spacing: 6) {
-                    Label("Change Brief", systemImage: "sparkles")
-                    Spacer()
-                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                }
-                .runeFont(size: 11, weight: .medium)
-                .padding(.horizontal, 9)
-                .frame(height: 30)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(GitRowButtonStyle())
-            .padding(.horizontal, 10)
-            .padding(.bottom, 6)
-            .disabled(!model.snapshot.isRepository)
-
-            GeometryReader { geometry in
+        GeometryReader { geometry in
+            VStack(spacing: WorkspaceMetrics.groupGap) {
                 VStack(spacing: 0) {
-                    VStack(spacing: 0) {
-                        changesList
-                        commitArea
-                    }
-                    .frame(height: geometry.size.height * 2 / 3)
-
-                    Divider()
-
-                    historyArea
+                    header
+                    changeBriefButton
+                    changesList
+                    commitArea
                 }
+                .frame(height: geometry.size.height * 2 / 3)
+                .workspaceGroup()
+
+                historyArea
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .workspaceGroup()
             }
+            .padding(.horizontal, WorkspaceMetrics.panelGap)
         }
         .onChange(of: diffSelections, initial: true) { onSelectionsChange(diffSelections) }
         .animation(.easeOut(duration: 0.16), value: isComposingCommit)
@@ -94,6 +82,24 @@ struct GitSidebarView: View {
         } message: {
             Text("Tracked edits cannot be recovered. Untracked files are moved to Trash.")
         }
+    }
+
+    private var changeBriefButton: some View {
+        Button(action: onOpenGuide) {
+            HStack(spacing: 6) {
+                Label("Change Brief", systemImage: "sparkles")
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+            }
+            .runeFont(size: 11, weight: .medium)
+            .padding(.horizontal, 9)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(GitRowButtonStyle())
+        .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
+        .padding(.bottom, 6)
+        .disabled(!model.snapshot.isRepository)
     }
 
     private var changesList: some View {
@@ -128,7 +134,7 @@ struct GitSidebarView: View {
                         .padding(.top, 24)
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
             .padding(.vertical, 8)
         }
         .overlay { QuietProgressView(isActive: !model.hasLoaded) }
@@ -154,6 +160,7 @@ struct GitSidebarView: View {
 
     private var header: some View {
         GitSidebarHeader(
+            topInset: topInset,
             branch: model.snapshot.branch,
             changeCount: model.snapshot.changes.count,
             additions: model.snapshot.additions,
@@ -189,9 +196,8 @@ struct GitSidebarView: View {
                         .disabled(model.isBusy)
                 }
             }
-            .runeFont(size: 9, weight: .semibold)
+            .runeFont(size: 10, weight: .semibold)
             .foregroundStyle(.secondary)
-            .padding(.leading, 4)
             .padding(.trailing, 1)
             .frame(height: 18)
 
@@ -216,7 +222,7 @@ struct GitSidebarView: View {
                 )
                 .background {
                     if selectedDiff?.change.path == change.path && selectedDiff?.area == area {
-                        RoundedRectangle(cornerRadius: 4).fill(Color.accentColor.opacity(0.16))
+                        RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius).fill(Color.accentColor.opacity(0.16))
                     }
                 }
                 .contextMenu {
@@ -308,7 +314,7 @@ struct GitSidebarView: View {
                 collapsedCommitRow
             }
         }
-        .padding(10)
+        .padding(WorkspaceMetrics.columnInset)
     }
 
     // Rests as a single-line field that matches the editor's box, so clicking it reads
@@ -501,6 +507,7 @@ struct BranchPickerView: View {
 }
 
 private struct GitSidebarHeader: View, Equatable {
+    let topInset: CGFloat
     let branch: String
     let changeCount: Int
     let additions: Int
@@ -512,7 +519,8 @@ private struct GitSidebarHeader: View, Equatable {
     let onStageAll: () -> Void
 
     static func == (lhs: GitSidebarHeader, rhs: GitSidebarHeader) -> Bool {
-        lhs.branch == rhs.branch &&
+        lhs.topInset == rhs.topInset &&
+            lhs.branch == rhs.branch &&
             lhs.changeCount == rhs.changeCount &&
             lhs.additions == rhs.additions &&
             lhs.deletions == rhs.deletions &&
@@ -532,7 +540,7 @@ private struct GitSidebarHeader: View, Equatable {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
-                    .frame(height: 28)
+                    .frame(height: WorkspaceMetrics.headerHeight)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(WorkspaceButtonStyle())
@@ -569,8 +577,8 @@ private struct GitSidebarHeader: View, Equatable {
             }
         }
         .runeFont(size: 12, weight: .medium)
-        .padding(.horizontal, 12)
-        .padding(.top, 14)
+        .padding(.horizontal, WorkspaceMetrics.columnInset)
+        .padding(.top, topInset + 8)
         .padding(.bottom, 8)
     }
 }
@@ -587,15 +595,18 @@ private struct GitHistoryView: View, Equatable {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 6) {
                 Text("HISTORY")
-                Spacer()
+                    .tracking(0.7)
                 Text("\(commits.count)")
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 4)
             }
-            .runeFont(size: 9, weight: .semibold)
+            .runeFont(size: 10, weight: .semibold)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, WorkspaceMetrics.columnInset)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
 
             if commits.isEmpty {
                 Text(isRepository ? "No commits yet" : "Not a Git repository")
@@ -614,7 +625,7 @@ private struct GitHistoryView: View, Equatable {
                             )
                         }
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
                     .padding(.bottom, 8)
                 }
             }
@@ -655,7 +666,7 @@ private struct GitCommitRow: View {
         .buttonStyle(.plain)
         .background(
             Color.primary.opacity(isHovered ? 0.055 : 0),
-            in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+            in: RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius, style: .continuous)
         )
         .onHover { isHovered = $0 }
         .help("Preview commit \(commit.shortHash). Command-click to open on GitHub.")
@@ -810,7 +821,7 @@ private struct GitChangeRow: View {
         }
         .padding(.horizontal, 4)
         .frame(minHeight: max(20, typography.size(relativeTo: 20)))
-        .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(isHovered ? 0.04 : 0)))
+        .background(RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius).fill(Color.primary.opacity(isHovered ? 0.04 : 0)))
         .onHover { isHovered = $0 }
         .contentShape(Rectangle())
     }

@@ -21,7 +21,7 @@ struct TerminalSidebarView: View {
                     .help("New Terminal (⇧⌘T)")
                     .accessibilityLabel("New terminal")
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 4)
 
             if !interactiveSessions.isEmpty {
                 ScrollViewReader { proxy in
@@ -47,8 +47,10 @@ struct TerminalSidebarView: View {
                 }
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .workspaceGroup()
     }
 }
 

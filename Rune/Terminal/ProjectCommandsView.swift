@@ -42,7 +42,7 @@ struct ProjectCommandsView: View {
             }
             .buttonStyle(WorkspaceButtonStyle())
             .disabled(!model.isLoaded || model.isSaving)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 4)
 
             if !model.commands.isEmpty {
                 ScrollView {
@@ -79,8 +79,10 @@ struct ProjectCommandsView: View {
                 }
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .workspaceGroup()
         .sheet(item: $editing) { command in CommandEditor(model: model, draft: command) }
         .sheet(isPresented: $isImporting) { ProcfileImporter(model: model) }
         .alert("Reset saved commands?", isPresented: $isResetting) {

@@ -1,5 +1,41 @@
 import SwiftUI
 
+/// The shared surface for the workspace's three columns.
+///
+/// The terminal used to be the only panel, which left the sidebars reading as
+/// margin around it. Giving all three the same surface makes alignment a
+/// property of the containers instead of a negotiation between controls.
+private struct WorkspacePanel: ViewModifier {
+    let isVisible: Bool
+    let radius: CGFloat
+    var fill: Color = Color(nsColor: .textBackgroundColor)
+
+    func body(content: Content) -> some View {
+        content
+            .background(isVisible ? fill : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .stroke(Color.primary.opacity(isVisible ? 0.10 : 0), lineWidth: 1)
+            }
+    }
+}
+
+extension View {
+    func workspacePanel(isVisible: Bool = true, fill: Color? = nil) -> some View {
+        modifier(WorkspacePanel(
+            isVisible: isVisible,
+            radius: WorkspaceMetrics.panelRadius,
+            fill: fill ?? Color(nsColor: .textBackgroundColor)
+        ))
+    }
+
+    /// A group card stacked inside a sidebar column: the panel surface, one size down.
+    func workspaceGroup(isVisible: Bool = true) -> some View {
+        modifier(WorkspacePanel(isVisible: isVisible, radius: WorkspaceMetrics.groupRadius))
+    }
+}
+
 /// Quiet chrome with a consistent hit target, without changing text styling.
 struct WorkspaceButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {

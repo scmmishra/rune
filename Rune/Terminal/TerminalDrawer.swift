@@ -90,11 +90,21 @@ struct TerminalDrawer: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
         }
-        .background(Color(nsColor: .textBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: isTabbed ? 14 : 12, style: .continuous))
+        .background(TerminalSurface.color)
+        // Tabbed sessions fill the terminal panel below the tab row, so they take the
+        // panel's bottom corners and none of its border. A slideover is its own surface.
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: isTabbed ? 0 : 12,
+                bottomLeadingRadius: isTabbed ? WorkspaceMetrics.panelRadius : 12,
+                bottomTrailingRadius: isTabbed ? WorkspaceMetrics.panelRadius : 12,
+                topTrailingRadius: isTabbed ? 0 : 12,
+                style: .continuous
+            )
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: isTabbed ? 14 : 12, style: .continuous)
-                .stroke(Color.primary.opacity(isTabbed ? 0.10 : 0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.primary.opacity(isTabbed ? 0 : 0.12), lineWidth: 1)
         }
         .shadow(color: .black.opacity(isTabbed ? 0 : 0.22), radius: 24, y: 8)
         .onChange(of: isTabbed) { finishRenaming() }

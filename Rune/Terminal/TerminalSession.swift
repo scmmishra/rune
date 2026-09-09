@@ -64,10 +64,10 @@ final class TerminalSession: ObservableObject, Identifiable {
         let terminal = TerminalViewState(
             theme: TerminalTheme(
                 light: TerminalConfiguration(startingFrom: .alabaster) { builder in
-                    builder.withBackground("EFEFEF")
+                    builder.withBackground(TerminalSurface.lightHex)
                 },
                 dark: TerminalConfiguration(startingFrom: .afterglow) { builder in
-                    builder.withBackground("181818")
+                    builder.withBackground(TerminalSurface.darkHex)
                 }
             ),
             terminalConfiguration: TerminalConfiguration { builder in
