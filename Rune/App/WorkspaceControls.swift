@@ -36,6 +36,27 @@ extension View {
     }
 }
 
+/// Selection and hover fill for a sidebar row, matching the file tree and Git lists.
+private struct SidebarRowBackground: ViewModifier {
+    let isSelected: Bool
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                Color.primary.opacity(isSelected ? 0.08 : isHovered ? 0.04 : 0),
+                in: RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius, style: .continuous)
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
+extension View {
+    func sidebarRowBackground(isSelected: Bool = false) -> some View {
+        modifier(SidebarRowBackground(isSelected: isSelected))
+    }
+}
+
 /// Quiet chrome with a consistent hit target, without changing text styling.
 struct WorkspaceButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {

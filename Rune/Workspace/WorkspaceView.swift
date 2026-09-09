@@ -525,10 +525,12 @@ struct WorkspaceView: View {
         peekTerminal(terminals.tabbed[index])
     }
 
-    /// Escape on a just-opened preview.
-    private func dismissPeek() {
-        guard let session = armedPeek else { return }
+    /// Escape dismisses the newest preview, command or shell, and reports whether
+    /// there was one. Escape reaches the panel untouched whenever the column is empty.
+    private func dismissPeek() -> Bool {
+        guard let session = terminals.peeked.last else { return false }
         closeTerminalSurface(session)
+        return true
     }
 
     /// Return on a just-opened preview: it takes the panel.

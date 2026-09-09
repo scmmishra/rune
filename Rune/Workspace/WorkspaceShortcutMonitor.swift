@@ -9,7 +9,9 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
     let onNewTerminal: () -> Void
     let onSelectTerminal: (Int) -> Void
     let onPeekTerminal: (Int) -> Void
-    let onDismissPeek: () -> Void
+    /// Returns true when a preview was actually dismissed, so Escape is only
+    /// swallowed when it had something to do.
+    let onDismissPeek: () -> Bool
     let onPromotePeek: () -> Void
     let onCycleTerminal: (Int) -> Void
     let onTogglePrimaryTerminal: () -> Void
@@ -74,21 +76,22 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
                 self.setCommandHeld(canHandle && event.modifierFlags.contains(.command))
                 guard canHandle, event.type != .flagsChanged else { return event }
 
-                // A preview holds Escape and Return only until the next keystroke,
-                // so a shell or editor in the panel keeps both keys.
-                if event.type == .keyDown, self.armedHere || self.parent.isPeekArmed {
-                    let bare = modifiersOnly(event).isEmpty
-                    if bare, event.keyCode == 53 {
+                if event.type == .keyDown, modifiersOnly(event).isEmpty {
+                    // Escape dismisses an open shell preview however it was opened.
+                    // The view reports whether there was one, so Escape reaches the
+                    // shell untouched the rest of the time.
+                    if event.keyCode == 53, self.parent.onDismissPeek() {
                         self.disarm()
-                        self.parent.onDismissPeek()
                         return nil
                     }
-                    if bare, event.keyCode == 36 {
+                    // Return only promotes a preview that was just opened: otherwise
+                    // it would fire every time you ran a command in the panel.
+                    if event.keyCode == 36, self.armedHere || self.parent.isPeekArmed {
                         self.disarm()
                         self.parent.onPromotePeek()
                         return nil
                     }
-                    if TerminalShortcut.matching(event) == nil { self.disarm() }
+                    if event.keyCode != 53, TerminalShortcut.matching(event) == nil { self.disarm() }
                 }
 
                 if let shortcut = TerminalShortcut.matching(event) {

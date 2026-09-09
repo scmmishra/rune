@@ -93,6 +93,11 @@ struct ProjectCommandsView: View {
         }
     }
 
+    private func isCommandSelected(_ command: ProjectCommand) -> Bool {
+        guard let session = model.session(for: command) else { return false }
+        return sessions.navigation.isPeeked(session.id)
+    }
+
     private func commandRow(_ command: ProjectCommand) -> some View {
         Group {
             if let session = model.session(for: command) {
@@ -122,6 +127,7 @@ struct ProjectCommandsView: View {
         }
         .runeFont(size: 11)
         .buttonStyle(.plain)
+        .sidebarRowBackground(isSelected: isCommandSelected(command))
         .disabled(model.busyIDs.contains(command.id))
         .contextMenu {
             Button("Run") { _ = model.run(command) }
@@ -167,7 +173,6 @@ private struct RunningCommandRow: View {
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
-        .background(Color.primary.opacity(isSelected ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 5))
         .help("\(session.commandStatus)\n\(command.command)")
     }
 }
