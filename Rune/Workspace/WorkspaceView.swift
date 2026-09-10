@@ -53,6 +53,7 @@ struct WorkspaceView: View {
     @State private var terminalFocusRequest = 0
     @State private var isCommandHeld = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openWindow) private var openWindow
 
     private var selectedDiff: GitDiffSelection? {
         guard isDrawerVisible, case let .diff(change, area) = openDrawer else { return nil }
@@ -431,6 +432,7 @@ struct WorkspaceView: View {
         case .changeGuide: showGuide()
         case .reload: repository.reload()
         case .hideTerminal: hideTerminalDrawer()
+        case .showWelcome: openWindow(id: "onboarding")
         case .openProject: presentProjects()
         case .switchBranch:
             guard repository.snapshot.isRepository, !repository.isBusy else { return }

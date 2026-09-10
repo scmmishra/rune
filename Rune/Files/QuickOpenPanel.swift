@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
-    case reload, openProject, switchBranch, hideTerminal, changeGuide
+    case reload, openProject, switchBranch, hideTerminal, changeGuide, showWelcome
 
     var id: Self { self }
     var title: String {
@@ -12,6 +12,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .openProject: "Open Project…"
         case .switchBranch: "Switch Branch…"
         case .hideTerminal: "Hide Secondary Terminal"
+        case .showWelcome: "Show Welcome…"
         }
     }
     var symbol: String {
@@ -21,6 +22,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .openProject: "folder"
         case .switchBranch: "arrow.triangle.branch"
         case .hideTerminal: "rectangle.righthalf.inset.filled"
+        case .showWelcome: "hand.wave"
         }
     }
 }
