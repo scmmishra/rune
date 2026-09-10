@@ -14,7 +14,11 @@ xcodebuild \
 """
 
 [tasks.dev]
-description = "Rebuild and relaunch Rune when sources change"
+description = "Build Rune Dev and open it beside the installed Rune"
+run = "bash Scripts/dev.sh"
+
+[tasks.watch]
+description = "Rebuild and reopen Rune Dev when sources change"
 run = """
 watchexec \
   --watch Rune \
@@ -22,9 +26,5 @@ watchexec \
   --exts swift,plist,pbxproj,xcscheme,resolved \
   --debounce 500ms \
   --on-busy-update restart \
-  -- mise run relaunch
+  -- mise run dev
 """
-
-[tasks.relaunch]
-description = "Build, install, and relaunch a single Rune development instance"
-run = "bash Scripts/relaunch.sh"

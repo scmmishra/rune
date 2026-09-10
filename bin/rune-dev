@@ -1,0 +1,25 @@
+#!/bin/sh
+# Opens a directory in Rune Dev, the Debug build `mise run dev` installs. The installed
+# Rune ships its own `rune` command; this one never touches it.
+
+set -eu
+
+directory=${1:-"$PWD"}
+
+if [ ! -d "$directory" ]; then
+    echo "rune-dev: not a directory: $directory" >&2
+    exit 1
+fi
+
+directory=$(cd "$directory" && pwd -P)
+
+app="${RUNE_APP_PATH:-/Applications/Rune Dev.app}"
+
+if [ ! -x "$app/Contents/MacOS/Rune" ]; then
+    echo "rune-dev: $app not found. Run \`mise run dev\` in the Rune checkout first." >&2
+    exit 1
+fi
+
+# Tooling that launches Rune may set NO_COLOR for its own output. Do not leak
+# that preference into Rune's interactive terminal sessions.
+env -u NO_COLOR open -a "$app" "$directory"
