@@ -30,6 +30,10 @@ struct WorkspaceView: View {
     /// The peek opened most recently, while it still owns Escape and Return.
     @State private var armedPeekID: UUID?
     @State private var isPeekArmed = false
+    /// The peek ⌘D opened, so pressing it again closes that one and no other.
+    @State private var recentPeekID: UUID?
+    /// The peek a held ⌘-number opened, closed again when the key is released.
+    @State private var holdPeekID: UUID?
     @State private var isQuickOpenPresented = false
     @State private var isBranchPickerPresented = false
     @State private var isCommandPalettePresented = false
@@ -224,8 +228,9 @@ struct WorkspaceView: View {
                             .padding(.trailing, isPeek
                                      ? WorkspaceMetrics.outerMargin
                                      : (fillsPanel ? gitWidth + 4 + WorkspaceMetrics.panelGap : 16))
-                            .offset(x: visible ? 0 : geometry.size.width)
-                            .opacity(visible ? 1 : 0)
+                            // Park just past the right edge (plus the shadow) rather than a
+                            // window-width away, with no fade: the peek reads as sliding in.
+                            .offset(x: visible ? 0 : drawerWidth + WorkspaceMetrics.outerMargin + 48)
                             .allowsHitTesting(visible)
                             .accessibilityHidden(!visible)
                             .disabled(isPalettePresented)
@@ -317,6 +322,9 @@ struct WorkspaceView: View {
                 onNewTerminal: addTerminal,
                 onSelectTerminal: selectTerminal,
                 onPeekTerminal: peekTerminal,
+                onPeekRecent: peekRecentTerminal,
+                onHoldPeek: beginHoldPeek,
+                onEndHoldPeek: endHoldPeek,
                 onDismissPeek: dismissPeek,
                 onPromotePeek: promotePeek,
                 onCycleTerminal: cycleTerminal,
@@ -508,9 +516,11 @@ struct WorkspaceView: View {
         return fillsPanel ? terminalWidth - WorkspaceMetrics.panelGap * 2 : drawerWidth
     }
 
+    private static let peekAnimation = Animation.snappy(duration: 0.16)
+
     private func peekTerminal(_ session: TerminalSession) {
         dismissPalettes()
-        withAnimation(.snappy(duration: 0.22)) { terminals.peek(session) }
+        withAnimation(Self.peekAnimation) { terminals.peek(session) }
         // Only a shell preview arms Escape and Return: a command peek has no promote
         // target, and it is usually opened while you are typing somewhere else.
         let armable = terminals.navigation.isPeeked(session.id) && session.savedCommandID == nil
@@ -523,6 +533,46 @@ struct WorkspaceView: View {
         let index = number - 1
         guard terminals.tabbed.indices.contains(index) else { return }
         peekTerminal(terminals.tabbed[index])
+    }
+
+    /// ⌘D: peek the shell you used last, or close the peek ⌘D opened. Returns whether a
+    /// peek opened and is armed for Return.
+    private func peekRecentTerminal() -> Bool {
+        guard directoryURL != nil else { return false }
+        if let id = recentPeekID, let session = terminals.peeked.first(where: { $0.id == id }) {
+            recentPeekID = nil
+            closeTerminalSurface(session)
+            return false
+        }
+        // Only supporting shells can sit in the peek column; commands have their own rows.
+        let shells = Set(terminals.supporting.filter { $0.savedCommandID == nil }.map(\.id))
+        guard let id = terminals.navigation.recentPeekCandidate(among: shells),
+              let session = terminals.supporting.first(where: { $0.id == id }) else { return false }
+        peekTerminal(session)
+        recentPeekID = session.id
+        // Shells arm on peek; read navigation rather than state just written this frame.
+        return terminals.navigation.isPeeked(session.id)
+    }
+
+    /// Holding ⌘-number shows that terminal only while held. A terminal already on screen
+    /// is left alone, so releasing never closes a peek the hold didn't open.
+    private func beginHoldPeek(_ number: Int) -> Bool {
+        guard directoryURL != nil else { return false }
+        let index = number - 1
+        guard terminals.tabbed.indices.contains(index) else { return false }
+        let session = terminals.tabbed[index]
+        guard session.id != terminals.navigation.panelID,
+              !terminals.navigation.isPeeked(session.id) else { return false }
+        peekTerminal(session)
+        holdPeekID = session.id
+        return terminals.navigation.isPeeked(session.id)
+    }
+
+    private func endHoldPeek() {
+        guard let id = holdPeekID else { return }
+        holdPeekID = nil
+        // Return while holding moved it into the panel; only a peek still open closes.
+        if let session = terminals.peeked.first(where: { $0.id == id }) { closeTerminalSurface(session) }
     }
 
     /// Escape dismisses the newest preview, command or shell, and reports whether
@@ -578,7 +628,7 @@ struct WorkspaceView: View {
                 armedPeekID = nil
                 isPeekArmed = false
             }
-            withAnimation(.snappy(duration: 0.22)) { terminals.closePeek(session) }
+            withAnimation(Self.peekAnimation) { terminals.closePeek(session) }
             terminals.active.terminal.requestFocus()
             return
         }

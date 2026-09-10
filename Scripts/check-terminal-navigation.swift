@@ -70,6 +70,50 @@ struct TerminalNavigationChecks {
             precondition(TerminalShortcut.matching(event(type, 18, "1", [.command, .control])) == nil)
             precondition(TerminalShortcut.matching(event(type, 29, "0", .command)) == nil)
         }
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            precondition(TerminalShortcut.matching(event(type, 2, "d", .command)) == .peekRecent)
+            precondition(TerminalShortcut.matching(event(type, 2, "D", .command)) == .peekRecent)
+            precondition(TerminalShortcut.matching(event(type, 2, "d", [.command, .shift])) == nil)
+            precondition(TerminalShortcut.matching(event(type, 2, "d", [])) == nil)
+        }
+
+        // ⌘D peeks the last-used shell that isn't already on screen.
+        var recent = TerminalNavigation(primaryID: primary)
+        let shellA = UUID(), shellB = UUID(), command = UUID()
+        [shellA, shellB, command].forEach { recent.add($0) }
+        let shells: Set = [shellA, shellB]
+        precondition(recent.recentPeekCandidate(among: shells) == shellA, "With no history, fall back to tab order")
+        recent.select(shellB)
+        recent.select(shellA)
+        precondition(recent.recentPeekCandidate(among: shells) == shellB, "The panel's own session is never peeked")
+        recent.peek(shellB, limit: 3)
+        precondition(recent.recentPeekCandidate(among: shells) == nil, "Nothing left off screen")
+        precondition(recent.recentPeekCandidate(among: [command]) == command)
+
+        // A ⌘-number tap switches on key-up; a hold peeks until the key is released.
+        var hold = TerminalHoldGesture()
+        var token = hold.press(number: 2, keyCode: 19)
+        precondition(hold.release(keyCode: 18) == nil, "Another key's release does not settle the press")
+        precondition(hold.release(keyCode: 19) == .select(2))
+        precondition(hold.expire(token: token) == nil, "A stale timer after a tap does nothing")
+        token = hold.press(number: 3, keyCode: 20)
+        precondition(hold.expire(token: token) == .peek(3))
+        precondition(hold.release(keyCode: 21) == nil)
+        precondition(hold.release(keyCode: 20) == .endPeek, "Letting go of a held key closes its peek")
+        precondition(hold.releaseCommand() == nil)
+        token = hold.press(number: 4, keyCode: 21)
+        precondition(hold.expire(token: token) == .peek(4))
+        precondition(hold.releaseCommand() == .endPeek, "Command up ends a hold whose key-up never came")
+        precondition(hold.release(keyCode: 21) == nil, "A late key-up after Command does nothing")
+        token = hold.press(number: 5, keyCode: 23)
+        precondition(hold.releaseCommand() == .select(5), "Command up without a key-up is still a tap")
+        let stale = hold.press(number: 6, keyCode: 22)
+        token = hold.press(number: 7, keyCode: 26)
+        precondition(hold.expire(token: stale) == nil, "An earlier press's timer cannot fire a later one")
+        precondition(hold.expire(token: token) == .peek(7))
+        hold.cancel()
+        precondition(hold.releaseCommand() == nil)
+
         print("Terminal navigation and shortcut checks passed")
     }
 

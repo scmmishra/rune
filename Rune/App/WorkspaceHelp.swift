@@ -46,7 +46,9 @@ private struct WorkspaceHelpView: View {
                     shortcut("New terminal", keys: "⇧⌘T")
                     shortcut("Toggle main terminal", keys: "⌘`")
                     shortcut("Supporting terminals", keys: "⌘1–9")
-                    shortcut("Peek a terminal", keys: "⌥⌘1–9")
+                    shortcut("Peek last terminal", keys: "⌘D")
+                    shortcut("Peek a terminal", keys: "Hold ⌘1–9")
+                    shortcut("Open the peek", keys: "↩")
                     shortcut("Previous / next terminal", keys: "⌥⌘↑ / ↓")
                     shortcut("Settings", keys: "⌘,")
                 }
@@ -71,6 +73,7 @@ private struct WorkspaceHelpView: View {
                     Text("Getting around").runeFont(size: 11, weight: .semibold)
                     Text("Click the project or branch name to switch. Choose Directory… opens any project folder.")
                     Text("In palettes, use ↑↓ to select and Return to open. Press Escape or click outside to dismiss.")
+                    Text("Peeking shows a terminal beside the panel without leaving what you're doing. Tap ⌘ and a number to switch; hold it to peek until you let go, and press Return while holding to open it in the panel. ⌘D peeks the terminal you used last and closes it again; Return opens that one too. ⌥⌘1–9 and ⌥-clicking a tab peek too.")
                     Text("Hold Command to see terminal shortcuts. Switch to any terminal by name in the command palette. In terminals, ⌥⌘↑↓ cycles sessions and Escape goes to the running application. In diff previews, ⌥⌘↑↓ navigates hunks.")
                     Text("Use ⌘` to focus the main terminal and slide the supporting terminal partly off the right edge. Its width stays unchanged. Toggle again, select its shortcut, or click the visible strip to bring it back.")
                     Text("Hide a supporting terminal with its header chevron or “Hide Secondary Terminal” in the command palette. It keeps running. Click a row’s close button twice to end its processes, or exit the shell to remove it. Right-click to rename.")

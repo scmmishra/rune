@@ -100,6 +100,12 @@ nonisolated struct TerminalNavigation {
         recentIDs.insert(id, at: 0)
     }
 
+    /// The most recently used session that is not already on screen, for ⌘D.
+    func recentPeekCandidate(among candidates: Set<UUID>) -> UUID? {
+        let hidden = { (id: UUID) in candidates.contains(id) && id != self.panelID && !self.peekedIDs.contains(id) }
+        return recentIDs.first(where: hidden) ?? sessionIDs.first(where: hidden)
+    }
+
     func neighbor(in direction: Int) -> UUID {
         let index = sessionIDs.firstIndex(of: activeID) ?? 0
         let offset = direction < 0 ? -1 : 1
