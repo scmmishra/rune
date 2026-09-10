@@ -7,7 +7,7 @@ Your terminal, with the context you need.
 Rune is a minimal native macOS workspace for terminal-first development. Keep
 your shell at the center, with files, diffs, and Git history close at hand.
 
-![Rune workspace showing the file tree, terminal, and Git sidebar](.github/screenshot.png)
+![Rune workspace showing the file tree, terminal, and Git sidebar](.github/screenshot.webp)
 
 - **Stay in your flow.** A Ghostty-powered terminal alongside your project files.
 - **See what changed.** Browse diffs and Git history without leaving your workspace.
