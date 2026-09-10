@@ -668,7 +668,10 @@ struct WorkspaceView: View {
                     NSCursor.pop()
                 }
             }
-            .gesture(DragGesture(minimumDistance: 1)
+            // The divider moves during resizing; measure in a fixed space so its
+            // own movement cannot feed back into the next width calculation.
+            // Source: https://developer.apple.com/documentation/swiftui/draggesture/coordinatespace
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in
                     if dragStart == nil { dragStart = width.wrappedValue }
                     width.wrappedValue = min(max(160, (dragStart ?? width.wrappedValue) + direction * value.translation.width), availableWidth * 0.28)
