@@ -22,6 +22,14 @@ struct RuneApp: App {
             }
         }
 
+        Window("Welcome to Rune", id: "onboarding") {
+            OnboardingWindow()
+                .runeTypographyPreferences()
+        }
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
         Settings {
             SettingsView(updater: updater)
                 .runeTypographyPreferences()
@@ -35,6 +43,7 @@ private struct WorkspaceWindow: View {
     @Environment(\.openWindow) private var openWindow
     @State private var routedCommandLineDirectory = false
     @State private var recentWorkspaces = RecentWorkspaces.load()
+    @AppStorage(OnboardingPreferenceKey.completed) private var hasCompletedOnboarding = false
 
     var body: some View {
         Group {
@@ -63,7 +72,14 @@ private struct WorkspaceWindow: View {
                     open(directory)
                 } else {
                     recentWorkspaces = RecentWorkspaces.load()
-                    if let recent = recentWorkspaces.first { open(recent) }
+                    if !hasCompletedOnboarding {
+                        // Everyone sees the welcome once, existing users included; its last
+                        // step lists their recent projects so nobody loses their place.
+                        openWindow(id: "onboarding")
+                        DispatchQueue.main.async { dismiss() }
+                    } else if let recent = recentWorkspaces.first {
+                        open(recent)
+                    }
                 }
             }
             .onOpenURL { url in

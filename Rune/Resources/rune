@@ -1,0 +1,25 @@
+#!/bin/sh
+# Opens a directory in Rune: `rune` for the current directory, `rune <path>` for another.
+# Installed as a symlink into the app bundle, so it always opens the Rune it shipped with.
+
+set -eu
+
+directory=${1:-"$PWD"}
+
+if [ ! -d "$directory" ]; then
+    echo "rune: not a directory: $directory" >&2
+    exit 1
+fi
+
+directory=$(cd "$directory" && pwd -P)
+# Contents/Resources/rune -> the enclosing Rune.app
+app=$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")
+
+if [ ! -x "$app/Contents/MacOS/Rune" ]; then
+    echo "rune: Rune.app not found next to this command. Reinstall it from Rune's welcome window." >&2
+    exit 1
+fi
+
+# Tooling that launches Rune may set NO_COLOR for its own output. Do not leak
+# that preference into Rune's interactive terminal sessions.
+env -u NO_COLOR open -a "$app" "$directory"

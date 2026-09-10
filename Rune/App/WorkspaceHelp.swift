@@ -30,6 +30,8 @@ struct WorkspaceHelpButton: View {
 }
 
 private struct WorkspaceHelpView: View {
+    @Environment(\.openWindow) private var openWindow
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -44,6 +46,7 @@ private struct WorkspaceHelpView: View {
                     shortcut("New terminal", keys: "⇧⌘T")
                     shortcut("Toggle main terminal", keys: "⌘`")
                     shortcut("Supporting terminals", keys: "⌘1–9")
+                    shortcut("Peek a terminal", keys: "⌥⌘1–9")
                     shortcut("Previous / next terminal", keys: "⌥⌘↑ / ↓")
                     shortcut("Settings", keys: "⌘,")
                 }
@@ -75,6 +78,8 @@ private struct WorkspaceHelpView: View {
                 }
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+                Button("Replay Welcome…") { openWindow(id: "onboarding") }
             }
             .runeFont(size: 11)
             .padding(18)
