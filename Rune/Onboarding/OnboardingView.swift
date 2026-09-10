@@ -5,8 +5,9 @@ enum OnboardingPreferenceKey {
     static let completed = "hasCompletedOnboarding"
 }
 
-/// First-launch welcome: shows what Rune does for agent work, teaches a few shortcuts by
-/// pressing them, offers the `rune` command, and ends by opening a project. It never spotlights the real UI or asks for system permissions.
+/// First-launch welcome: shows what Rune does for agent work, teaches shortcuts by pressing
+/// them (terminal navigation in a live sketch), offers the `rune` command, and ends by
+/// opening a project. It never spotlights the real UI or asks for system permissions.
 struct OnboardingView: View {
     /// Replays come from Help, where a workspace is already open, so a project is optional.
     let isReplay: Bool
@@ -15,12 +16,13 @@ struct OnboardingView: View {
     let onClose: () -> Void
 
     private enum Step: Int, CaseIterable {
-        case welcome, agents, shortcuts, commandLine, project
+        case welcome, agents, shortcuts, terminals, commandLine, project
     }
 
     @State private var step = Step.welcome
     @State private var probe: OnboardingProbe?
     @State private var pressed: Set<String> = []
+    @StateObject private var terminalDemo = OnboardingTerminalDemo()
     @State private var recents = RecentWorkspaces.load()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -31,6 +33,7 @@ struct OnboardingView: View {
                 case .welcome: OnboardingWelcomeStep(probe: probe)
                 case .agents: OnboardingAgentsStep()
                 case .shortcuts: OnboardingShortcutsStep(pressed: pressed)
+                case .terminals: OnboardingTerminalsStep(demo: terminalDemo)
                 case .commandLine: OnboardingCommandLineStep()
                 case .project: OnboardingProjectStep(recents: recents, onOpen: onOpen, onSkip: isReplay ? nil : onClose)
                 }
@@ -96,12 +99,14 @@ struct OnboardingView: View {
 
     /// Returns true when the event was used, so shortcuts being practised never reach the menus.
     private func handle(_ event: NSEvent) -> Bool {
-        guard step == .shortcuts, let shortcut = OnboardingShortcut.all.first(where: { $0.matches(event) }) else {
-            if event.keyCode == 53, step != .project { move(to: .project); return true } // Escape skips
-            return false
+        if step == .terminals, terminalDemo.handle(event) { return true }
+        guard event.type == .keyDown else { return false }
+        if step == .shortcuts, let shortcut = OnboardingShortcut.all.first(where: { $0.matches(event) }) {
+            pressed.insert(shortcut.id)
+            return true
         }
-        pressed.insert(shortcut.id)
-        return true
+        if event.keyCode == 53, step != .project { move(to: .project); return true } // Escape skips
+        return false
     }
 }
 
@@ -134,7 +139,8 @@ private struct OnboardingKeyMonitor: NSViewRepresentable {
         init(handler: @escaping (NSEvent) -> Bool) { self.handler = handler }
 
         func install(for view: NSView) {
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak view] event in
+            // Key-up and modifier changes let the terminals step tell a ⌘-number tap from a hold.
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self, weak view] event in
                 guard let self, let window = view?.window, window.isKeyWindow, event.window === window,
                       window.attachedSheet == nil, NSApp.modalWindow == nil else { return event }
                 return self.handler(event) ? nil : event

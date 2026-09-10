@@ -171,10 +171,8 @@ struct OnboardingShortcut: Identifiable {
                            keys: ["⇧", "⌘", "P"], key: "p", modifiers: [.command, .shift]),
         OnboardingShortcut(id: "terminal", title: "New terminal", symbol: "terminal",
                            keys: ["⇧", "⌘", "T"], key: "t", modifiers: [.command, .shift]),
-        OnboardingShortcut(id: "peek", title: "Peek last terminal", symbol: "rectangle.split.2x1",
-                           keys: ["⌘", "D"]) { event in
-            TerminalShortcut.matching(event) == .peekRecent
-        },
+        OnboardingShortcut(id: "project", title: "Switch project", symbol: "folder",
+                           keys: ["⇧", "⌘", "O"], key: "o", modifiers: [.command, .shift]),
         OnboardingShortcut(id: "branch", title: "Switch branch", symbol: "arrow.triangle.branch",
                            keys: ["⇧", "⌘", "B"], key: "b", modifiers: [.command, .shift]),
     ]
@@ -187,7 +185,7 @@ struct OnboardingShortcutsStep: View {
         VStack(spacing: 20) {
             VStack(spacing: 6) {
                 Text("Keep your hands on the keyboard").font(.title2.weight(.semibold))
-                Text("Try each shortcut now. Hold ⌘ and a number to peek any terminal, and Return opens it.")
+                Text("Try each shortcut now. Terminals are next.")
                     .foregroundStyle(.secondary)
             }
             GroupBox {
