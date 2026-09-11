@@ -5,6 +5,15 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
     case reload, openProject, switchBranch, hideTerminal, changeGuide, showWelcome
 
     var id: Self { self }
+
+    var shortcutLabel: String? {
+        switch self {
+        case .openProject: "⇧⌘O"
+        case .switchBranch: "⇧⌘B"
+        case .reload, .hideTerminal, .changeGuide, .showWelcome: nil
+        }
+    }
+
     var title: String {
         switch self {
         case .changeGuide: "Show Change Brief…"
@@ -124,6 +133,10 @@ struct CommandPalette: View {
                 if case .scope(.pr) = command {
                     Text(prDescription)
                         .foregroundStyle(.secondary)
+                }
+                if case let .command(workspaceCommand) = command,
+                   let shortcut = workspaceCommand.shortcutLabel {
+                    Text(shortcut).foregroundStyle(.secondary)
                 }
                 if case let .terminal(session) = command,
                    let number = terminals.navigation.shortcutNumber(for: session.id) {
