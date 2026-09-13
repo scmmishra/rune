@@ -76,7 +76,7 @@ struct OnboardingAgentsStep: View {
                 feature("doc.text.magnifyingglass", color: .accentColor, title: "Understand what changed",
                         detail: "Change Brief explains a diff with diagrams and links back to the code.")
                 feature("play.circle", color: .orange, title: "Keep your dev servers close",
-                        detail: "Procfile commands run in their own terminals, and stop when Rune quits.")
+                        detail: "Procfile commands and mise tasks run in their own terminals, and stop when Rune quits.")
             }
             .frame(maxWidth: 420, alignment: .leading)
         }

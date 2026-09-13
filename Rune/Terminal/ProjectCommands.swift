@@ -4,7 +4,8 @@ import Combine
 @MainActor
 final class ProjectCommands: ObservableObject {
     @Published private(set) var commands: [ProjectCommand] = []
-    @Published private(set) var procfiles: [Procfile] = []
+    @Published private(set) var sources: [ProjectCommandSource] = []
+    @Published private(set) var isDiscovering = false
     @Published private(set) var isLoaded = false
     @Published private(set) var isSaving = false
     @Published private(set) var busyIDs: Set<UUID> = []
@@ -36,10 +37,11 @@ final class ProjectCommands: ObservableObject {
     }
 
     func discover() async {
-        do {
-            let root = root
-            procfiles = try await Task.detached { try Procfile.discover(in: root) }.value
-        } catch { self.error = "Could not locate Procfiles: \(error.localizedDescription)" }
+        guard !isDiscovering else { return }
+        isDiscovering = true
+        defer { isDiscovering = false }
+        let root = root
+        sources = await Task.detached { ProjectCommandSource.discover(in: root) }.value
     }
 
     func resetUnreadableStorage() async {

@@ -30,9 +30,9 @@ struct ProjectCommandsView: View {
                         model.error = nil
                         editing = ProjectCommand(name: "", command: "")
                     }
-                    Button("Import from Procfile…") {
+                    Button("Import Commands…") {
                         model.error = nil
-                        Task { await model.discover(); isImporting = true }
+                        isImporting = true
                     }
                 } label: { Image(systemName: "plus") }
                 .menuStyle(.borderlessButton)
@@ -55,10 +55,10 @@ struct ProjectCommandsView: View {
                 .frame(height: min(CGFloat(model.commands.count) * 30, 180))
                 .disabled(model.isSaving)
             }
-            if model.commands.isEmpty && !model.procfiles.isEmpty {
-                Button("Import from Procfile…") {
+            if model.commands.isEmpty && !model.sources.isEmpty {
+                Button("Import Commands…") {
                     model.error = nil
-                    Task { await model.discover(); isImporting = true }
+                    isImporting = true
                 }
                 .buttonStyle(.plain)
                 .runeFont(size: 11)
@@ -84,7 +84,7 @@ struct ProjectCommandsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .workspaceGroup()
         .sheet(item: $editing) { command in CommandEditor(model: model, draft: command) }
-        .sheet(isPresented: $isImporting) { ProcfileImporter(model: model) }
+        .sheet(isPresented: $isImporting) { ProjectCommandImporter(model: model) }
         .alert("Reset saved commands?", isPresented: $isResetting) {
             Button("Cancel", role: .cancel) {}
             Button("Reset", role: .destructive) { Task { await model.resetUnreadableStorage() } }

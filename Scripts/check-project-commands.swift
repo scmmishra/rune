@@ -31,6 +31,26 @@ struct ProjectCommandChecks {
         let discovered = try Procfile.discover(in: root)
         precondition(discovered.map { $0.url.lastPathComponent } == ["Procfile.dev", "Procfile.devs"])
 
+        let miseJSON = Data("""
+        [
+          {"name": "web", "run": ["echo should not be copied"]},
+          {"name": "build:app"},
+          {"name": "hidden", "hide": true},
+          {"name": "web"},
+          {"name": "it's fine"},
+          {"name": ""}
+        ]
+        """.utf8)
+        let miseCommands = try MiseTasks.parse(miseJSON)
+        precondition(miseCommands.map(\.name) == ["build:app", "it's fine", "web"])
+        precondition(miseCommands.last?.command == "mise run 'web'")
+        precondition(miseCommands[1].command == "mise run " + CommandExecution.quote("it's fine"))
+        precondition(miseCommands.allSatisfy { !$0.autoStart && $0.workingDirectory == "." })
+        let emptyMise = try MiseTasks.parse(Data("[]".utf8))
+        precondition(emptyMise.isEmpty)
+        do { _ = try MiseTasks.parse(Data("{}".utf8)); preconditionFailure("Invalid task lists must report an error") }
+        catch is DecodingError {}
+
         let storage = ProjectCommandStorage(root: root, baseDirectory: root.appendingPathComponent("storage"))
         let empty = try storage.load()
         precondition(empty.isEmpty)

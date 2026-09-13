@@ -71,27 +71,27 @@ struct CommandEditor: View {
     }
 }
 
-struct ProcfileImporter: View {
+struct ProjectCommandImporter: View {
     @ObservedObject var model: ProjectCommands
-    @State private var selectedFile: URL?
+    @State private var selectedSource: String?
     @State private var selectedIDs: Set<UUID> = []
     @Environment(\.dismiss) private var dismiss
 
-    private var procfile: Procfile? { model.procfiles.first { $0.url == selectedFile } }
+    private var source: ProjectCommandSource? { model.sources.first { $0.id == selectedSource } }
     private var existingNames: Set<String> { Set(model.commands.map(\.name)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Import Commands").runeFont(size: 16, weight: .semibold)
-            Picker("Procfile", selection: $selectedFile) {
-                ForEach(model.procfiles) { file in
-                    Text(file.url.lastPathComponent).tag(Optional(file.url))
+            Picker("Source", selection: $selectedSource) {
+                ForEach(model.sources) { source in
+                    Text(source.name).tag(Optional(source.id))
                 }
             }
-            if let procfile {
+            if let source {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach(procfile.commands) { command in
+                        ForEach(source.commands) { command in
                             Toggle(isOn: Binding(
                                 get: { selectedIDs.contains(command.id) },
                                 set: { if $0 { selectedIDs.insert(command.id) } else { selectedIDs.remove(command.id) } }
@@ -106,25 +106,29 @@ struct ProcfileImporter: View {
                             .toggleStyle(.checkbox)
                             .disabled(existingNames.contains(command.name))
                         }
-                        ForEach(Array(procfile.warnings.enumerated()), id: \.offset) { _, warning in
+                        ForEach(Array(source.warnings.enumerated()), id: \.offset) { _, warning in
                             Text(warning).runeFont(size: 11).foregroundStyle(.orange)
                         }
-                        if procfile.commands.isEmpty { Text("No commands found.").foregroundStyle(.secondary) }
+                        if source.commands.isEmpty { Text("No commands found.").foregroundStyle(.secondary) }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(height: 240)
             } else {
-                Text("No Procfiles found in the project root.").foregroundStyle(.secondary)
+                if model.isDiscovering {
+                    ProgressView("Discovering commands…")
+                } else {
+                    Text("No Procfiles or mise tasks found.").foregroundStyle(.secondary)
+                }
             }
-            Text("Selected commands are saved locally. Importing does not start them or change the Procfile.")
+            Text("Selected commands are saved locally. Importing does not start them or change project files.")
                 .runeFont(size: 11).foregroundStyle(.secondary)
             if let error = model.error { Text(error).runeFont(size: 11).foregroundStyle(.red) }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Import \(selectedIDs.count) Commands") {
-                    let selected = procfile?.commands.filter { selectedIDs.contains($0.id) } ?? []
+                    let selected = source?.commands.filter { selectedIDs.contains($0.id) } ?? []
                     Task { if await model.importCommands(selected) { dismiss() } }
                 }
                 .keyboardShortcut(.defaultAction)
@@ -133,9 +137,15 @@ struct ProcfileImporter: View {
         }
         .padding(24)
         .frame(width: 520)
-        .onAppear { selectedFile = model.procfiles.first?.url }
-        .onChange(of: selectedFile) {
-            selectedIDs = Set(procfile?.commands.filter { !existingNames.contains($0.name) }.map(\.id) ?? [])
+        .task {
+            await model.discover()
+            if !model.isDiscovering { selectedSource = model.sources.first?.id }
+        }
+        .onChange(of: model.isDiscovering) {
+            if !model.isDiscovering && selectedSource == nil { selectedSource = model.sources.first?.id }
+        }
+        .onChange(of: selectedSource) {
+            selectedIDs = Set(source?.commands.filter { !existingNames.contains($0.name) }.map(\.id) ?? [])
         }
     }
 }
