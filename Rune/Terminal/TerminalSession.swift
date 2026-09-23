@@ -10,6 +10,12 @@ final class TerminalSession: ObservableObject, Identifiable {
     @Published var customName: String?
     @Published private var detectedAgent: TerminalAgent?
     private var titleObservation: AnyCancellable?
+    private var attentionObservations: Set<AnyCancellable> = []
+    /// Something asked for you here while you were elsewhere: an agent finished or wants
+    /// an answer, a build ended. Cleared the moment you visit this terminal.
+    @Published private(set) var needsAttention = false
+    /// Bumped with each new request, so a tab can nudge again for a second one.
+    @Published private(set) var attentionCount = 0
     let savedCommandID: UUID?
     private let startDirectory: URL?
     /// Where the shell is now (OSC 7), falling back to where it started. Relative paths
@@ -117,6 +123,27 @@ final class TerminalSession: ObservableObject, Identifiable {
                 .removeDuplicates()
                 .sink { [weak self] in self?.detectedAgent = $0 }
         }
+        // zsh rings the bell for tab completion, so a terminal you are typing in never
+        // asks for attention: you are already looking at it.
+        terminal.$bellCount
+            .dropFirst()
+            .sink { [weak self] _ in self?.requestAttention() }
+            .store(in: &attentionObservations)
+        terminal.$isFocused
+            .filter { $0 }
+            .sink { [weak self] _ in self?.clearAttention() }
+            .store(in: &attentionObservations)
+        // Clicking straight into the surface counts as visiting it.
+        terminal.$isFocused
+            .filter { $0 }
+            .sink { [weak self] _ in self?.clearAttention() }
+            .store(in: &attentionObservations)
+        terminal.$lastDesktopNotificationAt
+            .compactMap { $0 }
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.requestAttention() }
+            .store(in: &attentionObservations)
+
         terminal.onClose = { [weak self] processAlive in
             guard let self else { return }
             // A keypress after wait-after-command requests a close. Keep saved
@@ -135,6 +162,18 @@ final class TerminalSession: ObservableObject, Identifiable {
                 self.onExit?()
             }
         }
+    }
+
+    private func requestAttention() {
+        guard !terminal.isFocused else { return }
+        needsAttention = true
+        attentionCount &+= 1
+    }
+
+    /// Visiting the terminal is the acknowledgement.
+    func clearAttention() {
+        guard needsAttention else { return }
+        needsAttention = false
     }
 
     func stop() {
@@ -213,12 +252,16 @@ final class TerminalSessions: ObservableObject {
     }
 
     func peek(_ session: TerminalSession) {
+        session.clearAttention()
         navigation.peek(session.id, limit: Self.peekLimit)
     }
 
     func closePeek(_ session: TerminalSession) { navigation.closePeek(session.id) }
 
-    func focus(_ session: TerminalSession) { navigation.focusOnly(session.id) }
+    func focus(_ session: TerminalSession) {
+        session.clearAttention()
+        navigation.focusOnly(session.id)
+    }
 
     func focusNextSurface() { navigation.focusNextSurface() }
 
@@ -282,6 +325,7 @@ final class TerminalSessions: ObservableObject {
     }
 
     func select(_ session: TerminalSession) {
+        session.clearAttention()
         navigation.select(session.id)
     }
 

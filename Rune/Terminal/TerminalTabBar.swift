@@ -76,6 +76,7 @@ private struct TerminalTab: View {
     let onPeek: () -> Void
     let onClose: () -> Void
     @State private var isHovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isConfirmingClose = false
     @State private var isRenaming = false
     @State private var draftName = ""
@@ -104,6 +105,10 @@ private struct TerminalTab: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // One nudge when a terminal asks for you, and the dot stays amber until you visit.
+        .phaseAnimator([0, -3, 3, -2, 0], trigger: session.attentionCount) { view, offset in
+            view.offset(x: reduceMotion ? 0 : offset)
+        } animation: { _ in .spring(duration: 0.09) }
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .overlay(alignment: .trailing) {
             if let shortcutNumber, showsShortcut {
