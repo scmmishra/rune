@@ -63,6 +63,9 @@ private struct FileTreeContents: View {
     @State private var expandedDirectories: Set<URL>
     @State private var selectedURL: URL?
     @State private var hoveredURL: URL?
+    @State private var prompt: NamePrompt?
+    @State private var promptText = ""
+    @State private var failure: String?
     @EnvironmentObject private var repository: GitSidebarModel
     @FocusState private var hasKeyboardFocus: Bool
     @Environment(\.runeTypography) private var typography
@@ -100,6 +103,16 @@ private struct FileTreeContents: View {
         .onKeyPress(keys: [.upArrow, .downArrow, .return], phases: [.down, .repeat]) { keyPress in
             handleKeyPress(keyPress.key)
         }
+        .alert(prompt?.title ?? "", isPresented: Binding(get: { prompt != nil }, set: { if !$0 { prompt = nil } })) {
+            TextField(prompt?.placeholder ?? "", text: $promptText)
+            Button("Cancel", role: .cancel) { prompt = nil }
+            Button(prompt?.action ?? "Save") { commitPrompt() }
+        }
+        .alert("Unable to Complete", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("OK", role: .cancel) { failure = nil }
+        } message: {
+            Text(failure ?? "")
+        }
         .onChange(of: expandedDirectories) {
             UserDefaults.standard.set(expandedDirectories.map(\.path).sorted(), forKey: "expandedDirectories:" + rootURL.path)
         }
@@ -132,6 +145,41 @@ private struct FileTreeContents: View {
             items = refreshedItems
             treeRevision &+= 1
         }
+        }
+    }
+
+    /// A name the person still has to type: creating something, or renaming it.
+    private enum NamePrompt {
+        case newFile(in: URL)
+        case newFolder(in: URL)
+        case rename(URL)
+
+        var title: String {
+            switch self {
+            case .newFile: "New File"
+            case .newFolder: "New Folder"
+            case let .rename(url): "Rename “\(url.lastPathComponent)”"
+            }
+        }
+
+        var placeholder: String {
+            switch self {
+            case .newFile: "Name.swift"
+            case .newFolder: "Folder"
+            case .rename: "Name"
+            }
+        }
+
+        var action: String {
+            switch self {
+            case .newFile, .newFolder: "Create"
+            case .rename: "Rename"
+            }
+        }
+
+        var initialText: String {
+            if case let .rename(url) = self { return url.lastPathComponent }
+            return ""
         }
     }
 
@@ -205,6 +253,82 @@ private struct FileTreeContents: View {
             selectedURL = url
             hasKeyboardFocus = true
             activate(url: url, isDirectory: isDirectory)
+        }
+        .contextMenu {
+            menu(for: url, isDirectory: isDirectory)
+        }
+    }
+
+    @ViewBuilder
+    private func menu(for url: URL, isDirectory: Bool) -> some View {
+        // New items land inside a folder, or beside the file you clicked.
+        let directory = isDirectory ? url : url.deletingLastPathComponent()
+        Button("New File…") { ask(.newFile(in: directory)) }
+        Button("New Folder…") { ask(.newFolder(in: directory)) }
+        Divider()
+        Button("Rename…") { ask(.rename(url)) }
+        Button("Duplicate") { duplicate(url) }
+        Button("Move to Trash") { trash(url) }
+        Divider()
+        Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        Button("Copy Relative Path") { copy(WorkspaceFileIndex.relativePath(of: url, in: rootURL)) }
+        Button("Copy Path") { copy(url.path) }
+    }
+
+    private func ask(_ prompt: NamePrompt) {
+        promptText = prompt.initialText
+        self.prompt = prompt
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func commitPrompt() {
+        guard let prompt else { return }
+        self.prompt = nil
+        perform {
+            switch prompt {
+            case let .newFile(directory):
+                let url = try FileTreeActions.createFile(named: promptText, in: directory)
+                expandedDirectories.insert(directory)
+                selectedURL = url
+                onOpenFile(url)
+            case let .newFolder(directory):
+                let url = try FileTreeActions.createFolder(named: promptText, in: directory)
+                expandedDirectories.insert(directory)
+                expandedDirectories.insert(url)
+                selectedURL = url
+            case let .rename(url):
+                let renamed = try FileTreeActions.rename(url, to: promptText)
+                // An expanded folder keeps its disclosure under the new name.
+                if expandedDirectories.remove(url) != nil { expandedDirectories.insert(renamed) }
+                selectedURL = renamed
+            }
+        }
+    }
+
+    private func duplicate(_ url: URL) {
+        perform { selectedURL = try FileTreeActions.duplicate(url) }
+    }
+
+    private func trash(_ url: URL) {
+        perform {
+            try FileTreeActions.trash([url])
+            expandedDirectories.remove(url)
+            if selectedURL == url { selectedURL = nil }
+        }
+    }
+
+    /// Runs a file operation, reports what went wrong, and refreshes the tree without
+    /// waiting for the watcher so the row appears as soon as the menu closes.
+    private func perform(_ operation: () throws -> Void) {
+        do {
+            try operation()
+            repository.reload()
+        } catch {
+            failure = error.localizedDescription
         }
     }
 
