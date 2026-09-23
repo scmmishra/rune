@@ -54,6 +54,7 @@ private struct AgentUsageCard: View {
 
     private var collapsed: some View {
         HStack(spacing: 8) {
+            AgentMark(agent: agent)
             Text(agent.shortName)
                 .foregroundStyle(.primary)
             summary(for: agent)
@@ -96,17 +97,14 @@ private struct AgentUsageCard: View {
             ForEach(Array(AgentUsageModel.agents.enumerated()), id: \.element) { index, agent in
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
+                        AgentMark(agent: agent)
                         Text(agent.shortName).foregroundStyle(.primary)
                         if let plan = model.readings[agent]?.plan {
                             Text("· " + plan).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 4)
                         if index == 0 {
-                            Button(action: model.refresh) { Image(systemName: "arrow.clockwise") }
-                                .buttonStyle(WorkspaceButtonStyle())
-                                .disabled(!model.loading.isEmpty)
-                                .help("Refresh Usage")
-                                .accessibilityLabel("Refresh usage")
+                            RefreshButton(isBusy: !model.loading.isEmpty, action: model.refresh)
                             chevron
                         }
                     }
@@ -130,8 +128,32 @@ private struct AgentUsageCard: View {
         .padding(.vertical, 8)
     }
 
+    /// Quiet until pointed at: the card is a readout, not a toolbar.
+    private struct RefreshButton: View {
+        let isBusy: Bool
+        let action: () -> Void
+        @State private var isHovered = false
+
+        var body: some View {
+            Button(action: action) {
+                Image(systemName: "arrow.clockwise")
+                    .runeFont(size: 10, weight: .semibold)
+                    .foregroundStyle(isHovered && !isBusy ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isBusy)
+            .onHover { isHovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+            .help("Refresh Usage")
+            .accessibilityLabel("Refresh usage")
+        }
+    }
+
     private var chevron: some View {
-        Image(systemName: model.isExpanded ? "chevron.up" : "chevron.down")
+        // The card is pinned to the bottom of the column, so it opens upward.
+        Image(systemName: model.isExpanded ? "chevron.down" : "chevron.up")
             .runeFont(size: 9, weight: .semibold)
             .foregroundStyle(isHovered ? .secondary : .tertiary)
     }
@@ -163,8 +185,36 @@ private struct UsageWindowRow: View {
     }
 }
 
+/// The agent's own mark, vendored from Simple Icons and tinted like the row's text so
+/// both read the same in either appearance. See Resources/SimpleIconsLicense.txt.
+private struct AgentMark: View {
+    let agent: TerminalAgent
+    @Environment(\.runeTypography) private var typography
+
+    var body: some View {
+        if let asset = agent.markAsset {
+            let side = typography.size(relativeTo: 11)
+            Image(asset)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: side, height: side)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 private extension TerminalAgent {
     var shortName: String { self == .claude ? "Claude" : rawValue }
+
+    var markAsset: String? {
+        switch self {
+        case .claude: "agent-claude"
+        case .codex: "agent-codex"
+        default: nil
+        }
+    }
 }
 
 private extension AgentUsage.Window {
