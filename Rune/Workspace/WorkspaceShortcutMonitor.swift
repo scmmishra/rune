@@ -6,6 +6,7 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
     let onCommands: () -> Void
     let onProjects: () -> Void
     let onBranches: () -> Void
+    let onSearch: () -> Void
     let onNewTerminal: () -> Void
     let onSelectTerminal: (Int) -> Void
     let onPeekTerminal: (Int) -> Void
@@ -148,6 +149,7 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
                 case ("p", [.command, .shift]): action = self.parent.onCommands
                 case ("o", [.command, .shift]): action = self.parent.onProjects
                 case ("b", [.command, .shift]): action = self.parent.onBranches
+                case ("f", [.command, .shift]): action = self.parent.onSearch
                 case ("t", [.command, .shift]): action = self.parent.onNewTerminal
                 default: action = nil
                 }

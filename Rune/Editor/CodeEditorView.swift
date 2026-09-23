@@ -7,6 +7,8 @@ struct CodeEditorView: View {
     let fileURL: URL
     var isEditable = true
     var presentation: Presentation = .source
+    /// A range to select and center once the text is shown, such as a search match.
+    var reveal: NSRange?
     @State private var request = 0
     @State private var action = PreviewAction.find
 
@@ -28,7 +30,7 @@ struct CodeEditorView: View {
                 .frame(height: 28)
             }
             NativeCodeEditorView(text: $text, fileURL: fileURL, isEditable: isEditable,
-                                 presentation: presentation, request: request, action: action)
+                                 presentation: presentation, request: request, action: action, reveal: reveal)
         }
         .background {
             // Retain the preview-scoped shortcut without a visible toolbar control.
@@ -113,6 +115,7 @@ struct NativeCodeEditorView: NSViewRepresentable {
     var presentation: Presentation = .source
     var request = 0
     var action = PreviewAction.find
+    var reveal: NSRange?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -232,12 +235,27 @@ struct NativeCodeEditorView: NSViewRepresentable {
                 typography: typography
             )
         }
+
+        // Forget the last reveal while none is requested, so the same range in the
+        // next file loaded into this view is still revealed.
+        guard let reveal else {
+            context.coordinator.revealed = nil
+            return
+        }
+        if context.coordinator.revealed != reveal, textView.string == text {
+            context.coordinator.revealed = reveal
+            // Wait for the pass that lays out new text before measuring it.
+            DispatchQueue.main.async { [weak textView] in
+                (textView as? RuneTextView)?.reveal(reveal)
+            }
+        }
     }
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: NativeCodeEditorView
         var lastRequest = 0
+        var revealed: NSRange?
         var typography: RuneTypography
         let textStorage = NSTextStorage()
         private var isRendering = false
@@ -350,6 +368,26 @@ private final class RuneTextView: NSTextView {
               lineRect.intersects(rect) else { return }
         NSColor.labelColor.withAlphaComponent(0.045).setFill()
         lineRect.fill()
+    }
+
+    func reveal(_ range: NSRange) {
+        guard NSMaxRange(range) <= (string as NSString).length,
+              let layoutManager, let textContainer,
+              let scrollView = enclosingScrollView else { return }
+        window?.makeFirstResponder(self)
+        setSelectedRange(range)
+        layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: NSMaxRange(range)))
+        let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+            .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
+        // Center the match so the code around it is visible, rather than pinning it to an edge.
+        let clip = scrollView.contentView
+        var bounds = clip.bounds
+        bounds.origin.y = rect.midY - bounds.height / 2
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        scrollView.reflectScrolledClipView(clip)
+        scrollRangeToVisible(range)
+        showFindIndicator(for: range)
     }
 
     func refreshCurrentLineHighlight() {

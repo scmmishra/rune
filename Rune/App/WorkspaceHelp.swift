@@ -40,6 +40,7 @@ private struct WorkspaceHelpView: View {
 
                 VStack(spacing: 9) {
                     shortcut("Find a file", keys: "⌘P")
+                    shortcut("Search in project", keys: "⇧⌘F")
                     shortcut("Command palette", keys: "⇧⌘P")
                     shortcut("Switch project", keys: "⇧⌘O")
                     shortcut("Switch branch", keys: "⇧⌘B")
@@ -61,6 +62,7 @@ private struct WorkspaceHelpView: View {
                     shortcut("Save file", keys: "⌘S")
                     shortcut("Previous / next diff file", keys: "↑ / ↓")
                     shortcut("Previous / next hunk", keys: "⌥⌘↑ / ↓")
+                    shortcut("Previous / next search result", keys: "⌥⌘↑ / ↓")
                     shortcut("Dismiss Find or preview", keys: "Esc")
                     Text("Diff file navigation works when the text editor is not focused.")
                         .foregroundStyle(.secondary)

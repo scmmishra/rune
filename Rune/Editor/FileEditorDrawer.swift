@@ -1,14 +1,26 @@
 import AppKit
 import SwiftUI
 
+/// Steps through project search results from the file preview.
+struct SearchResultNavigation {
+    let position: String?
+    let onPrevious: (() -> Void)?
+    let onNext: (() -> Void)?
+    let onBack: () -> Void
+}
+
 struct FileEditorDrawer: View {
     let fileURL: URL
+    var reveal: NSRange?
+    var searchNavigation: SearchResultNavigation?
     let onClose: () -> Void
 
     @State private var text = ""
     @State private var savedText = ""
     @State private var loadError: String?
     @State private var isLoading = true
+    /// The file whose contents are in `text`. A reveal waits for its file to load.
+    @State private var loadedURL: URL?
 
     private var isDirty: Bool {
         text != savedText
@@ -30,7 +42,8 @@ struct FileEditorDrawer: View {
                 CodeEditorView(
                     text: $text,
                     fileURL: fileURL,
-                    isEditable: !isLoading
+                    isEditable: !isLoading,
+                    reveal: loadedURL == fileURL && !isLoading ? reveal : nil
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
@@ -44,7 +57,7 @@ struct FileEditorDrawer: View {
         }
         .shadow(color: .black.opacity(0.22), radius: 24, y: 8)
         .background {
-            DrawerEscapeMonitor(onEscape: onClose)
+            DrawerEscapeMonitor(onEscape: searchNavigation?.onBack ?? onClose)
         }
         .task(id: fileURL) {
             await load()
@@ -54,6 +67,15 @@ struct FileEditorDrawer: View {
 
     private var header: some View {
         HStack(spacing: 8) {
+            if let searchNavigation {
+                Button(action: searchNavigation.onBack) {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(WorkspaceButtonStyle())
+                .help("Back to Search Results (Esc)")
+                .accessibilityLabel("Back to search results")
+            }
+
             FileIconView(url: fileURL, isDirectory: false)
                 .foregroundStyle(.secondary)
                 .frame(width: 14, height: 14)
@@ -70,6 +92,24 @@ struct FileEditorDrawer: View {
             }
 
             Spacer()
+
+            if let searchNavigation {
+                if let position = searchNavigation.position {
+                    Text(position)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Button { searchNavigation.onPrevious?() } label: { Image(systemName: "chevron.up") }
+                    .keyboardShortcut(.upArrow, modifiers: [.option, .command])
+                    .disabled(searchNavigation.onPrevious == nil)
+                    .help("Previous Result (⌥⌘↑)")
+                    .buttonStyle(WorkspaceButtonStyle())
+                Button { searchNavigation.onNext?() } label: { Image(systemName: "chevron.down") }
+                    .keyboardShortcut(.downArrow, modifiers: [.option, .command])
+                    .disabled(searchNavigation.onNext == nil)
+                    .help("Next Result (⌥⌘↓)")
+                    .buttonStyle(WorkspaceButtonStyle())
+            }
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
@@ -100,6 +140,7 @@ struct FileEditorDrawer: View {
         text = result.0
         savedText = result.0
         loadError = result.1
+        loadedURL = fileURL
         isLoading = false
     }
 

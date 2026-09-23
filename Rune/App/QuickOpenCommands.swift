@@ -5,6 +5,7 @@ extension FocusedValues {
     @Entry var presentCommandPalette: (() -> Void)?
     @Entry var saveCurrentFile: (() -> Void)?
     @Entry var presentRecentProjects: (() -> Void)?
+    @Entry var presentProjectSearch: (() -> Void)?
 }
 
 struct QuickOpenCommands: Commands {
@@ -12,6 +13,7 @@ struct QuickOpenCommands: Commands {
     @FocusedValue(\.presentCommandPalette) private var presentCommandPalette
     @FocusedValue(\.saveCurrentFile) private var saveCurrentFile
     @FocusedValue(\.presentRecentProjects) private var presentRecentProjects
+    @FocusedValue(\.presentProjectSearch) private var presentProjectSearch
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
@@ -26,6 +28,9 @@ struct QuickOpenCommands: Commands {
             }
             .keyboardShortcut("p", modifiers: .command)
             .disabled(presentQuickOpen == nil)
+            Button("Search in Project…") { presentProjectSearch?() }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(presentProjectSearch == nil)
         }
 
         CommandGroup(replacing: .saveItem) {

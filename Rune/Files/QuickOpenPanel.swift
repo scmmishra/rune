@@ -2,12 +2,13 @@ import AppKit
 import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
-    case reload, openProject, switchBranch, hideTerminal, changeGuide, showWelcome
+    case searchProject, reload, openProject, switchBranch, hideTerminal, changeGuide, showWelcome
 
     var id: Self { self }
 
     var shortcutLabel: String? {
         switch self {
+        case .searchProject: "⇧⌘F"
         case .openProject: "⇧⌘O"
         case .switchBranch: "⇧⌘B"
         case .reload, .hideTerminal, .changeGuide, .showWelcome: nil
@@ -17,6 +18,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .changeGuide: "Show Change Brief…"
+        case .searchProject: "Search in Project…"
         case .reload: "Reload Files and Git"
         case .openProject: "Open Project…"
         case .switchBranch: "Switch Branch…"
@@ -27,6 +29,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .changeGuide: "sparkles"
+        case .searchProject: "text.magnifyingglass"
         case .reload: "arrow.clockwise"
         case .openProject: "folder"
         case .switchBranch: "arrow.triangle.branch"
@@ -50,7 +53,7 @@ struct CommandPalette: View {
     @State private var choosingGuideScope = false
     @State private var guideBranches: GitGuideBranches?
     @State private var query = ""
-    @State private var selection: Entry.ID? = "command:reload"
+    @State private var selection: Entry.ID? = "command:searchProject"
 
     private enum Entry: Identifiable {
         case scope(GuideScope)
@@ -382,7 +385,7 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
     }
 }
 
-private struct PaletteSearchField: NSViewRepresentable {
+struct PaletteSearchField: NSViewRepresentable {
     let placeholder: String
     @Binding var text: String
     let isEnabled: Bool

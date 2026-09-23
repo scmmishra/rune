@@ -40,6 +40,9 @@ struct WorkspaceView: View {
     @State private var isProjectPickerPresented = false
     @State private var isHelpPresented = false
     @State private var recentWorkspaces: [WorkspaceIdentity] = []
+    // Held without observing: only the drawer redraws as the query and results change,
+    // not the whole workspace on every keystroke.
+    @State private var search = ProjectSearchModel()
 
     private var isPalettePresented: Bool {
         isQuickOpenPresented || isBranchPickerPresented || isCommandPalettePresented || isProjectPickerPresented
@@ -60,10 +63,11 @@ struct WorkspaceView: View {
         return GitDiffSelection(change: change, area: area)
     }
 
-    private var isGitPreviewVisible: Bool {
+    /// Previews that use ⌥⌘↑↓ for hunks or search results instead of terminal cycling.
+    private var isPreviewNavigationVisible: Bool {
         guard isDrawerVisible else { return false }
         switch openDrawer {
-        case .diff, .commit: return true
+        case .diff, .commit, .searchMatch: return true
         default: return false
         }
     }
@@ -320,6 +324,7 @@ struct WorkspaceView: View {
                 onCommands: presentCommands,
                 onProjects: presentProjects,
                 onBranches: presentBranches,
+                onSearch: toggleSearch,
                 onNewTerminal: addTerminal,
                 onSelectTerminal: selectTerminal,
                 onPeekTerminal: peekTerminal,
@@ -330,7 +335,7 @@ struct WorkspaceView: View {
                 onPromotePeek: promotePeek,
                 onCycleTerminal: cycleTerminal,
                 onTogglePrimaryTerminal: togglePrimaryTerminal,
-                preservesPreviewHunkShortcuts: isGitPreviewVisible && !isPalettePresented,
+                preservesPreviewHunkShortcuts: isPreviewNavigationVisible && !isPalettePresented,
                 isCommandHeld: $isCommandHeld,
                 isPeekArmed: $isPeekArmed
             )
@@ -384,6 +389,7 @@ struct WorkspaceView: View {
         }
         .focusedSceneValue(\.presentRecentProjects, presentProjects)
         .focusedSceneValue(\.presentCommandPalette, presentCommands)
+        .focusedSceneValue(\.presentProjectSearch, toggleSearch)
     }
 
     private func dismissPalettes() {
@@ -430,6 +436,7 @@ struct WorkspaceView: View {
         isCommandPalettePresented = false
         switch command {
         case .changeGuide: showGuide()
+        case .searchProject: showSearch()
         case .reload: repository.reload()
         case .hideTerminal: hideTerminalDrawer()
         case .showWelcome: openWindow(id: "onboarding")
@@ -471,6 +478,47 @@ struct WorkspaceView: View {
         }
     }
 
+    private func showSearch() {
+        guard directoryURL != nil, !repository.isSwitchingBranch else { return }
+        dismissPalettes()
+        drawerCleanupTask?.cancel()
+        withAnimation(.snappy(duration: 0.18)) {
+            openDrawer = .search
+            isDrawerVisible = true
+        }
+    }
+
+    /// ⇧⌘F closes the results when they are showing; from a result's file it goes back to them.
+    private func toggleSearch() {
+        if isDrawerVisible, case .search = openDrawer {
+            closeDrawer()
+        } else {
+            showSearch()
+        }
+    }
+
+    private func openSearchMatch(_ match: ProjectSearchMatch) {
+        drawerCleanupTask?.cancel()
+        search.selection = match.id
+        openDrawer = .searchMatch(match)
+        isDrawerVisible = true
+    }
+
+    private func searchNavigation(for match: ProjectSearchMatch) -> SearchResultNavigation {
+        let matches = search.matches
+        let index = matches.firstIndex { $0.id == match.id }
+        func step(_ offset: Int) -> (() -> Void)? {
+            guard let index, matches.indices.contains(index + offset) else { return nil }
+            return { openSearchMatch(matches[index + offset]) }
+        }
+        return SearchResultNavigation(
+            position: index.map { "\($0 + 1) of \(matches.count)" },
+            onPrevious: step(-1),
+            onNext: step(1),
+            onBack: showSearch
+        )
+    }
+
     private func showCommit(_ commit: GitCommit) {
         drawerCleanupTask?.cancel()
         withAnimation(.snappy(duration: 0.22)) {
@@ -486,6 +534,11 @@ struct WorkspaceView: View {
             ChangeGuideDrawer(rootURL: rootURL, model: guide, onClose: closeDrawer)
         case let .file(fileURL):
             FileEditorDrawer(fileURL: fileURL, onClose: closeDrawer)
+        case .search:
+            ProjectSearchDrawer(model: search, onOpen: openSearchMatch, onClose: closeDrawer)
+        case let .searchMatch(match):
+            FileEditorDrawer(fileURL: match.url, reveal: match.range,
+                             searchNavigation: searchNavigation(for: match), onClose: closeDrawer)
         case let .diff(change, area):
             GitDiffDrawer(
                 rootURL: rootURL,
@@ -741,6 +794,8 @@ private enum WorkspaceDrawer {
     case guide
     case terminal(UUID)
     case file(URL)
+    case search
+    case searchMatch(ProjectSearchMatch)
     case diff(GitChange, GitChange.Area)
     case commit(GitCommit)
 }
