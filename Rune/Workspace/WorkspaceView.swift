@@ -147,6 +147,7 @@ struct WorkspaceView: View {
                     sidebarDivider(width: $gitSidebarWidth, direction: -1, availableWidth: geometry.size.width)
                     Group {
                         if let directoryURL {
+                            VStack(spacing: WorkspaceMetrics.groupGap) {
                             GitSidebarView(
                                 rootURL: directoryURL,
                                 topInset: 0,
@@ -165,6 +166,9 @@ struct WorkspaceView: View {
                                 onOpenGuide: showGuide
                             )
                             .id(directoryURL)
+                            AgentUsagePanel(sessions: terminals)
+                                .padding(.horizontal, WorkspaceMetrics.panelGap)
+                            }
                         } else {
                             Color.clear
                         }

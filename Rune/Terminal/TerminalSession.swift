@@ -31,17 +31,29 @@ final class TerminalSession: ObservableObject, Identifiable {
     }
 
     @Published var processStatus: TerminalProcessStatus?
+    /// The foreground process of every shell session, the primary included. Unlike
+    /// `processStatus`, it never renames the primary tab.
+    @Published var foreground: TerminalProcessStatus?
     var onExit: (() -> Void)?
+
+    private static let runtimes: Set<String> = ["node", "bun", "deno", "python", "python3"]
 
     var name: String {
         if let customName { return customName }
         if let processStatus {
             if processStatus.isIdle { return processStatus.name }
-            let runtime = ["node", "bun", "deno", "python", "python3"].contains(processStatus.name)
             return TerminalAgent.detect(in: processStatus.name)?.rawValue
-                ?? (runtime ? detectedAgent?.rawValue : nil) ?? processStatus.name
+                ?? (Self.runtimes.contains(processStatus.name) ? detectedAgent?.rawValue : nil) ?? processStatus.name
         }
         return detectedAgent?.rawValue ?? defaultName
+    }
+
+    /// The coding agent running in the foreground, if any.
+    var agent: TerminalAgent? {
+        guard let foreground else { return detectedAgent }
+        if foreground.isIdle { return nil }
+        return TerminalAgent.detect(in: foreground.name)
+            ?? (Self.runtimes.contains(foreground.name) ? detectedAgent : nil)
     }
     @Published private(set) var hasExited = false
     @Published var needsCloseConfirmation = false
@@ -264,7 +276,8 @@ final class TerminalSessions: ObservableObject {
 
     func monitorProcesses() async {
         while !Task.isCancelled {
-            let roots = Dictionary(uniqueKeysWithValues: supporting.compactMap { session in
+            let shells = all.filter { $0.execution == nil }
+            let roots = Dictionary(uniqueKeysWithValues: shells.compactMap { session in
                 session.rootProcess.map { (session.id, $0) }
             })
             let statuses = await Task.detached(priority: .utility) {
@@ -272,6 +285,9 @@ final class TerminalSessions: ObservableObject {
             }.value
             guard !Task.isCancelled else { return }
             await primary.refreshCommand()
+            for session in shells where session.foreground != statuses[session.id] {
+                session.foreground = statuses[session.id]
+            }
             for session in supporting {
                 await session.refreshCommand()
                 if session.execution != nil { continue }
