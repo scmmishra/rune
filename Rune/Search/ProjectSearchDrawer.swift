@@ -46,15 +46,27 @@ struct ProjectSearchDrawer: View {
     private var results: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                // Group each file's matches in a card, like the commit preview's files.
+                LazyVStack(alignment: .leading, spacing: 14) {
                     ForEach(model.files) { file in
-                        fileHeader(file)
-                        ForEach(file.matches) { match in
-                            matchRow(match).id(match.id)
+                        VStack(alignment: .leading, spacing: 6) {
+                            fileHeader(file)
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(file.matches) { match in
+                                    matchRow(match).id(match.id)
+                                }
+                            }
+                            .padding(3)
+                            .background(Color.primary.opacity(0.025))
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .stroke(Color.primary.opacity(0.11), lineWidth: 1)
+                            }
                         }
                     }
                 }
-                .padding(6)
+                .padding(12)
             }
             .overlay {
                 if model.files.isEmpty, !model.isSearching {
@@ -72,26 +84,29 @@ struct ProjectSearchDrawer: View {
     }
 
     private func fileHeader(_ file: ProjectSearchFile) -> some View {
-        HStack(spacing: 6) {
+        let directory = (file.relativePath as NSString).deletingLastPathComponent
+        return HStack(spacing: 7) {
             FileIconView(url: file.url, isDirectory: false)
-                .foregroundStyle(.secondary)
-                .frame(width: 12, height: 12)
+                .frame(width: 14, height: 14)
             Text(file.url.lastPathComponent)
-                .runeFont(size: 12, weight: .medium)
-            Text(file.relativePath)
-                .runeFont(size: 11)
-                .foregroundStyle(.secondary)
-                .truncationMode(.middle)
+                .runeFont(size: 11, weight: .medium)
+            if !directory.isEmpty {
+                Text(directory)
+                    .runeFont(size: 11)
+                    .foregroundStyle(.secondary)
+                    .truncationMode(.middle)
+            }
             Spacer(minLength: 8)
-            Text("\(file.matches.count)")
-                .runeFont(size: 11)
+            Text(file.matches.count == 1 ? "1 match" : "\(file.matches.count) matches")
+                .runeFont(size: 9, weight: .medium)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.primary.opacity(0.06), in: Capsule())
         }
         .lineLimit(1)
-        .padding(.horizontal, 8)
-        .padding(.top, 8)
-        .frame(minHeight: max(25, typography.size(relativeTo: 25)))
+        .padding(.horizontal, 2)
     }
 
     private func matchRow(_ match: ProjectSearchMatch) -> some View {
