@@ -17,7 +17,12 @@ final class GitSidebarModel: ObservableObject {
     @Published private(set) var isDiscarding = false
     @Published private(set) var isSwitchingBranch = false
     @Published private var repositoryErrorMessage: String?
-    @Published private var actionErrorMessage: String?
+    @Published private var actionErrorMessage: String? {
+        didSet { scheduleActionErrorExpiry() }
+    }
+    private var actionErrorExpiry: Task<Void, Never>?
+    /// How long a failed action's message stays up when nothing else clears it.
+    private static let actionErrorLifetime: Duration = .seconds(20)
 
     private let rootURL: URL
     private var refreshTask: Task<Void, Never>?
@@ -120,12 +125,29 @@ final class GitSidebarModel: ObservableObject {
             if repositoryErrorMessage != result.0.errorMessage {
                 repositoryErrorMessage = result.0.errorMessage
             }
+            // The working tree moved on, so a message about an earlier action no
+            // longer describes what is on screen.
+            if changed, actionErrorMessage != nil { actionErrorMessage = nil }
             refreshTask = nil
 
             if refreshRequested {
                 refreshRequested = false
                 refresh()
             }
+        }
+    }
+
+    /// A failed action explains itself and then gets out of the way: the next change
+    /// clears it, and so does time, rather than leaving it up until the next action.
+    private func scheduleActionErrorExpiry() {
+        actionErrorExpiry?.cancel()
+        actionErrorExpiry = nil
+        guard actionErrorMessage != nil else { return }
+        actionErrorExpiry = Task { [weak self] in
+            try? await Task.sleep(for: Self.actionErrorLifetime)
+            guard !Task.isCancelled, let self else { return }
+            actionErrorExpiry = nil
+            actionErrorMessage = nil
         }
     }
 

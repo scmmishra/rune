@@ -98,7 +98,11 @@ private struct AgentUsageCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
                         AgentMark(agent: agent)
-                        Text(agent.shortName).foregroundStyle(.primary)
+                        Text(agent.shortName)
+                            .foregroundStyle(.primary)
+                            // A reading that is standing in for a failed refresh says so here
+                            // rather than in a line of its own.
+                            .help(model.readings[agent] != nil ? (model.errors[agent] ?? "") : "")
                         if let plan = model.readings[agent]?.plan {
                             Text("· " + plan).foregroundStyle(.secondary)
                         }
@@ -114,12 +118,12 @@ private struct AgentUsageCard: View {
                             UsageWindowRow(window: window)
                         }
                     }
-                    if let error = model.errors[agent] {
-                        Text(error)
+                    // Keep the last good numbers instead of replacing them with an error:
+                    // a rate-limited refresh does not make what we already read untrue.
+                    if model.readings[agent] == nil {
+                        Text(model.errors[agent] ?? "Loading…")
                             .foregroundStyle(.tertiary)
                             .fixedSize(horizontal: false, vertical: true)
-                    } else if model.readings[agent] == nil {
-                        Text("Loading…").foregroundStyle(.tertiary)
                     }
                 }
             }
