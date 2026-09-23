@@ -21,6 +21,13 @@ struct FileEditorDrawer: View {
     @State private var isLoading = true
     /// The file whose contents are in `text`. A reveal waits for its file to load.
     @State private var loadedURL: URL?
+    @AppStorage("prefersRenderedMarkdown") private var prefersRenderedMarkdown = true
+    /// This file's choice. Unset, a search match opens as source so it can be revealed.
+    @State private var rendersMarkdown: Bool?
+
+    private var showsRenderedMarkdown: Bool {
+        fileURL.isMarkdown && (rendersMarkdown ?? (reveal == nil && prefersRenderedMarkdown))
+    }
 
     private var isDirty: Bool {
         text != savedText
@@ -38,6 +45,10 @@ struct FileEditorDrawer: View {
                     systemImage: "doc.badge.ellipsis",
                     description: Text(loadError)
                 )
+            } else if showsRenderedMarkdown {
+                MarkdownPreview(text: text)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(nsColor: .textBackgroundColor))
             } else {
                 CodeEditorView(
                     text: $text,
@@ -60,6 +71,7 @@ struct FileEditorDrawer: View {
             DrawerEscapeMonitor(onEscape: searchNavigation?.onBack ?? onClose)
         }
         .task(id: fileURL) {
+            rendersMarkdown = nil
             await load()
         }
         .focusedSceneValue(\.saveCurrentFile, save)
@@ -92,6 +104,23 @@ struct FileEditorDrawer: View {
             }
 
             Spacer()
+
+            if fileURL.isMarkdown, loadError == nil {
+                Picker("Markdown view", selection: Binding(
+                    get: { showsRenderedMarkdown },
+                    set: { rendered in
+                        rendersMarkdown = rendered
+                        prefersRenderedMarkdown = rendered
+                    }
+                )) {
+                    Text("Preview").tag(true)
+                    Text("Source").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
+            }
 
             if let searchNavigation {
                 if let position = searchNavigation.position {
