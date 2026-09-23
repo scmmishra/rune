@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct RuneApp: App {
-    @StateObject private var updater = AppUpdater()
+    @StateObject private var updater = AppUpdater.shared
 
     init() {
         // Keep project windows separate even when macOS prefers opening windows as tabs.

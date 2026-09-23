@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
-    case searchProject, reload, openProject, switchBranch, hideTerminal, changeGuide, showWelcome
+    case searchProject, reload, openProject, switchBranch, newTerminal, closeTerminal, hideTerminal,
+         changeGuide, showWelcome, checkForUpdates
 
     var id: Self { self }
 
@@ -11,7 +12,8 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .searchProject: "⇧⌘F"
         case .openProject: "⇧⌘O"
         case .switchBranch: "⇧⌘B"
-        case .reload, .hideTerminal, .changeGuide, .showWelcome: nil
+        case .newTerminal: "⇧⌘T"
+        case .reload, .closeTerminal, .hideTerminal, .changeGuide, .showWelcome, .checkForUpdates: nil
         }
     }
 
@@ -22,8 +24,11 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .reload: "Reload Files and Git"
         case .openProject: "Open Project…"
         case .switchBranch: "Switch Branch…"
+        case .newTerminal: "New Terminal"
+        case .closeTerminal: "Close Terminal"
         case .hideTerminal: "Hide Secondary Terminal"
         case .showWelcome: "Show Welcome…"
+        case .checkForUpdates: "Check for Updates…"
         }
     }
     var symbol: String {
@@ -33,8 +38,11 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .reload: "arrow.clockwise"
         case .openProject: "folder"
         case .switchBranch: "arrow.triangle.branch"
+        case .newTerminal: "plus.rectangle"
+        case .closeTerminal: "xmark.rectangle"
         case .hideTerminal: "rectangle.righthalf.inset.filled"
         case .showWelcome: "hand.wave"
+        case .checkForUpdates: "arrow.down.circle"
         }
     }
 }
@@ -42,6 +50,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
 struct CommandPalette: View {
     let canSwitchBranch: Bool
     let canHideTerminal: Bool
+    let canCheckForUpdates: Bool
     let rootURL: URL
     let canShowGuide: Bool
     @ObservedObject var guide: ChangeGuideModel
@@ -97,6 +106,7 @@ struct CommandPalette: View {
             .filter { $0 != .changeGuide || canShowGuide }
             .filter { $0 != .switchBranch || canSwitchBranch }
             .filter { $0 != .hideTerminal || canHideTerminal }
+            .filter { $0 != .checkForUpdates || canCheckForUpdates }
             .map(Entry.command) + terminals.all.map(Entry.terminal)
         guard !query.isEmpty else { return commands }
         let bytes = Array(query.lowercased().utf8)

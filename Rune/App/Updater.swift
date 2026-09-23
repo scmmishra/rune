@@ -3,6 +3,10 @@ import Sparkle
 import SwiftUI
 
 final class AppUpdater: ObservableObject {
+    /// One updater for the whole app: the scene shows it in menus and Settings, and the
+    /// command palette checks through the same instance.
+    static let shared = AppUpdater()
+
     @Published private(set) var canCheckForUpdates = false
     let controller: SPUStandardUpdaterController
     let isConfigured: Bool

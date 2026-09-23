@@ -57,6 +57,7 @@ struct WorkspaceView: View {
     @State private var isCommandHeld = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openWindow) private var openWindow
+    @ObservedObject private var updater = AppUpdater.shared
 
     private var selectedDiff: GitDiffSelection? {
         guard isDrawerVisible, case let .diff(change, area) = openDrawer else { return nil }
@@ -285,7 +286,8 @@ struct WorkspaceView: View {
                         } else if isCommandPalettePresented {
                             CommandPalette(
                                 canSwitchBranch: repository.snapshot.isRepository && !repository.isBusy,
-                                canHideTerminal: terminals.navigation.panelID != terminals.primary.id
+                                canHideTerminal: terminals.navigation.panelID != terminals.primary.id,
+                                canCheckForUpdates: updater.isConfigured && updater.canCheckForUpdates
                                     || !terminals.navigation.peekedIDs.isEmpty,
                                 rootURL: directoryURL,
                                 canShowGuide: repository.snapshot.isRepository,
@@ -446,7 +448,11 @@ struct WorkspaceView: View {
         case .searchProject: showSearch()
         case .reload: repository.reload()
         case .hideTerminal: hideTerminalDrawer()
+        case .newTerminal: addTerminal()
+        // The tab bar owns the confirmation, so ask there rather than ending processes here.
+        case .closeTerminal: terminals.panel.needsCloseConfirmation = true
         case .showWelcome: openWindow(id: "onboarding")
+        case .checkForUpdates: updater.controller.updater.checkForUpdates()
         case .openProject: presentProjects()
         case .switchBranch:
             guard repository.snapshot.isRepository, !repository.isBusy else { return }
