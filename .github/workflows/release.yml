@@ -49,6 +49,14 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      # Saved by package-cache.yml on main; tag runs cannot share their own saves.
+      - name: Restore package cache
+        uses: actions/cache/restore@v4
+        with:
+          path: DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Rune.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
       - name: Build Debug and test highlighting
         run: |
           xcodebuild -project Rune.xcodeproj -scheme Rune -configuration Debug \
