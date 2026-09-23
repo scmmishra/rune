@@ -106,7 +106,28 @@ struct TerminalPane: View {
 
 final class RuneTerminalView: TerminalView {
     var onActivate: (() -> Void)?
+    /// A ⌘-clicked link, reported before libghostty falls back to /usr/bin/open.
+    var onOpenURL: ((String) -> Void)?
     private var isStopped = false
+    private var linkDelegate: TerminalLinkDelegate?
+
+    // libghostty only treats a link as handled when the surface delegate adopts its
+    // open-URL protocol, and TerminalViewState does not. Wrap it so project files open
+    // in Rune instead of whichever app macOS would launch.
+    override var delegate: (any TerminalSurfaceViewDelegate)? {
+        get { super.delegate }
+        set {
+            guard let state = newValue as? TerminalViewState else {
+                linkDelegate = nil
+                super.delegate = newValue
+                return
+            }
+            let proxy = TerminalLinkDelegate(state: state)
+            proxy.onOpenURL = { [weak self] url in self?.onOpenURL?(url) }
+            linkDelegate = proxy
+            super.delegate = proxy
+        }
+    }
 
 
     // Treat actual clicks as navigation intent. Ghostty's delayed published

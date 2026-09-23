@@ -322,6 +322,7 @@ struct WorkspaceView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .background { WindowFullScreenObserver(isFullScreen: $isWindowFullScreen) }
+        .onAppear { terminals.onOpenLink = openTerminalLink }
         .background {
             WorkspaceShortcutMonitor(
                 onQuickOpen: presentQuickOpen,
@@ -427,11 +428,13 @@ struct WorkspaceView: View {
         }
     }
 
-    private func open(_ fileURL: URL) {
+    private func open(_ fileURL: URL) { open(fileURL, line: nil) }
+
+    private func open(_ fileURL: URL, line: Int?) {
         isQuickOpenPresented = false
         drawerCleanupTask?.cancel()
         withAnimation(.snappy(duration: 0.22)) {
-            openDrawer = .file(fileURL)
+            openDrawer = .file(fileURL, line: line)
             isDrawerVisible = true
         }
     }
@@ -501,6 +504,14 @@ struct WorkspaceView: View {
         }
     }
 
+    /// A ⌘-clicked link in a terminal: project files open in Rune, the rest go to the system.
+    private func openTerminalLink(_ link: TerminalLink) {
+        switch link {
+        case let .file(fileURL, line): open(fileURL, line: line)
+        case let .external(url): NSWorkspace.shared.open(url)
+        }
+    }
+
     private func openSearchMatch(_ match: ProjectSearchMatch) {
         drawerCleanupTask?.cancel()
         search.selection = match.id
@@ -536,8 +547,8 @@ struct WorkspaceView: View {
         switch drawer {
         case .guide:
             ChangeGuideDrawer(rootURL: rootURL, model: guide, onClose: closeDrawer)
-        case let .file(fileURL):
-            FileEditorDrawer(fileURL: fileURL, onClose: closeDrawer)
+        case let .file(fileURL, line):
+            FileEditorDrawer(fileURL: fileURL, revealLine: line, onClose: closeDrawer)
         case .search:
             ProjectSearchDrawer(model: search, onOpen: openSearchMatch, onClose: closeDrawer)
         case let .searchMatch(match):
@@ -797,7 +808,7 @@ struct WorkspaceView: View {
 private enum WorkspaceDrawer {
     case guide
     case terminal(UUID)
-    case file(URL)
+    case file(URL, line: Int?)
     case search
     case searchMatch(ProjectSearchMatch)
     case diff(GitChange, GitChange.Area)

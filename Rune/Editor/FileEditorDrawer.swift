@@ -12,6 +12,8 @@ struct SearchResultNavigation {
 struct FileEditorDrawer: View {
     let fileURL: URL
     var reveal: NSRange?
+    /// A one-based line to show, from a path like `Sources/App.swift:42` in terminal output.
+    var revealLine: Int?
     var searchNavigation: SearchResultNavigation?
     let onClose: () -> Void
 
@@ -26,7 +28,27 @@ struct FileEditorDrawer: View {
     @State private var rendersMarkdown: Bool?
 
     private var showsRenderedMarkdown: Bool {
-        fileURL.isMarkdown && (rendersMarkdown ?? (reveal == nil && prefersRenderedMarkdown))
+        fileURL.isMarkdown && (rendersMarkdown ?? (reveal == nil && revealLine == nil && prefersRenderedMarkdown))
+    }
+
+    /// The range to select: an explicit one from search, or the line a terminal link named.
+    private var revealRange: NSRange? {
+        if let reveal { return reveal }
+        guard let revealLine, revealLine > 0 else { return nil }
+        let text = text as NSString
+        var start = 0
+        var line = 1
+        while line < revealLine, start < text.length {
+            let range = text.lineRange(for: NSRange(location: start, length: 0))
+            guard range.upperBound > start else { break }
+            start = range.upperBound
+            line += 1
+        }
+        guard line == revealLine, start <= text.length else { return nil }
+        // Select the line's text, leaving its newline out of the highlight.
+        let lineRange = text.lineRange(for: NSRange(location: start, length: 0))
+        let trimmed = text.substring(with: lineRange).trimmingCharacters(in: .newlines)
+        return NSRange(location: lineRange.location, length: (trimmed as NSString).length)
     }
 
     private var isDirty: Bool {
@@ -54,7 +76,7 @@ struct FileEditorDrawer: View {
                     text: $text,
                     fileURL: fileURL,
                     isEditable: !isLoading,
-                    reveal: loadedURL == fileURL && !isLoading ? reveal : nil
+                    reveal: loadedURL == fileURL && !isLoading ? revealRange : nil
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()

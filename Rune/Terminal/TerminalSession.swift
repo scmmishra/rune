@@ -11,6 +11,12 @@ final class TerminalSession: ObservableObject, Identifiable {
     @Published private var detectedAgent: TerminalAgent?
     private var titleObservation: AnyCancellable?
     let savedCommandID: UUID?
+    private let startDirectory: URL?
+    /// Where the shell is now (OSC 7), falling back to where it started. Relative paths
+    /// printed by a build or test run resolve against this.
+    var currentDirectory: URL? {
+        terminal.workingDirectory.map { URL(fileURLWithPath: $0) } ?? startDirectory
+    }
     let execution: CommandExecution?
     private let processGuardian: TerminalProcessGuardian?
     let launchError: String?
@@ -35,6 +41,8 @@ final class TerminalSession: ObservableObject, Identifiable {
     /// `processStatus`, it never renames the primary tab.
     @Published var foreground: TerminalProcessStatus?
     var onExit: (() -> Void)?
+    /// A ⌘-clicked link in this terminal, routed by the workspace.
+    var onOpenURL: ((String) -> Void)?
 
     private static let runtimes: Set<String> = ["node", "bun", "deno", "python", "python3"]
 
@@ -63,6 +71,7 @@ final class TerminalSession: ObservableObject, Identifiable {
         self.id = id
         self.defaultName = name
         self.savedCommandID = savedCommandID
+        self.startDirectory = workingDirectory
         self.execution = execution
         if savedCommandID != nil { customName = name }
         do {
@@ -97,6 +106,7 @@ final class TerminalSession: ObservableObject, Identifiable {
         terminal.makePlatformView = { [weak self] in
             let view = RuneTerminalView(frame: .zero)
             if self?.processGuardian == nil || self?.preventsLaunch != false { view.stop() }
+            view.onOpenURL = { [weak self] url in self?.onOpenURL?(url) }
             return view
         }
         if detectsAgent {
@@ -189,6 +199,19 @@ final class TerminalSessions: ObservableObject {
     /// A peek column past this many slots leaves each terminal too short to read.
     static let peekLimit = 3
 
+    /// Where a ⌘-clicked link goes. Applied to every session, new ones included.
+    var onOpenLink: ((TerminalLink) -> Void)? {
+        didSet { all.forEach(routeLinks) }
+    }
+
+    private func routeLinks(_ session: TerminalSession) {
+        session.onOpenURL = { [weak self, weak session] raw in
+            guard let self, let session,
+                  let link = TerminalLink.parse(raw, relativeTo: session.currentDirectory) else { return }
+            self.onOpenLink?(link)
+        }
+    }
+
     func peek(_ session: TerminalSession) {
         navigation.peek(session.id, limit: Self.peekLimit)
     }
@@ -204,6 +227,7 @@ final class TerminalSessions: ObservableObject {
         let primary = TerminalSession(name: "Main Terminal", workingDirectory: workingDirectory, detectsAgent: false)
         self.primary = primary
         navigation = TerminalNavigation(primaryID: primary.id)
+        routeLinks(primary)
         observePrimaryExit()
     }
 
@@ -230,6 +254,7 @@ final class TerminalSessions: ObservableObject {
         primary = TerminalSession(name: "Main Terminal", workingDirectory: workingDirectory,
                                   detectsAgent: false, id: id)
         primary.customName = customName
+        routeLinks(primary)
         observePrimaryExit()
     }
 
@@ -241,6 +266,7 @@ final class TerminalSessions: ObservableObject {
             self.remove(session)
         }
         navigation.add(session.id)
+        routeLinks(session)
         supporting.append(session)
         return session
     }
@@ -250,6 +276,7 @@ final class TerminalSessions: ObservableObject {
                                       savedCommandID: command.id, execution: execution)
         commandObservations[session.id] = session.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         navigation.add(session.id)
+        routeLinks(session)
         supporting.append(session)
         return session
     }
