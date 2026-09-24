@@ -7,6 +7,8 @@ nonisolated struct ProjectCommand: Codable, Identifiable, Equatable, Sendable {
     var command: String
     var workingDirectory = "."
     var autoStart = false
+    /// Commands sharing a group name show as one row in the sidebar. Absent in older saved files.
+    var group: String?
 
     func directory(relativeTo root: URL) -> URL {
         let path = (workingDirectory as NSString).expandingTildeInPath

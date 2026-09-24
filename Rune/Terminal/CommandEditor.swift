@@ -1,41 +1,91 @@
 import SwiftUI
 
+/// What the editor opens on: a plain command, a whole group, or a new blank command.
+struct CommandDraft: Identifiable {
+    let id = UUID()
+    var name: String
+    var processes: [ProjectCommand]
+    /// Saved commands this draft replaces; empty when adding.
+    let original: Set<UUID>
+
+    static var new: CommandDraft { CommandDraft(name: "", processes: [ProjectCommand(name: "", command: "")], original: []) }
+
+    init(name: String, processes: [ProjectCommand], original: Set<UUID>) {
+        self.name = name
+        self.processes = processes
+        self.original = original
+    }
+
+    init(editing command: ProjectCommand, in model: ProjectCommands) {
+        if let group = command.group {
+            let members = model.members(of: group)
+            self.init(name: group, processes: members, original: Set(members.map(\.id)))
+        } else {
+            self.init(name: command.name, processes: [command], original: [command.id])
+        }
+    }
+}
+
 struct CommandEditor: View {
     @ObservedObject var model: ProjectCommands
-    @State var draft: ProjectCommand
+    @State var draft: CommandDraft
     @Environment(\.dismiss) private var dismiss
 
+    private var isGroup: Bool { draft.processes.count > 1 }
+    private var trimmedName: String { draft.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     private var validation: String? {
-        if draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Enter a name." }
-        if draft.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Enter a command." }
-        if draft.command.contains("\0") { return "The command contains an invalid character." }
-        if model.commands.contains(where: { $0.id != draft.id && $0.name == draft.name.trimmingCharacters(in: .whitespacesAndNewlines) }) {
-            return "A command with this name already exists."
+        if trimmedName.isEmpty { return "Enter a name." }
+        let others = model.commands.filter { !draft.original.contains($0.id) }
+        let takenNames = Set(others.map(\.name))
+        let takenGroups = Set(others.compactMap(\.group))
+        if takenGroups.contains(trimmedName) || (isGroup ? takenNames.contains(trimmedName) : false) {
+            return "A group or command with this name already exists."
+        }
+        var seen: Set<String> = []
+        for process in draft.processes {
+            let name = isGroup ? process.name.trimmingCharacters(in: .whitespacesAndNewlines) : trimmedName
+            if isGroup && name.isEmpty { return "Name every process." }
+            if process.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Enter a command for every process." }
+            if process.command.contains("\0") { return "A command contains an invalid character." }
+            if takenNames.contains(name) || takenGroups.contains(name) || !seen.insert(name).inserted {
+                return "A command named \(name) already exists."
+            }
         }
         return nil
     }
 
+    private func isRunning(_ process: ProjectCommand) -> Bool {
+        model.session(for: process)?.isCommandRunning == true
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(model.commands.contains(where: { $0.id == draft.id }) ? "Edit Command" : "Add Command")
+            Text(draft.original.isEmpty ? "Add Command" : isGroup ? "Edit Group" : "Edit Command")
                 .runeFont(size: 16, weight: .semibold)
             // Stacked labels keep the form inside the sheet at larger font sizes.
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Name")
+                    Text(isGroup ? "Group name" : "Name")
                     TextField("Name", text: $draft.name).labelsHidden()
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Command")
-                    TextField("Command", text: $draft.command, axis: .vertical)
-                        .labelsHidden()
-                        .lineLimit(2...5)
+                if isGroup {
+                    processList
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Command")
+                        TextField("Command", text: $draft.processes[0].command, axis: .vertical)
+                            .labelsHidden()
+                            .lineLimit(2...5)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Working directory")
+                        TextField("Working directory", text: $draft.processes[0].workingDirectory).labelsHidden()
+                    }
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Working directory")
-                    TextField("Working directory", text: $draft.workingDirectory).labelsHidden()
-                }
-                Toggle(isOn: $draft.autoStart) {
+                Button("Add Process", systemImage: "plus", action: addProcess)
+                    .buttonStyle(.borderless)
+                Toggle(isOn: autoStart) {
                     Text("Start automatically when this project opens")
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -56,18 +106,69 @@ struct CommandEditor: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") {
-                    draft.name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if draft.workingDirectory.isEmpty { draft.workingDirectory = "." }
-                    Task { if await model.save(draft) { dismiss() } }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(validation != nil || model.isSaving)
+                Button("Save", action: save)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(validation != nil || model.isSaving)
             }
         }
         .runeFont(size: 12)
         .padding(24)
-        .frame(width: 480)
+        .frame(width: isGroup ? 560 : 480)
+    }
+
+    private var processList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Processes")
+            ForEach($draft.processes) { $process in
+                HStack(spacing: 6) {
+                    TextField("Name", text: $process.name)
+                        .frame(width: 110)
+                    TextField("Command", text: $process.command)
+                    TextField("Directory", text: $process.workingDirectory)
+                        .frame(width: 90)
+                    Button {
+                        draft.processes.removeAll { $0.id == process.id }
+                    } label: { Image(systemName: "minus.circle") }
+                    .buttonStyle(.borderless)
+                    // A running process keeps its terminal until it is stopped.
+                    .disabled(isRunning(process))
+                    .help(isRunning(process) ? "Stop \(process.name) before removing it" : "Remove process")
+                    .accessibilityLabel("Remove \(process.name)")
+                }
+            }
+        }
+    }
+
+    /// One switch for the whole draft; a group starts together or not at all.
+    private var autoStart: Binding<Bool> {
+        Binding(
+            get: { draft.processes.allSatisfy(\.autoStart) },
+            set: { value in for index in draft.processes.indices { draft.processes[index].autoStart = value } }
+        )
+    }
+
+    private func addProcess() {
+        if draft.processes.count == 1, draft.processes[0].name.isEmpty {
+            // The first process keeps the command's name until the user renames it.
+            draft.processes[0].name = trimmedName
+        }
+        draft.processes.append(ProjectCommand(
+            name: "", command: "",
+            workingDirectory: draft.processes.last?.workingDirectory ?? ".",
+            autoStart: draft.processes.allSatisfy(\.autoStart)
+        ))
+    }
+
+    private func save() {
+        let processes = draft.processes.map { process in
+            var process = process
+            process.name = process.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if process.workingDirectory.isEmpty { process.workingDirectory = "." }
+            return process
+        }
+        Task {
+            if await model.save(name: trimmedName, processes: processes, replacing: draft.original) { dismiss() }
+        }
     }
 }
 

@@ -10,6 +10,8 @@ final class ProjectCommands: ObservableObject {
     @Published private(set) var isSaving = false
     @Published private(set) var busyIDs: Set<UUID> = []
     @Published var error: String?
+    /// Group names shown expanded in the sidebar, remembered per project across relaunches.
+    @Published private(set) var expandedGroups: Set<String>
     let root: URL
     let sessions: TerminalSessions
     private let storage: ProjectCommandStorage
@@ -19,6 +21,38 @@ final class ProjectCommands: ObservableObject {
         self.root = root
         self.sessions = sessions
         storage = ProjectCommandStorage(root: root)
+        expandedGroups = Set(UserDefaults.standard.stringArray(forKey: Self.expandedGroupsKey(for: root)) ?? [])
+    }
+
+    private static func expandedGroupsKey(for root: URL) -> String {
+        "expandedCommandGroups:" + root.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    struct Group: Identifiable {
+        let name: String
+        let commands: [ProjectCommand]
+        var id: String { name }
+    }
+
+    /// Groups in the order their first command was saved.
+    var groups: [Group] {
+        var order: [String] = []
+        var members: [String: [ProjectCommand]] = [:]
+        for command in commands {
+            guard let group = command.group else { continue }
+            if members[group] == nil { order.append(group) }
+            members[group, default: []].append(command)
+        }
+        return order.map { Group(name: $0, commands: members[$0] ?? []) }
+    }
+
+    var ungrouped: [ProjectCommand] { commands.filter { $0.group == nil } }
+
+    func members(of group: String) -> [ProjectCommand] { commands.filter { $0.group == group } }
+
+    func setExpanded(_ group: String, _ isExpanded: Bool) {
+        if isExpanded { expandedGroups.insert(group) } else { expandedGroups.remove(group) }
+        UserDefaults.standard.set(expandedGroups.sorted(), forKey: Self.expandedGroupsKey(for: root))
     }
 
     func load() async {
@@ -65,11 +99,41 @@ final class ProjectCommands: ObservableObject {
         !commands.isEmpty && commands.allSatisfy { session(for: $0)?.isCommandRunning == true }
     }
 
-    func save(_ command: ProjectCommand) async -> Bool {
+    /// Replaces `replacing` with `processes` in place. Several processes save as a group named
+    /// `name`; a single one saves as a plain command under that name.
+    func save(name: String, processes: [ProjectCommand], replacing: Set<UUID>) async -> Bool {
+        let previousGroup = commands.first { replacing.contains($0.id) }?.group
+        let saved = processes.map { process in
+            var process = process
+            process.group = processes.count > 1 ? name : nil
+            if processes.count == 1 { process.name = name }
+            return process
+        }
         var updated = commands
-        if let index = updated.firstIndex(where: { $0.id == command.id }) { updated[index] = command }
-        else { updated.append(command) }
-        return await persist(updated)
+        let index = updated.firstIndex { replacing.contains($0.id) } ?? updated.endIndex
+        updated.removeAll { replacing.contains($0.id) }
+        updated.insert(contentsOf: saved, at: min(index, updated.endIndex))
+        guard await persist(updated) else { return false }
+        // Processes dropped from the group take their idle terminals with them.
+        let kept = Set(saved.map(\.id))
+        for id in replacing.subtracting(kept) {
+            if let session = sessions.supporting.first(where: { $0.savedCommandID == id }) { sessions.remove(session) }
+        }
+        if let previousGroup, previousGroup != name, expandedGroups.contains(previousGroup) {
+            setExpanded(previousGroup, false)
+            if processes.count > 1 { setExpanded(name, true) }
+        }
+        return true
+    }
+
+    func deleteGroup(_ group: String) async {
+        let members = members(of: group)
+        guard members.allSatisfy({ session(for: $0)?.isCommandRunning != true && !busyIDs.contains($0.id) }) else { return }
+        guard await persist(commands.filter { $0.group != group }) else { return }
+        for member in members {
+            if let session = session(for: member) { sessions.remove(session) }
+        }
+        setExpanded(group, false)
     }
 
     func importCommands(_ selected: [ProjectCommand]) async -> Bool {
@@ -83,7 +147,13 @@ final class ProjectCommands: ObservableObject {
 
     func delete(_ command: ProjectCommand) async {
         guard session(for: command)?.isCommandRunning != true, !busyIDs.contains(command.id) else { return }
-        if await persist(commands.filter { $0.id != command.id }), let session = session(for: command) {
+        var remaining = commands.filter { $0.id != command.id }
+        // A group of one is just a command; let the last member stand on its own.
+        if let group = command.group, remaining.filter({ $0.group == group }).count == 1,
+           let index = remaining.firstIndex(where: { $0.group == group }) {
+            remaining[index].group = nil
+        }
+        if await persist(remaining), let session = session(for: command) {
             sessions.remove(session)
         }
     }
@@ -137,17 +207,17 @@ final class ProjectCommands: ObservableObject {
         return run(command)
     }
 
-    func runAll() -> TerminalSession? {
+    func runAll(_ commands: [ProjectCommand]? = nil) -> TerminalSession? {
         var first: TerminalSession?
-        for command in commands {
+        for command in commands ?? self.commands {
             let session = run(command)
             if first == nil { first = session }
         }
         return first
     }
 
-    func stopAll() async {
-        let running = commands.filter { session(for: $0)?.isCommandRunning == true }
+    func stopAll(_ commands: [ProjectCommand]? = nil) async {
+        let running = (commands ?? self.commands).filter { session(for: $0)?.isCommandRunning == true }
         await withTaskGroup(of: Void.self) { group in
             for command in running {
                 group.addTask { _ = await self.stop(command) }
