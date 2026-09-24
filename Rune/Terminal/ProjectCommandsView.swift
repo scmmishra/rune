@@ -130,6 +130,10 @@ struct ProjectCommandsView: View {
                     GroupStatusDot(sessions: group.commands.map { model.session(for: $0) })
                     Text(group.name).lineLimit(1)
                     Spacer(minLength: 4)
+                    // A faint count is what marks this row as a group that opens.
+                    Text("\(group.commands.count)")
+                        .foregroundStyle(.tertiary)
+                        .fixedSize()
                 }
                 .contentShape(Rectangle())
             }

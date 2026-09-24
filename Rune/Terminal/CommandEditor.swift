@@ -69,20 +69,7 @@ struct CommandEditor: View {
                     Text(isGroup ? "Group name" : "Name")
                     TextField("Name", text: $draft.name).labelsHidden()
                 }
-                if isGroup {
-                    processList
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Command")
-                        TextField("Command", text: $draft.processes[0].command, axis: .vertical)
-                            .labelsHidden()
-                            .lineLimit(2...5)
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Working directory")
-                        TextField("Working directory", text: $draft.processes[0].workingDirectory).labelsHidden()
-                    }
-                }
+                processList
                 Button("Add Process", systemImage: "plus", action: addProcess)
                     .buttonStyle(.borderless)
                 Toggle(isOn: autoStart) {
@@ -113,7 +100,7 @@ struct CommandEditor: View {
         }
         .runeFont(size: 12)
         .padding(24)
-        .frame(width: isGroup ? 560 : 480)
+        .frame(width: 560)
     }
 
     private var processList: some View {
@@ -121,22 +108,31 @@ struct CommandEditor: View {
             Text("Processes")
             ForEach($draft.processes) { $process in
                 HStack(spacing: 6) {
-                    TextField("Name", text: $process.name)
-                        .frame(width: 110)
+                    // A lone process is the command itself and goes by the name above.
+                    if isGroup {
+                        TextField("Name", text: $process.name)
+                            .frame(width: 110)
+                    }
                     TextField("Command", text: $process.command)
                     TextField("Directory", text: $process.workingDirectory)
                         .frame(width: 90)
-                    Button {
-                        draft.processes.removeAll { $0.id == process.id }
-                    } label: { Image(systemName: "minus.circle") }
-                    .buttonStyle(.borderless)
-                    // A running process keeps its terminal until it is stopped.
-                    .disabled(isRunning(process))
-                    .help(isRunning(process) ? "Stop \(process.name) before removing it" : "Remove process")
-                    .accessibilityLabel("Remove \(process.name)")
+                    if isGroup {
+                        removeButton(for: process)
+                    }
                 }
             }
         }
+    }
+
+    private func removeButton(for process: ProjectCommand) -> some View {
+        Button {
+            draft.processes.removeAll { $0.id == process.id }
+        } label: { Image(systemName: "minus.circle") }
+        .buttonStyle(.borderless)
+        // A running process keeps its terminal until it is stopped.
+        .disabled(isRunning(process))
+        .help(isRunning(process) ? "Stop \(process.name) before removing it" : "Remove process")
+        .accessibilityLabel("Remove \(process.name)")
     }
 
     /// One switch for the whole draft; a group starts together or not at all.
