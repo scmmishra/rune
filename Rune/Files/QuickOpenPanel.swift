@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
-    case searchProject, reload, openProject, switchBranch, newTerminal, closeTerminal, hideTerminal,
+    case searchProject, reload, openProject, switchBranch, switchTerminal, newTerminal, closeTerminal, hideTerminal,
          changeGuide, showWelcome, checkForUpdates
 
     var id: Self { self }
@@ -13,7 +13,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .openProject: "⇧⌘O"
         case .switchBranch: "⇧⌘B"
         case .newTerminal: "⇧⌘T"
-        case .reload, .closeTerminal, .hideTerminal, .changeGuide, .showWelcome, .checkForUpdates: nil
+        case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .showWelcome, .checkForUpdates: nil
         }
     }
 
@@ -24,6 +24,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .reload: "Reload Files and Git"
         case .openProject: "Open Project…"
         case .switchBranch: "Switch Branch…"
+        case .switchTerminal: "Switch Terminal…"
         case .newTerminal: "New Terminal"
         case .closeTerminal: "Close Terminal"
         case .hideTerminal: "Hide Secondary Terminal"
@@ -38,6 +39,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .reload: "arrow.clockwise"
         case .openProject: "folder"
         case .switchBranch: "arrow.triangle.branch"
+        case .switchTerminal: "terminal"
         case .newTerminal: "plus.rectangle"
         case .closeTerminal: "xmark.rectangle"
         case .hideTerminal: "rectangle.righthalf.inset.filled"
@@ -53,44 +55,87 @@ struct CommandPalette: View {
     let canCheckForUpdates: Bool
     let rootURL: URL
     let canShowGuide: Bool
+    let projects: [WorkspaceIdentity]
+    /// Local branches fetched when the palette opened; empty until that fetch lands.
+    let branches: [String]
+    let currentBranch: String
     @ObservedObject var guide: ChangeGuideModel
     let onSelectGuide: (GuideScope) -> Void
     @ObservedObject var terminals: TerminalSessions
     let onClose: () -> Void
     let onSelect: (WorkspaceCommand) -> Void
     let onSelectTerminal: (TerminalSession) -> Void
-    @State private var choosingGuideScope = false
+    let onOpenProject: (WorkspaceIdentity) -> Void
+    let onSwitchBranch: (String) -> Void
+    /// The command whose options the palette is showing, if the user stepped into one.
+    @State private var parent: WorkspaceCommand?
     @State private var guideBranches: GitGuideBranches?
     @State private var query = ""
     @State private var selection: Entry.ID? = "command:searchProject"
 
     private enum Entry: Identifiable {
-        case scope(GuideScope)
         case command(WorkspaceCommand)
+        case scope(GuideScope)
         case terminal(TerminalSession)
+        case project(WorkspaceIdentity)
+        case branch(String)
 
         var id: String {
             switch self {
-            case let .scope(scope): "scope:" + scope.rawValue
             case let .command(command): "command:" + command.rawValue
+            case let .scope(scope): "scope:" + scope.rawValue
             case let .terminal(session): "terminal:" + session.id.uuidString
+            case let .project(workspace): "project:" + workspace.path
+            case let .branch(name): "branch:" + name
+            }
+        }
+
+        /// The first-level command this option lives under.
+        var parent: WorkspaceCommand? {
+            switch self {
+            case .command: nil
+            case .scope: .changeGuide
+            case .terminal: .switchTerminal
+            case .project: .openProject
+            case .branch: .switchBranch
             }
         }
 
         var title: String {
             switch self {
-            case let .scope(scope): scope.rawValue
             case let .command(command): command.title
-            case let .terminal(session): "Switch to \(session.name)"
+            case let .scope(scope): scope.rawValue
+            case let .terminal(session): session.name
+            case let .project(workspace): workspace.name
+            case let .branch(name): name
             }
         }
 
         var symbol: String {
             switch self {
-            case .scope: "arrow.triangle.branch"
             case let .command(command): command.symbol
+            case .scope, .branch: "arrow.triangle.branch"
             case .terminal: "terminal"
+            case .project: "folder"
             }
+        }
+    }
+
+    private var commands: [WorkspaceCommand] {
+        WorkspaceCommand.allCases
+            .filter { $0 != .changeGuide || canShowGuide }
+            .filter { $0 != .switchBranch || canSwitchBranch }
+            .filter { $0 != .hideTerminal || canHideTerminal }
+            .filter { $0 != .checkForUpdates || canCheckForUpdates }
+    }
+
+    private func options(of command: WorkspaceCommand) -> [Entry] {
+        switch command {
+        case .changeGuide: guide.isGenerating ? [] : GuideScope.allCases.map(Entry.scope)
+        case .switchTerminal: terminals.all.map(Entry.terminal)
+        case .openProject: projects.map(Entry.project)
+        case .switchBranch: branches.map(Entry.branch)
+        default: []
         }
     }
 
@@ -102,59 +147,121 @@ struct CommandPalette: View {
     }
 
     private var matches: [Entry] {
-        let commands: [Entry] = choosingGuideScope ? GuideScope.allCases.map(Entry.scope) : WorkspaceCommand.allCases
-            .filter { $0 != .changeGuide || canShowGuide }
-            .filter { $0 != .switchBranch || canSwitchBranch }
-            .filter { $0 != .hideTerminal || canHideTerminal }
-            .filter { $0 != .checkForUpdates || canCheckForUpdates }
-            .map(Entry.command) + terminals.all.map(Entry.terminal)
-        guard !query.isEmpty else { return commands }
-        let bytes = Array(query.lowercased().utf8)
-        return commands.compactMap { command -> (Entry, Int)? in
-            let name = command.title.lowercased()
-            guard let score = FuzzyMatcher.pathScore(bytes, path: name, filename: name) else { return nil }
-            return (command, score)
+        if let parent {
+            let entries = options(of: parent)
+            guard !query.isEmpty else { return entries }
+            let bytes = Array(query.lowercased().utf8)
+            return entries.compactMap { entry -> (Entry, Int)? in
+                let name = entry.title.lowercased()
+                return FuzzyMatcher.pathScore(bytes, path: name, filename: name).map { (entry, $0) }
+            }
+            .sorted { $0.1 == $1.1 ? $0.0.title < $1.0.title : $0.1 > $1.1 }
+            .map(\.0)
         }
-        .sorted { $0.1 == $1.1 ? $0.0.title < $1.0.title : $0.1 > $1.1 }
-        .map(\.0)
+        guard !query.isEmpty else { return commands.map(Entry.command) }
+        return search(Array(query.lowercased().utf8))
+    }
+
+    /// Searches commands and the options nested one level under them, so "chatwoot" finds
+    /// "Open Project › Chatwoot" without stepping into the project picker first.
+    private func search(_ bytes: [UInt8]) -> [Entry] {
+        var results: [(entry: Entry, score: Int, isCoherent: Bool)] = []
+        for command in commands {
+            let title = command.title.lowercased()
+            let commandScore = FuzzyMatcher.pathScore(bytes, path: title, filename: title)
+            if let commandScore {
+                // Favor commands over their options when both match about as well.
+                results.append((.command(command), commandScore + 16, FuzzyMatcher.isCoherent(bytes, in: title)))
+            }
+            // Options only show when the query reaches past the command's name, so typing
+            // "open" lists Open Project once rather than once per recent project.
+            let parentMatches = commandScore != nil
+            let parentName = title.trimmingCharacters(in: CharacterSet(charactersIn: "…"))
+            for option in options(of: command) {
+                let name = option.title.lowercased()
+                let path = parentName + " " + name
+                guard let score = FuzzyMatcher.pathScore(bytes, path: path, filename: name),
+                      !parentMatches || FuzzyMatcher.pathScore(bytes, path: name, filename: name) != nil
+                else { continue }
+                let isCoherent = FuzzyMatcher.isCoherent(bytes, in: name) || FuzzyMatcher.isCoherent(bytes, in: path)
+                results.append((option, score, isCoherent))
+            }
+        }
+        // Scattered hits like "chat" in "Check for Updates" are noise once anything reads as a real match.
+        if results.contains(where: \.isCoherent) { results.removeAll { !$0.isCoherent } }
+        return results
+            .sorted { $0.score == $1.score ? $0.entry.title < $1.entry.title : $0.score > $1.score }
+            .map(\.entry)
+    }
+
+    private var placeholder: String {
+        switch parent {
+        case .changeGuide: "Change Brief: choose changes"
+        case .switchTerminal: "Switch to terminal"
+        default: "Run a command"
+        }
     }
 
     var body: some View {
         SearchPalette(
-            placeholder: choosingGuideScope ? "Change Brief: choose changes" : "Run a command", query: $query, items: matches,
+            placeholder: placeholder, query: $query, items: matches,
             selection: $selection, isEnabled: { entry in
                 if case .scope(.pr) = entry { return guideBranches?.allowsPR == true }
                 return true
             }, onClose: onClose, onSelect: { entry in
                 switch entry {
                 case .command(.changeGuide) where !guide.isGenerating:
-                    choosingGuideScope = true
+                    parent = .changeGuide
                     query = ""
                     selection = "scope:" + (guide.scope == .pr && guideBranches?.allowsPR != true ? GuideScope.workingTree : guide.scope).rawValue
-                case let .scope(scope): onSelectGuide(scope)
+                case .command(.switchTerminal):
+                    parent = .switchTerminal
+                    query = ""
+                    selection = "terminal:" + terminals.panel.id.uuidString
                 case let .command(command): onSelect(command)
+                case let .scope(scope): onSelectGuide(scope)
                 case let .terminal(session): onSelectTerminal(session)
+                case let .project(workspace): onOpenProject(workspace)
+                case let .branch(name): onSwitchBranch(name)
                 }
             }
-        ) { command in
+        ) { entry in
             HStack(spacing: 8) {
-                Image(systemName: command.symbol)
+                Image(systemName: entry.symbol)
                     .foregroundStyle(.secondary)
                     .frame(width: 12, height: 12)
-                Text(command.title)
+                if parent == nil, let command = entry.parent {
+                    // Mute the command so the option itself reads as the result.
+                    Text(command.title.trimmingCharacters(in: CharacterSet(charactersIn: "…")))
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                    Image(systemName: "chevron.right")
+                        .imageScale(.small)
+                        .foregroundStyle(.tertiary)
+                }
+                Text(entry.title).lineLimit(1)
+                if case let .project(workspace) = entry {
+                    Text(workspace.path)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
                 Spacer(minLength: 0)
-                if case .scope(.pr) = command {
+                if case let .branch(name) = entry, name == currentBranch {
+                    Image(systemName: "checkmark").foregroundStyle(.secondary)
+                }
+                if case .scope(.pr) = entry {
                     Text(prDescription)
                         .foregroundStyle(.secondary)
                 }
-                if case let .command(workspaceCommand) = command,
+                if case let .command(workspaceCommand) = entry,
                    let shortcut = workspaceCommand.shortcutLabel {
                     Text(shortcut).foregroundStyle(.secondary)
                 }
-                if case let .terminal(session) = command,
+                if case let .terminal(session) = entry,
                    let number = terminals.navigation.shortcutNumber(for: session.id) {
                     Text("⌘\(number)").foregroundStyle(.secondary)
-                } else if case let .terminal(session) = command, session.id == terminals.primary.id {
+                } else if case let .terminal(session) = entry, session.id == terminals.primary.id {
                     Text("⌘`").foregroundStyle(.secondary)
                 }
             }
@@ -165,6 +272,7 @@ struct CommandPalette: View {
             }.value
         }
         .onChange(of: query) { selection = matches.first?.id }
+        .onChange(of: branches) { if !query.isEmpty { selection = matches.first?.id } }
         .onChange(of: canSwitchBranch) { selection = matches.first?.id }
         .onChange(of: canHideTerminal) { selection = matches.first?.id }
         .onChange(of: terminals.supporting.map(\.id)) {

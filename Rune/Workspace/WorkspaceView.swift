@@ -40,6 +40,8 @@ struct WorkspaceView: View {
     @State private var isProjectPickerPresented = false
     @State private var isHelpPresented = false
     @State private var recentWorkspaces: [WorkspaceIdentity] = []
+    @State private var paletteBranches: [String] = []
+    @State private var paletteBranchTask: Task<Void, Never>?
     // Held without observing: only the drawer redraws as the query and results change,
     // not the whole workspace on every keystroke.
     @State private var search = ProjectSearchModel()
@@ -291,6 +293,9 @@ struct WorkspaceView: View {
                                     || !terminals.navigation.peekedIDs.isEmpty,
                                 rootURL: directoryURL,
                                 canShowGuide: repository.snapshot.isRepository,
+                                projects: recentWorkspaces,
+                                branches: paletteBranches,
+                                currentBranch: repository.snapshot.branch,
                                 guide: guide,
                                 onSelectGuide: { scope in
                                     guide.scope = scope
@@ -301,7 +306,17 @@ struct WorkspaceView: View {
                                 terminals: terminals,
                                 onClose: { isCommandPalettePresented = false },
                                 onSelect: performCommand,
-                                onSelectTerminal: showTerminal
+                                onSelectTerminal: showTerminal,
+                                onOpenProject: { workspace in
+                                    isCommandPalettePresented = false
+                                    onOpenWorkspace(workspace)
+                                },
+                                onSwitchBranch: { name in
+                                    // Close first; the sidebar shows progress and any checkout error.
+                                    isCommandPalettePresented = false
+                                    guard name != repository.snapshot.branch, !repository.isBusy else { return }
+                                    Task { await repository.switchBranch(name, create: false) }
+                                }
                             )
                         } else if isBranchPickerPresented {
                             BranchPickerView(rootURL: directoryURL, onClose: { isBranchPickerPresented = false })
@@ -410,7 +425,26 @@ struct WorkspaceView: View {
         guard !repository.isSwitchingBranch else { return }
         let shouldPresent = !isCommandPalettePresented
         dismissPalettes()
+        if shouldPresent {
+            recentWorkspaces = RecentWorkspaces.load()
+            loadPaletteBranches()
+        }
         isCommandPalettePresented = shouldPresent
+    }
+
+    /// Fetches branches fresh on every open, off the main thread, so the palette never lists
+    /// a branch from an earlier open that may have been deleted or renamed since.
+    private func loadPaletteBranches() {
+        paletteBranchTask?.cancel()
+        paletteBranches = []
+        guard let directoryURL, repository.snapshot.isRepository else { return }
+        paletteBranchTask = Task {
+            let names = await Task.detached(priority: .userInitiated) {
+                GitRepository.branches(at: directoryURL).names
+            }.value
+            guard !Task.isCancelled else { return }
+            paletteBranches = names
+        }
     }
 
     private func presentBranches() {
@@ -454,6 +488,8 @@ struct WorkspaceView: View {
         case .showWelcome: openWindow(id: "onboarding")
         case .checkForUpdates: updater.controller.updater.checkForUpdates()
         case .openProject: presentProjects()
+        // The palette lists terminals itself rather than handing this back.
+        case .switchTerminal: break
         case .switchBranch:
             guard repository.snapshot.isRepository, !repository.isBusy else { return }
             isBranchPickerPresented = true

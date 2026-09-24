@@ -65,6 +65,31 @@ nonisolated enum FuzzyMatcher {
         return nil
     }
 
+    /// True when the query is a substring of the candidate or spells prefixes of successive words
+    /// ("opchat" in "open project chatwoot"), unlike a scattered hit such as "chat" in "check for updates".
+    static func isCoherent(_ normalizedQuery: [UInt8], in candidate: String) -> Bool {
+        guard !normalizedQuery.isEmpty else { return true }
+        if candidate.contains(String(decoding: normalizedQuery, as: UTF8.self)) { return true }
+        let words = candidate.utf8.split { $0 < 128 && !isAlphanumeric($0) }.map(Array.init)
+        return matchesWordPrefixes(normalizedQuery.filter { $0 != 32 }[...], words[...])
+    }
+
+    private static func matchesWordPrefixes(_ query: ArraySlice<UInt8>, _ words: ArraySlice<[UInt8]>) -> Bool {
+        guard let first = query.first else { return true }
+        for (offset, word) in zip(words.indices, words) where word.first == first {
+            var length = 0
+            while length < min(word.count, query.count), word[length] == query[query.startIndex + length] {
+                length += 1
+                if matchesWordPrefixes(query.dropFirst(length), words[(offset + 1)...]) { return true }
+            }
+        }
+        return false
+    }
+
+    private static func isAlphanumeric(_ character: UInt8) -> Bool {
+        (48...57).contains(character) || (97...122).contains(character) || (65...90).contains(character)
+    }
+
     private static func isBoundary(_ character: UInt8) -> Bool {
         character == Character("/").asciiValue ||
             character == Character("-").asciiValue ||
