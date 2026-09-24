@@ -32,6 +32,9 @@ final class GitSidebarModel: ObservableObject {
     private var needsFileIndex = true
     private var needsHistory = true
     private var historyUpdatedAt = Date.distantPast
+    private static let historyPageSize = 100
+    @Published private(set) var hasMoreHistory = false
+    private var historyTask: Task<Void, Never>?
 
     var errorMessage: String? {
         actionErrorMessage ?? repositoryErrorMessage
@@ -97,12 +100,14 @@ final class GitSidebarModel: ObservableObject {
         let rootURL = rootURL
         let cachedFiles = needsFileIndex ? nil : files
         let cachedCommits = needsHistory || Date().timeIntervalSince(historyUpdatedAt) > 60 ? nil : snapshot.commits
+        // Refetch as much history as is loaded so a refresh never cuts the list under the scroll position.
+        let historyLimit = max(Self.historyPageSize, snapshot.commits.count)
         needsFileIndex = false
         needsHistory = false
 
         refreshTask = Task {
             let result = await Task.detached(priority: .utility) {
-                (GitRepository.snapshot(at: rootURL, cachedCommits: cachedCommits),
+                (GitRepository.snapshot(at: rootURL, cachedCommits: cachedCommits, historyLimit: historyLimit),
                  cachedFiles ?? WorkspaceFileIndex.files(in: rootURL))
             }.value
 
@@ -115,13 +120,23 @@ final class GitSidebarModel: ObservableObject {
                 zip(snapshot.changes, result.0.snapshot.changes).contains {
                     $0.path != $1.path || $0.stagedState != $1.stagedState || $0.unstagedState != $1.unstagedState
                 }
-            if snapshot != result.0.snapshot {
-                snapshot = result.0.snapshot
+            var fresh = result.0.snapshot
+            // History may have grown by a page while this refresh ran on its older cached copy.
+            if cachedCommits != nil, fresh.commits != snapshot.commits {
+                fresh = GitSnapshot(branch: fresh.branch, changes: fresh.changes,
+                                    commits: snapshot.commits, isRepository: fresh.isRepository)
+            }
+            if snapshot != fresh {
+                snapshot = fresh
             }
             if files != result.1 { files = result.1 }
             if changed || !hasLoaded { revision &+= 1 }
             hasLoaded = true
-            if cachedCommits == nil { historyUpdatedAt = Date() }
+            if cachedCommits == nil {
+                historyUpdatedAt = Date()
+                let hasMore = result.0.snapshot.commits.count >= historyLimit
+                if hasMoreHistory != hasMore { hasMoreHistory = hasMore }
+            }
             if repositoryErrorMessage != result.0.errorMessage {
                 repositoryErrorMessage = result.0.errorMessage
             }
@@ -148,6 +163,29 @@ final class GitSidebarModel: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             actionErrorExpiry = nil
             actionErrorMessage = nil
+        }
+    }
+
+    /// Loads the next page of history once the list scrolls to its end.
+    func loadMoreHistory() {
+        guard hasMoreHistory, historyTask == nil else { return }
+        let rootURL = rootURL
+        let loaded = snapshot.commits
+        let limit = loaded.count + Self.historyPageSize
+        historyTask = Task {
+            let commits = await Task.detached(priority: .userInitiated) {
+                GitRepository.commitHistory(at: rootURL, limit: limit)
+            }.value
+            historyTask = nil
+            // A refresh that landed meanwhile already has newer history; the next scroll retries.
+            guard !Task.isCancelled, snapshot.commits == loaded else { return }
+            hasMoreHistory = commits.count >= limit
+            snapshot = GitSnapshot(
+                branch: snapshot.branch,
+                changes: snapshot.changes,
+                commits: commits,
+                isRepository: snapshot.isRepository
+            )
         }
     }
 

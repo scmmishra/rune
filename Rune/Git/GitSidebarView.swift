@@ -419,6 +419,8 @@ struct GitSidebarView: View {
         GitHistoryView(
             commits: model.snapshot.commits,
             isRepository: model.snapshot.isRepository,
+            hasMore: model.hasMoreHistory,
+            onLoadMore: model.loadMoreHistory,
             onOpenCommit: onOpenCommit,
             onOpenCommitInGitHub: openCommitInGitHub
         )
@@ -589,11 +591,18 @@ private struct GitSidebarHeader: View, Equatable {
 private struct GitHistoryView: View, Equatable {
     let commits: [GitCommit]
     let isRepository: Bool
+    let hasMore: Bool
+    let onLoadMore: () -> Void
     let onOpenCommit: (GitCommit) -> Void
     let onOpenCommitInGitHub: (GitCommit) -> Void
 
     static func == (lhs: GitHistoryView, rhs: GitHistoryView) -> Bool {
-        lhs.commits == rhs.commits && lhs.isRepository == rhs.isRepository
+        lhs.commits == rhs.commits && lhs.isRepository == rhs.isRepository && lhs.hasMore == rhs.hasMore
+    }
+
+    /// Every row shares one graph width so subjects line up; very wide histories clip.
+    private var graphLanes: Int {
+        min(commits.lazy.map(\.graph.width).max() ?? 1, GitGraphView.maximumLanes)
     }
 
     var body: some View {
@@ -601,8 +610,6 @@ private struct GitHistoryView: View, Equatable {
             HStack(spacing: 6) {
                 Text("HISTORY")
                     .tracking(0.7)
-                Text("\(commits.count)")
-                    .foregroundStyle(.tertiary)
                 Spacer(minLength: 4)
             }
             .runeFont(size: 10, weight: .semibold)
@@ -620,12 +627,21 @@ private struct GitHistoryView: View, Equatable {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
+                        let lanes = graphLanes
                         ForEach(commits) { commit in
                             GitCommitRow(
                                 commit: commit,
+                                graphLanes: lanes,
                                 onOpen: { onOpenCommit(commit) },
                                 onOpenInGitHub: { onOpenCommitInGitHub(commit) }
                             )
+                        }
+                        if hasMore {
+                            // Keyed by length so it appears afresh, and asks again, after each page.
+                            Color.clear
+                                .frame(height: 1)
+                                .onAppear(perform: onLoadMore)
+                                .id(commits.count)
                         }
                     }
                     .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
@@ -638,31 +654,38 @@ private struct GitHistoryView: View, Equatable {
 
 private struct GitCommitRow: View {
     let commit: GitCommit
+    let graphLanes: Int
     let onOpen: () -> Void
     let onOpenInGitHub: () -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.runeTypography) private var typography
     @State private var isHovered = false
+
+    /// Where the subject line's middle sits, so the commit dot lines up with the subject.
+    private var subjectMiddle: CGFloat {
+        let font = typography.nsFont(size: 11)
+        return Self.verticalPadding + ceil(font.ascender - font.descender + font.leading) / 2
+    }
+
+    /// A remote branch on the same commit as its local branch only says "pushed", so fold it in.
+    private var refs: [GitCommit.Ref] {
+        let names = Set(commit.refs.map(\.name))
+        return commit.refs.filter { ref in
+            guard let slash = ref.name.firstIndex(of: "/") else { return true }
+            return !names.contains(String(ref.name[ref.name.index(after: slash)...]))
+        }
+    }
+
+    private static let verticalPadding: CGFloat = 6
 
     var body: some View {
         Button(action: handleOpen) {
-            VStack(alignment: .leading, spacing: 3) {
-                commitSubject
-                    .runeFont(size: 11)
-                    .lineLimit(1)
-
-                HStack(spacing: 6) {
-                    Text(commit.shortHash)
-                        .foregroundStyle(.secondary)
-                    Text(commit.author)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(commit.relativeDate)
-                        .foregroundStyle(.tertiary)
-                }
-                .runeFont(size: 9)
+            HStack(spacing: 2) {
+                GitGraphView(row: commit.graph, isMerge: commit.parents.count > 1, nodeY: subjectMiddle)
+                    .frame(width: CGFloat(graphLanes) * GitGraphView.laneWidth)
+                details
             }
             .padding(.horizontal, 4)
-            .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -673,6 +696,49 @@ private struct GitCommitRow: View {
         )
         .onHover { isHovered = $0 }
         .help("Preview commit \(commit.shortHash). Command-click to open on GitHub.")
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            commitSubject
+                .runeFont(size: 11)
+                .lineLimit(1)
+
+            HStack(spacing: 6) {
+                // A branch label identifies the commit better than its hash, so it takes the hash's place.
+                // Hash and date never wrap; the author gives way first, then the labels truncate.
+                if refs.isEmpty {
+                    Text(commit.shortHash)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                }
+                ForEach(refs.prefix(2), id: \.self) { ref in
+                    Text(ref.name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .foregroundStyle(ref.isHead ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                        .background(
+                            (ref.isHead ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.07)),
+                            in: RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        )
+                }
+                if refs.count > 2 {
+                    Text("+\(refs.count - 2)").foregroundStyle(.tertiary).fixedSize()
+                }
+                Text(commit.author)
+                    .lineLimit(1)
+                    .layoutPriority(-1)
+                Spacer(minLength: 4)
+                Text(commit.relativeDate)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize()
+            }
+            .runeFont(size: 9)
+        }
+        // Vertical padding lives here so graph lines run the row's full height and join up.
+        .padding(.vertical, Self.verticalPadding)
     }
 
     private func handleOpen() {
@@ -691,6 +757,58 @@ private struct GitCommitRow: View {
         return Text(prefix.type)
             .foregroundColor(prefix.color(for: colorScheme))
             .fontWeight(.semibold) + Text(prefix.remainder)
+    }
+}
+
+private struct GitGraphView: View {
+    static let laneWidth: CGFloat = 8
+    static let maximumLanes = 6
+    /// Side lanes only; the main lane stays neutral so a straight history reads as a quiet timeline.
+    private static let colors: [Color] = [.blue, .purple, .orange, .teal, .pink, .green, .indigo]
+    /// The graph is context, not content, so it sits well behind the text.
+    private static let opacity = 0.2
+
+    let row: GitGraphRow
+    let isMerge: Bool
+    let nodeY: CGFloat
+
+    var body: some View {
+        Canvas { context, size in
+            let middle = nodeY
+            func x(_ lane: Int) -> CGFloat { (CGFloat(lane) + 0.5) * Self.laneWidth }
+            for line in row.lines {
+                let start = CGPoint(x: x(line.from), y: line.isUpper ? 0 : middle)
+                let end = CGPoint(x: x(line.to), y: line.isUpper ? middle : size.height)
+                var path = Path()
+                path.move(to: start)
+                if start.x == end.x {
+                    path.addLine(to: end)
+                } else {
+                    // Leave and arrive vertically so lanes bend into each other smoothly.
+                    let bend = (end.y - start.y) / 2
+                    path.addCurve(to: end, control1: CGPoint(x: start.x, y: start.y + bend),
+                                  control2: CGPoint(x: end.x, y: end.y - bend))
+                }
+                context.stroke(path, with: .color(Self.color(line.color).opacity(Self.opacity)), lineWidth: 1)
+            }
+            let dot = CGRect(x: x(row.lane) - 2, y: middle - 2, width: 4, height: 4)
+            let color = Self.color(row.lane).opacity(Self.opacity)
+            if isMerge {
+                // Punch the lines out of the ring so it reads as hollow on any background.
+                context.blendMode = .clear
+                context.fill(Path(ellipseIn: dot), with: .color(.black))
+                context.blendMode = .normal
+                context.stroke(Path(ellipseIn: dot), with: .color(color), lineWidth: 1)
+            } else {
+                context.fill(Path(ellipseIn: dot), with: .color(color))
+            }
+        }
+        .clipped()
+        .accessibilityHidden(true)
+    }
+
+    private static func color(_ lane: Int) -> Color {
+        lane == 0 ? Color.primary : colors[(lane - 1) % colors.count]
     }
 }
 

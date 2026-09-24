@@ -47,7 +47,7 @@ nonisolated enum GitRepository {
         let errorMessage: String?
     }
 
-    static func snapshot(at rootURL: URL, cachedCommits: [GitCommit]? = nil) -> SnapshotResult {
+    static func snapshot(at rootURL: URL, cachedCommits: [GitCommit]? = nil, historyLimit: Int = 100) -> SnapshotResult {
         let statusResult = runGit(
             ["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all"],
             at: rootURL,
@@ -64,7 +64,7 @@ nonisolated enum GitRepository {
             from: runGit(["diff", "--numstat", "-z", "--no-renames"], at: rootURL, readOnly: true).data
         )
         let parsedStatus = parseStatus(statusResult.data)
-        let commits = cachedCommits ?? commitHistory(at: rootURL)
+        let commits = cachedCommits ?? commitHistory(at: rootURL, limit: historyLimit)
         let changes = parsedStatus.changes.map { change in
             var change = change
             change.stagedDiff = combinedDiff(for: change, in: stagedDiffs)
@@ -83,28 +83,46 @@ nonisolated enum GitRepository {
         )
     }
 
-    private static func commitHistory(at rootURL: URL) -> [GitCommit] {
+    /// The newest `limit` commits on HEAD and the branch it compares against, laid out as a
+    /// graph. Pages reload from the top rather than using `--skip`, so new commits can never
+    /// shift a page into duplicates.
+    static func commitHistory(at rootURL: URL, limit: Int) -> [GitCommit] {
+        let branches = guideBranches(at: rootURL)
+        let base = branches.comparison.isEmpty || branches.comparison == branches.current ? [] : [branches.comparison]
+        // Label only the refs this history is about; big repositories have thousands of stale branches.
+        var labels = ["HEAD", "refs/tags/*"]
+        if !branches.current.isEmpty {
+            labels += ["refs/heads/" + branches.current, "refs/remotes/*/" + branches.current]
+        }
+        labels += base.flatMap { ["refs/heads/" + $0, "refs/remotes/" + $0] }
         let result = runGit(
             [
-                "log", "--max-count=50", "-z",
-                "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%s"
-            ],
+                // Topological order keeps a branch's commits together, so lanes stay short.
+                "log", "--topo-order", "--max-count=\(limit)", "-z",
+                "--format=%H%x1f%P%x1f%an%x1f%ar%x1f%D%x1f%s"
+            ] + labels.map { "--decorate-refs=" + $0 } + ["HEAD"] + base + ["--"],
             at: rootURL,
             readOnly: true
         )
         guard result.status == 0 else { return [] }
 
-        return result.data.split(separator: 0).compactMap { record in
-            let fields = record.split(separator: 31, maxSplits: 4, omittingEmptySubsequences: false)
-            guard fields.count == 5 else { return nil }
+        var commits = result.data.split(separator: 0).compactMap { record -> GitCommit? in
+            let fields = record.split(separator: 31, maxSplits: 5, omittingEmptySubsequences: false)
+            guard fields.count == 6 else { return nil }
+            let id = String(decoding: fields[0], as: UTF8.self)
             return GitCommit(
-                id: String(decoding: fields[0], as: UTF8.self),
-                shortHash: String(decoding: fields[1], as: UTF8.self),
+                id: id,
+                parents: fields[1].split(separator: 32).map { String(decoding: $0, as: UTF8.self) },
+                // A fixed 7 characters keeps rows aligned; `%h` grows with the repository.
+                shortHash: String(id.prefix(7)),
                 author: String(decoding: fields[2], as: UTF8.self),
                 relativeDate: String(decoding: fields[3], as: UTF8.self),
-                subject: String(decoding: fields[4], as: UTF8.self)
+                refs: GitCommit.Ref.parse(String(decoding: fields[4], as: UTF8.self)),
+                subject: String(decoding: fields[5], as: UTF8.self)
             )
         }
+        GitGraph.layout(&commits)
+        return commits
     }
 
     static func commitStaged(message: String, at rootURL: URL) -> CommitResult {
@@ -576,10 +594,93 @@ nonisolated struct GitSnapshot: Sendable, Equatable {
 
 nonisolated struct GitCommit: Identifiable, Sendable, Equatable {
     let id: String
+    let parents: [String]
     let shortHash: String
     let author: String
     let relativeDate: String
+    let refs: [Ref]
     let subject: String
+    var graph = GitGraphRow()
+
+    struct Ref: Sendable, Equatable, Hashable {
+        let name: String
+        let isHead: Bool
+
+        /// Parses `%D`, e.g. "HEAD -> main, origin/main, tag: v1.0".
+        static func parse(_ decoration: String) -> [Ref] {
+            guard !decoration.isEmpty else { return [] }
+            return decoration.components(separatedBy: ", ").map { label in
+                if label.hasPrefix("HEAD -> ") { return Ref(name: String(label.dropFirst(8)), isHead: true) }
+                if label == "HEAD" { return Ref(name: label, isHead: true) }
+                if label.hasPrefix("tag: ") { return Ref(name: String(label.dropFirst(5)), isHead: false) }
+                return Ref(name: label, isHead: false)
+            }
+        }
+    }
+}
+
+/// One history row's slice of the commit graph, in lane units.
+nonisolated struct GitGraphRow: Sendable, Equatable {
+    struct Line: Sendable, Equatable {
+        let from: Int
+        let to: Int
+        /// Upper lines run from the row's top edge to the commit; lower ones from the commit down.
+        let isUpper: Bool
+        let color: Int
+    }
+
+    var lane = 0
+    var width = 1
+    var lines: [Line] = []
+}
+
+nonisolated enum GitGraph {
+    /// Assigns each commit a lane. Every lane holds the commit it expects next, so a row
+    /// draws lanes passing through, lanes merging into the commit, and lines to its parents.
+    static func layout(_ commits: inout [GitCommit]) {
+        var lanes: [String?] = []
+        for index in commits.indices {
+            let commit = commits[index]
+            var row = GitGraphRow()
+            let incoming = lanes.indices.filter { lanes[$0] == commit.id }
+            let lane = incoming.first ?? lanes.firstIndex(of: nil) ?? lanes.count
+            if lane == lanes.count { lanes.append(nil) }
+            row.lane = lane
+
+            var passing: [Int] = []
+            for (other, expected) in lanes.enumerated() where expected != nil {
+                if expected == commit.id {
+                    row.lines.append(.init(from: other, to: lane, isUpper: true, color: other))
+                } else {
+                    row.lines.append(.init(from: other, to: other, isUpper: true, color: other))
+                    passing.append(other)
+                }
+            }
+            for other in incoming { lanes[other] = nil }
+
+            for (position, parent) in commit.parents.enumerated() {
+                // A parent another lane already waits for joins that lane instead of doubling it.
+                let target: Int
+                if let existing = lanes.firstIndex(of: parent) {
+                    target = existing
+                } else if position == 0 {
+                    target = lane
+                } else {
+                    target = lanes.firstIndex(of: nil) ?? lanes.count
+                }
+                if target == lanes.count { lanes.append(nil) }
+                lanes[target] = parent
+                row.lines.append(.init(from: lane, to: target, isUpper: false, color: target))
+            }
+            for other in passing {
+                row.lines.append(.init(from: other, to: other, isUpper: false, color: other))
+            }
+
+            row.width = lanes.count
+            while lanes.last == .some(nil) { lanes.removeLast() }
+            commits[index].graph = row
+        }
+    }
 }
 
 nonisolated struct GitCommitFileDiff: Identifiable, Sendable, Equatable {
