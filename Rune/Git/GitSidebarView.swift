@@ -16,7 +16,6 @@ struct GitSidebarView: View {
     @State private var isComposingCommit = false
     @FocusState private var isCommitFocused: Bool
     @State private var pendingDiscard: GitChange?
-    @State private var changesHeight: CGFloat = 0
     let onOpenBranches: () -> Void
 
     init(
@@ -44,16 +43,13 @@ struct GitSidebarView: View {
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: WorkspaceMetrics.gap) {
-                // A clean tree has nothing to list or commit, so the card shrinks to its
-                // header and history takes the column.
+                // A fixed share of the column, so staging or committing never moves history.
                 VStack(spacing: 0) {
                     header
-                    if showsChanges {
-                        changesList
-                            .frame(height: min(changesHeight, geometry.size.height * 0.55))
-                        commitArea
-                    }
+                    changesList
+                    commitArea
                 }
+                .frame(height: geometry.size.height * 2 / 3)
                 .workspaceGroup()
 
                 historyArea
@@ -88,10 +84,6 @@ struct GitSidebarView: View {
         }
     }
 
-    private var showsChanges: Bool {
-        !model.snapshot.changes.isEmpty || model.errorMessage != nil || hasCommitMessage
-    }
-
     private var changesList: some View {
         ScrollViewReader { proxy in
         ScrollView {
@@ -119,12 +111,18 @@ struct GitSidebarView: View {
                             showsBrief: leadingSection == "UNTRACKED")
                 }
 
+                if model.hasLoaded, model.snapshot.changes.isEmpty, model.errorMessage == nil {
+                    Text("Working tree clean")
+                        .runeFont(size: 11)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 24)
+                }
             }
             .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
             .padding(.top, 4)
-            // Sized to its rows up to a cap, so a short list leaves no empty well above the commit field.
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { changesHeight = $0 }
         }
+        .overlay { QuietProgressView(isActive: !model.hasLoaded) }
         .onChange(of: selectedDiffID) { _, selected in
             if let selected { proxy.scrollTo(selected) }
         }
