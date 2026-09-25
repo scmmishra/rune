@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Plan usage for the agent used last, Codex until one is. Click to see every agent.
+/// Plan usage for every agent, pinned to the bottom of the Git column.
 struct AgentUsagePanel: View {
     @ObservedObject var sessions: TerminalSessions
     @StateObject private var model = AgentUsageModel()
@@ -8,7 +8,7 @@ struct AgentUsagePanel: View {
     var body: some View {
         VStack(spacing: 0) {
             ActiveAgentObserver(session: sessions.active) { model.track($0) }
-            AgentUsageCard(agent: model.lastAgent, model: model)
+            AgentUsageCard(model: model)
         }
         .frame(maxWidth: .infinity)
         .onAppear { model.start() }
@@ -30,66 +30,13 @@ private struct ActiveAgentObserver: View {
 }
 
 private struct AgentUsageCard: View {
-    let agent: TerminalAgent
     @ObservedObject var model: AgentUsageModel
-    @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if model.isExpanded {
-                expanded
-            } else {
-                collapsed
-            }
-        }
-        .padding(.horizontal, WorkspaceMetrics.columnInset)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onTapGesture { toggle() }
-        .onHover { isHovered = $0 }
-        .workspaceGroup()
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint(model.isExpanded ? "Collapse usage" : "Show usage for every agent")
-    }
-
-    private var collapsed: some View {
-        HStack(spacing: 8) {
-            AgentMark(agent: agent)
-            Text(agent.shortName)
-                .foregroundStyle(.primary)
-            summary(for: agent)
-            Spacer(minLength: 4)
-            chevron
-        }
-        .runeFont(size: 11)
-        .lineLimit(1)
-        .frame(height: 30)
-    }
-
-    @ViewBuilder
-    private func summary(for agent: TerminalAgent) -> some View {
-        // Only the limit closest to running out: it decides whether you can keep going.
-        // On a tie the shorter window wins, since it resets first.
-        let tightest = model.readings[agent]?.windows
-            .filter { $0.shortTitle != nil }
-            .reduce(nil) { (best: AgentUsage.Window?, window) in
-                (best?.usedPercent ?? -1) < window.usedPercent ? window : best
-            }
-        if let window = tightest {
-            HStack(spacing: 4) {
-                Text(window.shortTitle ?? "").foregroundStyle(.secondary)
-                Text(window.percentText).foregroundStyle(window.tint)
-                if !window.resetText.isEmpty {
-                    Text("·").foregroundStyle(.tertiary)
-                    Text(window.resetText).foregroundStyle(.tertiary)
-                }
-            }
-            .monospacedDigit()
-        } else {
-            Text(model.errors[agent] == nil ? "Loading…" : "Unavailable")
-                .foregroundStyle(.tertiary)
-                .help(model.errors[agent] ?? "")
-        }
+        expanded
+            .padding(.horizontal, WorkspaceMetrics.columnInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .workspaceGroup()
     }
 
     private var expanded: some View {
@@ -109,7 +56,6 @@ private struct AgentUsageCard: View {
                         Spacer(minLength: 4)
                         if index == 0 {
                             RefreshButton(isBusy: !model.loading.isEmpty, action: model.refresh)
-                            chevron
                         }
                     }
                     .frame(height: 20)
@@ -153,17 +99,6 @@ private struct AgentUsageCard: View {
             .help("Refresh Usage")
             .accessibilityLabel("Refresh usage")
         }
-    }
-
-    private var chevron: some View {
-        // The card is pinned to the bottom of the column, so it opens upward.
-        Image(systemName: model.isExpanded ? "chevron.down" : "chevron.up")
-            .runeFont(size: 9, weight: .semibold)
-            .foregroundStyle(isHovered ? .secondary : .tertiary)
-    }
-
-    private func toggle() {
-        withAnimation(.snappy(duration: 0.18)) { model.isExpanded.toggle() }
     }
 }
 

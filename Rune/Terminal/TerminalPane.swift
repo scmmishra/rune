@@ -13,7 +13,8 @@ struct PrimaryTerminalPane: View {
 
     var body: some View {
         TerminalPane(focusRequest: focusRequest, terminal: session.terminal,
-                     isVisible: isVisible, isActive: isActive, onActivate: onActivate)
+                     isVisible: isVisible, isActive: isActive, onActivate: onActivate,
+                     dimsWhenUnfocused: true)
             // A respawn needs a fresh platform view even though the navigation ID is unchanged.
             .id(ObjectIdentifier(session))
             .overlay {
@@ -38,10 +39,28 @@ struct TerminalPane: View {
     var isActive = true
     var onActivate: () -> Void = {}
     var launchError: String?
+    /// Fades the grid slightly while this terminal isn't taking keystrokes.
+    var dimsWhenUnfocused = false
     @Environment(\.runeTypography) private var typography
+    @Environment(\.controlActiveState) private var controlActiveState
+
+    /// Only while the window is key: a terminal read from another app stays at full contrast.
+    private var isDimmed: Bool {
+        dimsWhenUnfocused && controlActiveState == .key && !terminal.isFocused
+    }
 
     var body: some View {
         TerminalSurfaceView(context: terminal)
+            .overlay {
+                TerminalSurface.color
+                    .opacity(isDimmed ? 0.3 : 0)
+                    .allowsHitTesting(false)
+                    // Focus hands off through a nil first responder; the delay keeps
+                    // that instant from flashing the dim.
+                    .animation(isDimmed ? .easeOut(duration: 0.12).delay(0.06) : .easeOut(duration: 0.08),
+                               value: isDimmed)
+                    .accessibilityHidden(true)
+            }
             .overlay {
                 if let launchError { Text(launchError).runeFont(size: 12).foregroundStyle(.red).padding(24) }
             }

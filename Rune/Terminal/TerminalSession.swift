@@ -43,6 +43,9 @@ final class TerminalSession: ObservableObject, Identifiable {
     }
 
     @Published var processStatus: TerminalProcessStatus?
+    /// Ports, memory and CPU, sampled only while the terminal is open beside the panel.
+    /// A separate object so its once-a-second updates redraw the readout alone.
+    let resources = TerminalResourceMeter()
     /// The foreground process of every shell session, the primary included. Unlike
     /// `processStatus`, it never renames the primary tab.
     @Published var foreground: TerminalProcessStatus?
@@ -365,8 +368,29 @@ final class TerminalSessions: ObservableObject {
                 let status = statuses[session.id]
                 if session.processStatus != status { session.processStatus = status }
             }
+            await sampleResources()
             do { try await Task.sleep(for: .milliseconds(supporting.contains { $0.isCommandRunning } ? 250 : 1000)) } catch { return }
         }
+    }
+
+    private var lastResourceSample: ContinuousClock.Instant?
+
+    /// At most once a second, however fast the process loop runs.
+    private func sampleResources() async {
+        let now = ContinuousClock.now
+        if let lastResourceSample, now - lastResourceSample < .seconds(1) { return }
+        lastResourceSample = now
+        let shown = Set(navigation.peekedIDs)
+        for session in supporting where !shown.contains(session.id) { session.resources.reset() }
+        let roots = supporting.filter { shown.contains($0.id) && !$0.hasExited }
+            .compactMap { session in session.rootProcess.map { (session, $0) } }
+        guard !roots.isEmpty else { return }
+        let targets = roots.map(\.1)
+        let samples = await Task.detached(priority: .utility) {
+            targets.map(TerminalProcessMonitor.resources)
+        }.value
+        guard !Task.isCancelled else { return }
+        for ((session, _), sample) in zip(roots, samples) { session.resources.record(sample, at: now) }
     }
 
     func stopAll() {

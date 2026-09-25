@@ -26,44 +26,22 @@ nonisolated enum AgentUsageError: LocalizedError {
     }
 }
 
-/// Plan usage for Claude Code and Codex. Collapsed, only the agent used last is
-/// polled; expanded, both are. Readings survive failures so the row never blanks.
+/// Plan usage for Claude Code and Codex. Readings survive failures so the rows never blank.
 @MainActor
 final class AgentUsageModel: ObservableObject {
     static let agents: [TerminalAgent] = [.claude, .codex]
 
-    @Published private(set) var lastAgent: TerminalAgent
     @Published private(set) var readings: [TerminalAgent: AgentUsage] = [:]
     @Published private(set) var errors: [TerminalAgent: String] = [:]
     @Published private(set) var loading: Set<TerminalAgent> = []
-    @Published var isExpanded: Bool {
-        didSet {
-            UserDefaults.standard.set(isExpanded, forKey: Self.expandedKey)
-            updatePolling()
-        }
-    }
     private var runningAgent: TerminalAgent?
     private var tasks: [TerminalAgent: Task<Void, Never>] = [:]
 
-    private static let lastAgentKey = "agentUsage.lastAgent"
-    private static let expandedKey = "agentUsage.isExpanded"
-
-    init() {
-        // Codex by default: its usage is a local file, so showing it never prompts for access.
-        lastAgent = UserDefaults.standard.string(forKey: Self.lastAgentKey)
-            .flatMap(TerminalAgent.init(rawValue:)) ?? .codex
-        isExpanded = UserDefaults.standard.bool(forKey: Self.expandedKey)
-    }
-
-    /// The agent in the selected terminal. Remembered once it reports usage.
+    /// The agent in the selected terminal, which is polled at a faster pace.
     func track(_ agent: TerminalAgent?) {
         let agent = agent.flatMap { Self.agents.contains($0) ? $0 : nil }
         guard agent != runningAgent else { return }
         runningAgent = agent
-        if let agent, agent != lastAgent {
-            lastAgent = agent
-            UserDefaults.standard.set(agent.rawValue, forKey: Self.lastAgentKey)
-        }
         // Restart polling so a newly running agent is read now, at its faster pace.
         stop()
         updatePolling()
@@ -86,13 +64,7 @@ final class AgentUsageModel: ObservableObject {
     }
 
     private func updatePolling(interactive: Bool = false) {
-        let wanted = isExpanded ? Self.agents : [lastAgent]
-        for (agent, task) in tasks where !wanted.contains(agent) {
-            task.cancel()
-            tasks[agent] = nil
-            loading.remove(agent)
-        }
-        for agent in wanted where tasks[agent] == nil {
+        for agent in Self.agents where tasks[agent] == nil {
             tasks[agent] = Task { await poll(agent, interactive: interactive) }
         }
     }

@@ -9,9 +9,9 @@ struct ProjectCommandsView: View {
     @State private var isResetting = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("COMMANDS").runeFont(size: 10, weight: .semibold).foregroundStyle(.secondary)
+                Text("COMMANDS").sidebarSectionLabel()
                 Spacer()
                 if !model.commands.isEmpty {
                     Button {
@@ -43,6 +43,7 @@ struct ProjectCommandsView: View {
             .buttonStyle(WorkspaceButtonStyle())
             .disabled(!model.isLoaded || model.isSaving)
             .padding(.horizontal, 4)
+            .frame(height: WorkspaceMetrics.bandHeight)
 
             if !model.commands.isEmpty {
                 let groups = model.groups
@@ -100,7 +101,7 @@ struct ProjectCommandsView: View {
             }
         }
         .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
-        .padding(.vertical, 8)
+        .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .workspaceGroup()
         .sheet(item: $editing) { draft in CommandEditor(model: model, draft: draft) }
@@ -182,20 +183,7 @@ struct ProjectCommandsView: View {
                     onStop: { Task { _ = await model.stop(command) } }
                 )
             } else {
-                Button {
-                    _ = model.run(command)
-                } label: {
-                    HStack(spacing: 8) {
-                        Circle().fill(Color.secondary.opacity(0.45)).frame(width: 5, height: 5)
-                        Text(command.name).lineLimit(1)
-                        Spacer(minLength: 0)
-                        Image(systemName: "play.fill").foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 8)
-                    .frame(height: 28)
-                    .contentShape(Rectangle())
-                }
-                .help("Run \(command.name)\n\(command.command)")
+                IdleCommandRow(command: command) { _ = model.run(command) }
             }
         }
         .runeFont(size: 11)
@@ -288,6 +276,7 @@ private struct RunningCommandRow: View {
     let onSelect: () -> Void
     let onRun: () -> Void
     let onStop: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -304,12 +293,42 @@ private struct RunningCommandRow: View {
                 Image(systemName: session.isCommandRunning ? "stop.fill" : "play.fill")
                     .foregroundStyle(.secondary)
                     .frame(width: 18, height: 22)
+                    // Stop stays visible while running; a stopped command's play only
+                    // appears on hover, like a command that never ran.
+                    .opacity(session.isCommandRunning || isHovered ? 1 : 0)
             }
             .help(session.isCommandRunning ? "Stop \(command.name)" : "Run \(command.name)")
             .accessibilityLabel(session.isCommandRunning ? "Stop \(command.name)" : "Run \(command.name)")
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
+        .onHover { isHovered = $0 }
         .help("\(session.commandStatus)\n\(command.command)")
+    }
+}
+
+/// A command that isn't running. Its play button only appears on hover: the whole row
+/// runs it, so a column of identical buttons would add noise without adding a target.
+private struct IdleCommandRow: View {
+    let command: ProjectCommand
+    let onRun: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onRun) {
+            HStack(spacing: 8) {
+                Circle().fill(Color.secondary.opacity(0.45)).frame(width: 5, height: 5)
+                Text(command.name).lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "play.fill")
+                    .foregroundStyle(.secondary)
+                    .opacity(isHovered ? 1 : 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 28)
+            .contentShape(Rectangle())
+        }
+        .onHover { isHovered = $0 }
+        .help("Run \(command.name)\n\(command.command)")
     }
 }

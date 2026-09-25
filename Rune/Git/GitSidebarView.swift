@@ -42,7 +42,8 @@ struct GitSidebarView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            VStack(spacing: WorkspaceMetrics.groupGap) {
+            VStack(spacing: WorkspaceMetrics.gap) {
+                // A fixed share of the column, so staging or committing never moves history.
                 VStack(spacing: 0) {
                     header
                     changesList
@@ -119,7 +120,7 @@ struct GitSidebarView: View {
                 }
             }
             .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
-            .padding(.vertical, 8)
+            .padding(.top, 4)
         }
         .overlay { QuietProgressView(isActive: !model.hasLoaded) }
         .onChange(of: selectedDiffID) { _, selected in
@@ -145,6 +146,7 @@ struct GitSidebarView: View {
     private var header: some View {
         GitSidebarHeader(
             topInset: topInset,
+            isLoaded: model.hasLoaded,
             branch: model.snapshot.branch,
             changeCount: model.snapshot.changes.count,
             additions: model.snapshot.additions,
@@ -178,7 +180,6 @@ struct GitSidebarView: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 Text(title)
-                    .tracking(0.7)
                 Text("\(changes.count)")
                     .foregroundStyle(.tertiary)
                 Spacer(minLength: 4)
@@ -199,8 +200,7 @@ struct GitSidebarView: View {
                         .disabled(model.isBusy)
                 }
             }
-            .runeFont(size: 10, weight: .semibold)
-            .foregroundStyle(.secondary)
+            .sidebarSectionLabel()
             .padding(.trailing, 1)
             .frame(height: 18)
 
@@ -513,6 +513,7 @@ struct BranchPickerView: View {
 
 private struct GitSidebarHeader: View, Equatable {
     let topInset: CGFloat
+    let isLoaded: Bool
     let branch: String
     let changeCount: Int
     let additions: Int
@@ -525,6 +526,7 @@ private struct GitSidebarHeader: View, Equatable {
 
     static func == (lhs: GitSidebarHeader, rhs: GitSidebarHeader) -> Bool {
         lhs.topInset == rhs.topInset &&
+            lhs.isLoaded == rhs.isLoaded &&
             lhs.branch == rhs.branch &&
             lhs.changeCount == rhs.changeCount &&
             lhs.additions == rhs.additions &&
@@ -555,9 +557,19 @@ private struct GitSidebarHeader: View, Equatable {
 
                 Spacer(minLength: 4)
 
-                Text("\(changeCount)")
-                    .foregroundStyle(.secondary)
+                if isLoaded {
+                    Group {
+                        if changeCount == 0 {
+                            Text("clean").foregroundStyle(.tertiary)
+                        } else {
+                            Text("\(changeCount) changed").foregroundStyle(.secondary)
+                        }
+                    }
+                    .runeFont(size: 10)
+                    .padding(.trailing, 4)
+                }
             }
+            .frame(height: WorkspaceMetrics.bandHeight)
 
             if additions > 0 || deletions > 0 || hasUnstagedChanges {
                 HStack(spacing: 7) {
@@ -581,10 +593,11 @@ private struct GitSidebarHeader: View, Equatable {
                 .runeFont(size: 10, weight: .medium)
             }
         }
-        .runeFont(size: 12, weight: .medium)
-        .padding(.horizontal, WorkspaceMetrics.columnInset)
-        .padding(.top, topInset + 8)
-        .padding(.bottom, 8)
+        .runeFont(size: 12, weight: .semibold)
+        // The button carries its own 5pt inset, so the branch icon lines up with the labels below.
+        .padding(.leading, WorkspaceMetrics.columnInset - 5)
+        .padding(.trailing, WorkspaceMetrics.columnInset)
+        .padding(.top, topInset)
     }
 }
 
@@ -607,16 +620,10 @@ private struct GitHistoryView: View, Equatable {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Text("HISTORY")
-                    .tracking(0.7)
-                Spacer(minLength: 4)
-            }
-            .runeFont(size: 10, weight: .semibold)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, WorkspaceMetrics.columnInset)
-            .padding(.top, 16)
-            .padding(.bottom, 8)
+            Text("HISTORY")
+                .sidebarSectionLabel()
+                .padding(.horizontal, WorkspaceMetrics.columnInset)
+                .frame(height: WorkspaceMetrics.bandHeight)
 
             if commits.isEmpty {
                 Text(isRepository ? "No commits yet" : "Not a Git repository")
@@ -628,10 +635,13 @@ private struct GitHistoryView: View, Equatable {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         let lanes = graphLanes
+                        // A solo repository would repeat one name on every row.
+                        let showsAuthor = commits.contains { $0.author != commits.first?.author }
                         ForEach(commits) { commit in
                             GitCommitRow(
                                 commit: commit,
                                 graphLanes: lanes,
+                                showsAuthor: showsAuthor,
                                 onOpen: { onOpenCommit(commit) },
                                 onOpenInGitHub: { onOpenCommitInGitHub(commit) }
                             )
@@ -655,6 +665,7 @@ private struct GitHistoryView: View, Equatable {
 private struct GitCommitRow: View {
     let commit: GitCommit
     let graphLanes: Int
+    let showsAuthor: Bool
     let onOpen: () -> Void
     let onOpenInGitHub: () -> Void
     @Environment(\.colorScheme) private var colorScheme
@@ -680,7 +691,7 @@ private struct GitCommitRow: View {
 
     var body: some View {
         Button(action: handleOpen) {
-            HStack(spacing: 2) {
+            HStack(spacing: 6) {
                 GitGraphView(row: commit.graph, isMerge: commit.parents.count > 1, nodeY: subjectMiddle)
                     .frame(width: CGFloat(graphLanes) * GitGraphView.laneWidth)
                 details
@@ -727,9 +738,11 @@ private struct GitCommitRow: View {
                 if refs.count > 2 {
                     Text("+\(refs.count - 2)").foregroundStyle(.tertiary).fixedSize()
                 }
-                Text(commit.author)
-                    .lineLimit(1)
-                    .layoutPriority(-1)
+                if showsAuthor {
+                    Text(commit.author)
+                        .lineLimit(1)
+                        .layoutPriority(-1)
+                }
                 Spacer(minLength: 4)
                 Text(commit.relativeDate)
                     .foregroundStyle(.tertiary)
@@ -761,12 +774,15 @@ private struct GitCommitRow: View {
 }
 
 private struct GitGraphView: View {
-    static let laneWidth: CGFloat = 8
+    static let laneWidth: CGFloat = 10
     static let maximumLanes = 6
     /// Side lanes only; the main lane stays neutral so a straight history reads as a quiet timeline.
     private static let colors: [Color] = [.blue, .purple, .orange, .teal, .pink, .green, .indigo]
     /// The graph is context, not content, so it sits well behind the text.
     private static let opacity = 0.2
+    /// Commits are what the rows list, so their dots read a step above the lines joining them.
+    private static let dotOpacity = 0.5
+    private static let dotSize: CGFloat = 5
 
     let row: GitGraphRow
     let isMerge: Bool
@@ -791,8 +807,9 @@ private struct GitGraphView: View {
                 }
                 context.stroke(path, with: .color(Self.color(line.color).opacity(Self.opacity)), lineWidth: 1)
             }
-            let dot = CGRect(x: x(row.lane) - 2, y: middle - 2, width: 4, height: 4)
-            let color = Self.color(row.lane).opacity(Self.opacity)
+            let dot = CGRect(x: x(row.lane) - Self.dotSize / 2, y: middle - Self.dotSize / 2,
+                             width: Self.dotSize, height: Self.dotSize)
+            let color = Self.color(row.lane).opacity(Self.dotOpacity)
             if isMerge {
                 // Punch the lines out of the ring so it reads as hollow on any background.
                 context.blendMode = .clear

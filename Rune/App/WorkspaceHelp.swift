@@ -6,17 +6,11 @@ struct WorkspaceHelpButton: View {
 
     var body: some View {
         Button { isPresented.toggle() } label: {
-            Image(systemName: "questionmark")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isHovered || isPresented ? .primary : .secondary)
-                .frame(width: 28, height: 28)
-                .background(Color(nsColor: .windowBackgroundColor), in: Circle())
-                .background(.regularMaterial, in: Circle())
-                .overlay {
-                    Circle().fill(Color.primary.opacity(isHovered || isPresented ? 0.08 : 0))
-                    Circle().strokeBorder(Color.primary.opacity(0.14), lineWidth: 1)
-                }
-                .contentShape(Circle())
+            Image(systemName: "questionmark.circle")
+                .font(.system(size: 14))
+                .foregroundStyle(isHovered || isPresented ? .primary : .tertiary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
