@@ -14,7 +14,7 @@ struct FileIconView: View {
     private var image: Image {
         switch FileIcon.source(for: url, isDirectory: isDirectory) {
         case let .asset(name):
-            Image(name).renderingMode(.original)
+            Image(name).renderingMode(.template)
         case let .system(name):
             Image(systemName: name)
         }

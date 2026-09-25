@@ -92,7 +92,8 @@ struct TerminalDrawer: View {
                 isVisible: isVisible,
                 isActive: !isParked && !isPreview,
                 onActivate: isPreview ? {} : onActivate,
-                launchError: session.launchError
+                launchError: session.launchError,
+                dimsWhenUnfocused: isTabbed
             )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()

@@ -12,10 +12,8 @@ enum WorkspaceMetrics {
     static let panelInset: CGFloat = 12
     /// Half of `gap` minus the resizer that sits between two columns.
     static let panelGap: CGFloat = (gap - 4) / 2
-    /// Corner radius of a group card stacked inside a sidebar column.
+    /// Corner radius of a section card stacked inside a sidebar column.
     static let groupRadius: CGFloat = 10
-    /// Gap between stacked group cards.
-    static let groupGap: CGFloat = gap
 
     /// Horizontal inset for a column's own content: section labels and headers sit here.
     /// Matches `panelInset` so labels line up with the panel edge that now frames them.
@@ -24,6 +22,9 @@ enum WorkspaceMetrics {
     static let rowRadius: CGFloat = 5
     /// Height of the band holding each column's first control.
     static let headerHeight: CGFloat = 28
+    /// The terminal's tab strip, and the header of every sidebar card. The first card in
+    /// each column shares it, so its header, the tabs and the branch sit on one line.
+    static let bandHeight: CGFloat = headerHeight + 12
     /// Space between that band and the content below it.
     static let headerGap: CGFloat = 8
 
@@ -36,6 +37,6 @@ enum WorkspaceMetrics {
     static let gap: CGFloat = 8
 
     static func titleBarClearance(isFullScreen: Bool) -> CGFloat {
-        isFullScreen ? outerMargin : 38
+        isFullScreen ? outerMargin : 32
     }
 }

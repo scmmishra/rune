@@ -10,47 +10,50 @@ struct FileTreeView<Terminals: View>: View {
     @State private var isTitleHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WorkspaceMetrics.groupGap) {
-            Text(rootURL.lastPathComponent)
-                .runeFont(size: 12, weight: .medium)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .background {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.primary.opacity(isTitleHovered ? 0.06 : 0))
-                        .padding(-4)
-                }
-                .padding(.horizontal, WorkspaceMetrics.columnInset)
-                .onHover { isTitleHovered = $0 }
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onOpenProjects)
-                .help("Switch Project (⇧⌘O)\n" + rootURL.path)
-                .accessibilityLabel("Switch project, " + rootURL.lastPathComponent)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAction { onOpenProjects() }
-                .frame(height: WorkspaceMetrics.headerHeight, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-                .workspaceGroup()
-
+        VStack(alignment: .leading, spacing: WorkspaceMetrics.gap) {
             terminals()
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("FILES")
-                    .runeFont(size: 10, weight: .semibold)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
+            // The tree is the project's root, so its card is headed by the project itself.
+            VStack(alignment: .leading, spacing: 0) {
+                projectSwitcher
 
                 FileTreeContents(rootURL: rootURL, onOpenFile: onOpenFile)
                     .id(rootURL)
                     .safeAreaPadding(.bottom, 48)
+                    .padding(.horizontal, 4)
             }
-            .padding(.horizontal, 4)
-            .padding(.top, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .workspaceGroup()
         }
         .padding(.top, topInset)
+    }
+
+    private var projectSwitcher: some View {
+        HStack(spacing: 5) {
+            Text(rootURL.lastPathComponent)
+                .runeFont(size: 12, weight: .semibold)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(isTitleHovered ? .secondary : .tertiary)
+        }
+        .padding(.horizontal, 6)
+        .frame(height: 24)
+        .background {
+            RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius, style: .continuous)
+                .fill(Color.primary.opacity(isTitleHovered ? 0.06 : 0))
+        }
+        .onHover { isTitleHovered = $0 }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpenProjects)
+        .help("Switch Project (⇧⌘O)\n" + rootURL.path)
+        .accessibilityLabel("Switch project, " + rootURL.lastPathComponent)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onOpenProjects() }
+        // The switcher's own 6pt inset puts the name on the same edge as the rows below.
+        .padding(.horizontal, WorkspaceMetrics.columnInset - 6)
+        .frame(height: WorkspaceMetrics.bandHeight)
     }
 }
 
@@ -221,7 +224,7 @@ private struct FileTreeContents: View {
             }
 
             FileIconView(url: url, isDirectory: isDirectory)
-                .foregroundStyle(status?.color ?? Color.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 12, height: 12)
 
             Text(name)
@@ -231,6 +234,21 @@ private struct FileTreeContents: View {
                 .truncationMode(.middle)
 
             Spacer(minLength: 0)
+
+            if let status {
+                // A folder only says something inside changed; the letter belongs to files.
+                Group {
+                    if isDirectory {
+                        Circle().frame(width: 5, height: 5)
+                    } else {
+                        Text(status.letter).runeFont(size: 10, weight: .semibold)
+                    }
+                }
+                .foregroundStyle(status.color)
+                .frame(width: 12)
+                .padding(.trailing, 4)
+                .accessibilityLabel(status.label)
+            }
         }
         .padding(.leading, CGFloat(depth) * 10)
         .frame(
@@ -541,6 +559,9 @@ nonisolated private enum FileTreeStatus: Equatable, Sendable {
             .green
         }
     }
+
+    var letter: String { self == .modified ? "M" : "U" }
+    var label: String { self == .modified ? "Modified" : "Untracked" }
 }
 
 nonisolated private enum GitFileTree {

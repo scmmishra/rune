@@ -150,7 +150,7 @@ struct WorkspaceView: View {
                     sidebarDivider(width: $gitSidebarWidth, direction: -1, availableWidth: geometry.size.width)
                     Group {
                         if let directoryURL {
-                            VStack(spacing: WorkspaceMetrics.groupGap) {
+                            VStack(spacing: WorkspaceMetrics.gap) {
                             GitSidebarView(
                                 rootURL: directoryURL,
                                 topInset: 0,
@@ -337,7 +337,7 @@ struct WorkspaceView: View {
             }
             .clipped()
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(WorkspaceChrome.color)
         .background { WindowFullScreenObserver(isFullScreen: $isWindowFullScreen) }
         .onAppear { terminals.onOpenLink = openTerminalLink }
         .background {

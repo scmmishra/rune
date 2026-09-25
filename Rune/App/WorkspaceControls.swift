@@ -1,38 +1,59 @@
+import AppKit
 import SwiftUI
 
-/// The shared surface for the workspace's three columns.
-///
-/// The terminal used to be the only panel, which left the sidebars reading as
-/// margin around it. Giving all three the same surface makes alignment a
-/// property of the containers instead of a negotiation between controls.
+/// The recessed surface behind the workspace's cards.
+enum WorkspaceChrome {
+    static let color = Color(nsColor: NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        return NSColor(white: isDark ? 0.065 : 0.885, alpha: 1)
+    })
+
+}
+
+/// The one card surface in the workspace: the terminal panel and every sidebar section.
+/// Sharing fill, radius and border is what makes the columns read as one set.
 private struct WorkspacePanel: ViewModifier {
     let isVisible: Bool
     let radius: CGFloat
-    var fill: Color = Color(nsColor: .textBackgroundColor)
+    let fill: Color
+    let isRaised: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         content
-            .background(isVisible ? fill : .clear)
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .clipShape(shape)
+            // The shadow belongs to a static shape behind the content. Put on the
+            // content, it would be recomputed from the terminal's pixels every frame.
+            .background {
+                if isVisible {
+                    shape.fill(fill)
+                        .shadow(color: .black.opacity(isRaised ? (colorScheme == .dark ? 0.45 : 0.10) : 0), radius: 10, y: 2)
+                }
+            }
             .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(Color.primary.opacity(isVisible ? 0.10 : 0), lineWidth: 1)
+                shape.strokeBorder(Color.primary.opacity(isVisible ? (colorScheme == .dark ? 0.08 : 0.06) : 0), lineWidth: 1)
             }
     }
 }
 
 extension View {
-    func workspacePanel(isVisible: Bool = true, fill: Color? = nil) -> some View {
-        modifier(WorkspacePanel(
-            isVisible: isVisible,
-            radius: WorkspaceMetrics.panelRadius,
-            fill: fill ?? Color(nsColor: .textBackgroundColor)
-        ))
+    /// The terminal panel: the same card, lifted slightly as the workspace's focus.
+    func workspacePanel(isVisible: Bool = true, fill: Color) -> some View {
+        modifier(WorkspacePanel(isVisible: isVisible, radius: WorkspaceMetrics.panelRadius, fill: fill, isRaised: true))
     }
 
-    /// A group card stacked inside a sidebar column: the panel surface, one size down.
-    func workspaceGroup(isVisible: Bool = true) -> some View {
-        modifier(WorkspacePanel(isVisible: isVisible, radius: WorkspaceMetrics.groupRadius))
+    /// A section card in a sidebar column.
+    func workspaceGroup() -> some View {
+        modifier(WorkspacePanel(isVisible: true, radius: WorkspaceMetrics.groupRadius,
+                                fill: TerminalSurface.color, isRaised: false))
+    }
+
+    /// A section label on the chrome, shared by every sidebar section.
+    func sidebarSectionLabel() -> some View {
+        runeFont(size: 10, weight: .semibold)
+            .tracking(0.6)
+            .foregroundStyle(.secondary)
     }
 }
 

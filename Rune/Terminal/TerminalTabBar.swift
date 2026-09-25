@@ -11,9 +11,9 @@ struct TerminalTabBar: View {
 
     /// Total space the bar occupies inside the terminal panel, padding included, so
     /// tabbed sessions can be offset by exactly what the primary pane is.
-    static let height: CGFloat = stripInset * 2 + WorkspaceMetrics.headerHeight
+    static let height: CGFloat = WorkspaceMetrics.bandHeight
     /// Even margin on all four sides of the tab row.
-    private static let stripInset: CGFloat = 6
+    private static let stripInset: CGFloat = (height - WorkspaceMetrics.headerHeight) / 2
     private static let barHeight: CGFloat = WorkspaceMetrics.headerHeight
 
     var body: some View {
@@ -56,9 +56,6 @@ struct TerminalTabBar: View {
         }
         .frame(height: Self.barHeight)
         .padding(Self.stripInset)
-        // The strip reads as the panel's chrome rather than as part of the terminal
-        // grid below it, without nesting a container inside a character grid.
-        .background(Color.primary.opacity(0.03))
     }
 }
 
@@ -140,13 +137,13 @@ private struct TerminalTab: View {
         }
         .background {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.primary.opacity(isSelected ? 0.09 : isHovered ? 0.055 : 0.025))
+                .fill(Color.primary.opacity(isSelected ? 0.08 : isHovered ? 0.045 : 0))
         }
         .overlay {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .stroke(
                     isPeeked ? Color.accentColor.opacity(isFocused ? 0.85 : 0.45)
-                             : Color.primary.opacity(isSelected ? 0.12 : 0.05),
+                             : Color.primary.opacity(isSelected ? 0.08 : 0),
                     lineWidth: isPeeked ? 1.5 : 1
                 )
         }
