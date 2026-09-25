@@ -7,6 +7,14 @@ nonisolated struct TerminalProcessStatus: Equatable, Sendable {
     let isIdle: Bool
 }
 
+/// What a terminal's whole process tree is using at one moment.
+nonisolated struct TerminalResourceSample: Sendable {
+    let ports: [Int]
+    let memoryBytes: UInt64
+    /// Total CPU time used so far; a rate needs two samples.
+    let cpuNanoseconds: UInt64
+}
+
 nonisolated enum TerminalProcessMonitor {
     private static let shells: Set<String> = ["zsh", "bash", "sh", "fish", "nu", "tcsh", "csh", "dash"]
 
@@ -30,6 +38,61 @@ nonisolated enum TerminalProcessMonitor {
             )
         }
         return result
+    }
+
+    /// Sums memory and CPU time over the root and its descendants, and gathers the TCP
+    /// ports they listen on. Processes that detach from the tree (daemons) are not counted.
+    static func resources(root: TerminationTarget) -> TerminalResourceSample? {
+        guard let rootInfo = info(root.pid), root.stillMatches(rootInfo) else { return nil }
+        var memory: UInt64 = 0
+        var cpuTicks: UInt64 = 0
+        var ports = Set<Int>()
+        for target in descendants(of: [root]) {
+            var usage = rusage_info_v2()
+            let result = withUnsafeMutablePointer(to: &usage) { pointer in
+                pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+                    proc_pid_rusage(target.pid, RUSAGE_INFO_V2, $0)
+                }
+            }
+            if result == 0 {
+                memory += usage.ri_phys_footprint
+                cpuTicks += usage.ri_user_time + usage.ri_system_time
+            }
+            ports.formUnion(listeningPorts(of: target.pid))
+        }
+        return TerminalResourceSample(ports: ports.sorted(), memoryBytes: memory,
+                                      cpuNanoseconds: cpuTicks * timebase.numer / timebase.denom)
+    }
+
+    /// rusage CPU times are in Mach ticks, which are not nanoseconds on Apple silicon.
+    /// Source: https://developer.apple.com/documentation/driverkit/mach_timebase_info_data_t
+    private static let timebase: (numer: UInt64, denom: UInt64) = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return (UInt64(info.numer), UInt64(max(info.denom, 1)))
+    }()
+
+    private static func listeningPorts(of pid: pid_t) -> [Int] {
+        let stride = MemoryLayout<proc_fdinfo>.stride
+        let estimate = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        guard estimate > 0 else { return [] }
+        var descriptors = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(estimate) / stride + 8)
+        let used = descriptors.withUnsafeMutableBytes {
+            proc_pidinfo(pid, PROC_PIDLISTFDS, 0, $0.baseAddress, Int32($0.count))
+        }
+        guard used > 0 else { return [] }
+        var ports: [Int] = []
+        for descriptor in descriptors.prefix(Int(used) / stride)
+        where descriptor.proc_fdtype == UInt32(PROX_FDTYPE_SOCKET) {
+            var socket = socket_fdinfo()
+            let size = Int32(MemoryLayout<socket_fdinfo>.stride)
+            guard proc_pidfdinfo(pid, descriptor.proc_fd, PROC_PIDFDSOCKETINFO, &socket, size) == size,
+                  socket.psi.soi_kind == Int32(SOCKINFO_TCP),
+                  socket.psi.soi_proto.pri_tcp.tcpsi_state == Int32(TSI_S_LISTEN) else { continue }
+            let port = Int(UInt16(bigEndian: UInt16(truncatingIfNeeded: socket.psi.soi_proto.pri_tcp.tcpsi_ini.insi_lport)))
+            if port > 0 { ports.append(port) }
+        }
+        return ports
     }
 
     struct TerminationTarget: Codable, Sendable {

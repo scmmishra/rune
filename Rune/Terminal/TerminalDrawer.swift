@@ -52,6 +52,7 @@ struct TerminalDrawer: View {
                     Text("Exited").runeFont(size: 11).foregroundStyle(.secondary)
                 }
                 Spacer()
+                TerminalResourceLabel(meter: session.resources)
                 if session.savedCommandID != nil {
                     if session.isCommandRunning {
                         Button(action: onStopCommand) { Image(systemName: "stop.fill") }
