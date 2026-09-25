@@ -339,6 +339,7 @@ nonisolated enum GitRepository {
         let records = data.split(separator: 0).compactMap { String(data: $0, encoding: .utf8) }
         var branch = "Git"
         var changes: [GitChange] = []
+        var positions: [String: Int] = [:]
         var index = 0
 
         if let first = records.first, first.hasPrefix("## ") {
@@ -367,14 +368,27 @@ nonisolated enum GitRepository {
                 }
             }
 
-            changes.append(
-                GitChange(
+            // Git reports one path twice when it is removed from the index but still on disk
+            // (`D  foo` then `?? foo`). Paths identify changes everywhere, so fold them together.
+            if let existing = positions[path] {
+                let earlier = changes[existing]
+                changes[existing] = GitChange(
                     path: path,
-                    previousPath: previousPath,
-                    stagedState: stagedState,
-                    unstagedState: unstagedState
+                    previousPath: earlier.previousPath ?? previousPath,
+                    stagedState: earlier.stagedState ?? stagedState,
+                    unstagedState: earlier.unstagedState ?? unstagedState
                 )
-            )
+            } else {
+                positions[path] = changes.count
+                changes.append(
+                    GitChange(
+                        path: path,
+                        previousPath: previousPath,
+                        stagedState: stagedState,
+                        unstagedState: unstagedState
+                    )
+                )
+            }
             index += 1
         }
 

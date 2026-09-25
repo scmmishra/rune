@@ -132,10 +132,11 @@ private struct FileTreeContents: View {
             let paths = repository.files.map(\.relativePath)
             let refreshedItems = await Task.detached(priority: .userInitiated) {
                 if snapshot.isRepository {
-                    let statuses = Dictionary(uniqueKeysWithValues: snapshot.changes.map {
+                    // Never trap on a repeated path: a crash here takes the whole window down.
+                    let statuses = Dictionary(snapshot.changes.map {
                         ($0.path, $0.unstagedState == .untracked || $0.stagedState == .added
                             ? FileTreeStatus.untracked : FileTreeStatus.modified)
-                    })
+                    }, uniquingKeysWith: { first, _ in first })
                     return GitFileTree.makeTree(from: paths, statuses: statuses, rootedAt: rootURL)
                 }
                 return FileTreeItem.contents(of: rootURL)
