@@ -276,6 +276,7 @@ private struct RunningCommandRow: View {
     let onSelect: () -> Void
     let onRun: () -> Void
     let onStop: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -292,12 +293,16 @@ private struct RunningCommandRow: View {
                 Image(systemName: session.isCommandRunning ? "stop.fill" : "play.fill")
                     .foregroundStyle(.secondary)
                     .frame(width: 18, height: 22)
+                    // Stop stays visible while running; a stopped command's play only
+                    // appears on hover, like a command that never ran.
+                    .opacity(session.isCommandRunning || isHovered ? 1 : 0)
             }
             .help(session.isCommandRunning ? "Stop \(command.name)" : "Run \(command.name)")
             .accessibilityLabel(session.isCommandRunning ? "Stop \(command.name)" : "Run \(command.name)")
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
+        .onHover { isHovered = $0 }
         .help("\(session.commandStatus)\n\(command.command)")
     }
 }
