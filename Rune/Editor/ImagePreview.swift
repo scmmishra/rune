@@ -34,7 +34,10 @@ struct ImagePreview: View {
     }
 
     var body: some View {
-        Group {
+        // A ZStack over a clear fill, not a Group: an empty Group has no view to
+        // attach `.task` to, so the image would never load.
+        ZStack {
+            Color.clear
             if let image {
                 // Vectors scale cleanly, but a tiny icon filling the drawer reads poorly;
                 // enlarge them only up to a comfortable size. Rasters never enlarge.
