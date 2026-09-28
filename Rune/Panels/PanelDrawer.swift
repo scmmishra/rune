@@ -68,7 +68,7 @@ struct PanelDrawer: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            if let detail = model.detail, !detail.isRoot {
+            if model.canGoBack {
                 Button(action: model.closeDetail) { Image(systemName: "chevron.left") }
                     .buttonStyle(WorkspaceButtonStyle())
                     .help("Back (Esc)")
@@ -107,7 +107,7 @@ struct PanelDrawer: View {
     private func escape() {
         if model.prompting != nil {
             model.prompting = nil
-        } else if let detail = model.detail, !detail.isRoot {
+        } else if model.canGoBack {
             model.closeDetail()
         } else {
             onClose()
@@ -282,15 +282,18 @@ private struct PanelRow: View {
     }
 
     private func tint(of badge: PanelBadge) -> Color {
-        guard badges.indices.contains(badge.rule) else { return .secondary }
-        let rule = badges[badge.rule]
-        return PanelBadgeView.color(named: rule.tints[badge.text] ?? rule.tint)
+        PanelBadgeView.color(for: badge.text, rule: badges.indices.contains(badge.rule) ? badges[badge.rule] : nil)
     }
 }
 
 private struct PanelBadgeView: View {
     let text: String
     let color: Color
+
+    /// The rule's color for this exact text, else its single color.
+    static func color(for text: String, rule: PanelViewSpec.Badge?) -> Color {
+        color(named: rule?.tints[text] ?? rule?.tint)
+    }
 
     static func color(named name: String?) -> Color {
         switch name?.lowercased() {
@@ -382,6 +385,8 @@ private struct PanelDetailView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let markdown = detail.markdown {
                     MarkdownPreview(text: markdown)
+                } else if detail.view.body?.kind == .timeline {
+                    PanelTimelineView(detail: detail)
                 } else if detail.view.body?.kind == .thread {
                     if detail.messages.isEmpty, detail.hasLoaded {
                         PanelMessageView(text: detail.view.empty ?? "Nothing here yet", systemImage: nil, retry: nil)
@@ -409,6 +414,124 @@ private struct PanelDetailView: View {
             if let action = model.prompting {
                 Divider()
                 PanelComposer(model: model, action: action)
+            }
+        }
+    }
+}
+
+/// Full-width cards in time order, like an issue or pull request page.
+private struct PanelTimelineView: View {
+    let detail: PanelModel.Detail
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if let header = detail.header {
+                    PanelHeaderView(header: header, rules: detail.view.header?.badges ?? [])
+                }
+                if detail.messages.isEmpty, detail.hasLoaded {
+                    Text(detail.view.empty ?? "Nothing here yet")
+                        .runeFont(size: 12)
+                        .foregroundStyle(.secondary)
+                }
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(detail.messages) { message in
+                        PanelTimelineEntry(message: message, labelRule: detail.view.body?.label)
+                    }
+                }
+            }
+            .frame(maxWidth: 760, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+private struct PanelHeaderView: View {
+    let header: PanelHeader
+    let rules: [PanelViewSpec.Badge]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let title = header.title {
+                Text(title)
+                    .runeFont(size: 17, weight: .semibold)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+            if !header.badges.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(header.badges, id: \.self) { badge in
+                        let rule = rules.indices.contains(badge.rule) ? rules[badge.rule] : nil
+                        PanelBadgeView(text: badge.text, color: PanelBadgeView.color(for: badge.text, rule: rule))
+                    }
+                }
+            }
+            ForEach(header.meta, id: \.self) { line in
+                Text(line)
+                    .runeFont(size: 12)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Divider().padding(.top, 6)
+        }
+    }
+}
+
+private struct PanelTimelineEntry: View {
+    let message: PanelMessage
+    let labelRule: PanelViewSpec.Badge?
+
+    var body: some View {
+        if message.text.isEmpty {
+            // An event with nothing to read, such as an approval, is one quiet line.
+            HStack(spacing: 6) {
+                Circle().fill(Color.secondary.opacity(0.5)).frame(width: 6, height: 6)
+                heading
+            }
+            .padding(.leading, 12)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                heading
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.035))
+                Divider()
+                MarkdownContent(text: message.text)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+            }
+        }
+    }
+
+    private var heading: some View {
+        HStack(spacing: 6) {
+            if let author = message.author {
+                Text(author).runeFont(size: 12, weight: .semibold)
+            }
+            if let label = message.label {
+                PanelBadgeView(text: label, color: PanelBadgeView.color(for: label, rule: labelRule))
+            }
+            if let context = message.context {
+                Text(context)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+            if let time = message.time {
+                Text(time)
+                    .runeFont(size: 11)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
         }
     }

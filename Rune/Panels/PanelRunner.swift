@@ -177,18 +177,22 @@ nonisolated enum PanelRunner {
         return "((try ([\(expression)][0]) catch null) == true)"
     }
 
-    static func listProgram(_ view: PanelViewSpec, openedActions: [PanelAction]) -> String {
-        guard let item = view.item else { return "{items: [], done: true}" }
-        // Each badge carries the index of its rule, so its tint can be looked up.
-        let badges = item.badges.enumerated().map { index, badge in
+    /// Each badge carries the index of its rule, so its tint can be looked up.
+    private static func badgesProgram(_ badges: [PanelViewSpec.Badge]) -> String {
+        let rules = badges.enumerated().map { index, badge in
             "(if \(flag(badge.when, default: true)) then [(try (\(badge.text)) catch empty) | _s | select(. != null and . != \"\") | {text: ., rule: \(index)}] else [] end)"
         }
+        return "([\(rules.joined(separator: ", "))] | add // [])"
+    }
+
+    static func listProgram(_ view: PanelViewSpec, openedActions: [PanelAction]) -> String {
+        guard let item = view.item else { return "{items: [], done: true}" }
         let actions = openedActions.map { flag($0.when, default: true) }
         return """
         {items: [(\(view.each)) | {
           id: \(field(item.id)), title: \(field(item.title)), subtitle: \(field(item.subtitle)),
           trailing: \(field(item.trailing)), unread: \(flag(item.unread)),
-          badges: ([\(badges.joined(separator: ", "))] | add // []),
+          badges: \(badgesProgram(item.badges)),
           actions: [\(actions.joined(separator: ", "))], raw: .
         }], done: \(view.pagination.map { flag($0.until, default: true) } ?? "true")}
         """
@@ -196,12 +200,19 @@ nonisolated enum PanelRunner {
 
     static func routeProgram(_ expression: String) -> String { field(expression) }
 
-    /// A detail view's body, plus its `item` and which actions apply to that item.
+    /// A detail view's body, plus its `item`, its header, and which actions apply to the item.
+    /// Without an `item` expression, the header reads the command's output directly.
     static func detailProgram(_ view: PanelViewSpec) -> String {
         let body = view.body.map(bodyProgram) ?? "null"
-        guard let item = view.itemExpression else { return "{body: (\(body)), item: null, actions: []}" }
+        let subject = view.itemExpression.map { "(try ([\($0)][0]) catch null)" } ?? "."
         let actions = view.actions.map { "($item | \(flag($0.when, default: true)))" }
-        return "(try ([\(item)][0]) catch null) as $item | {body: (\(body)), item: $item, actions: [\(actions.joined(separator: ", "))]}"
+        let header = view.header.map { header in
+            "($item | {title: \(field(header.title)), badges: \(badgesProgram(header.badges)), meta: [\(header.meta.map(field).joined(separator: ", "))]})"
+        } ?? "null"
+        return """
+        \(subject) as $item | {body: (\(body)), item: \(view.itemExpression == nil ? "null" : "$item"),
+          actions: [\(actions.joined(separator: ", "))], header: \(header)}
+        """
     }
 
     private static func bodyProgram(_ body: PanelViewSpec.Body) -> String {
@@ -211,6 +222,11 @@ nonisolated enum PanelRunner {
             """
             [(\(body.each)) | {author: \(field(body.author)), text: \(field(body.text)), time: \(field(body.time)),
               side: \(field(body.side)), muted: \(flag(body.muted))}]
+            """
+        case .timeline:
+            """
+            [(\(body.each)) | {author: \(field(body.author)), text: \(field(body.text)), time: \(field(body.time)),
+              label: \(field(body.label?.text)), context: \(field(body.context))}]
             """
         }
     }

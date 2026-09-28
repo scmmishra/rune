@@ -100,7 +100,8 @@ nonisolated struct PanelViewSpec: Sendable {
     }
 
     struct Body: Sendable {
-        enum Kind: String, Sendable { case thread, markdown }
+        /// `thread` is a chat; `timeline` is full-width Markdown cards, like an issue page.
+        enum Kind: String, Sendable { case thread, timeline, markdown }
         let kind: Kind
         var each = ".[]"
         var author: String?
@@ -108,6 +109,17 @@ nonisolated struct PanelViewSpec: Sendable {
         var time: String?
         var side: String?
         var muted: String?
+        /// A timeline entry's action, such as "approved", drawn as a tinted pill.
+        var label: Badge?
+        /// Where a timeline entry applies, such as a file path.
+        var context: String?
+    }
+
+    /// A summary above a detail view's body, evaluated against its item.
+    struct Header: Sendable {
+        var title: String?
+        var badges: [Badge] = []
+        var meta: [String] = []
     }
 
     let name: String
@@ -121,6 +133,9 @@ nonisolated struct PanelViewSpec: Sendable {
     var item: Item?
     /// For a detail view: a jq expression picking the item from the command's output.
     var itemExpression: String?
+    /// For a detail view the panel opens on: the view its back button leads to.
+    var back: String?
+    var header: Header?
     var body: Body?
     var actions: [PanelAction] = []
 }
@@ -215,6 +230,9 @@ nonisolated enum PanelLibrary {
             if let open = view.item?.open, definition.views[open] == nil {
                 throw PanelError("view.\(view.name) opens \(open), which is not defined.")
             }
+            if let back = view.back, definition.views[back]?.kind != .list {
+                throw PanelError("view.\(view.name) goes back to \(back), which is not a list view.")
+            }
         }
         return definition
     }
@@ -264,7 +282,10 @@ nonisolated enum PanelLibrary {
                 until: paginate["until"]?.string ?? "true"
             )
         }
-        if kind == .detail { view.itemExpression = value["item"]?.string }
+        if kind == .detail {
+            view.itemExpression = value["item"]?.string
+            view.back = value["back"]?.string
+        }
         if kind == .list {
             guard let item = value["item"], let title = item["title"]?.string else {
                 throw PanelError("view.\(name) needs [view.\(name).item] with a title.")
@@ -289,7 +310,16 @@ nonisolated enum PanelLibrary {
             spec.time = body["time"]?.string
             spec.side = body["side"]?.string
             spec.muted = body["muted"]?.string
+            spec.label = body["label"].flatMap(badge)
+            spec.context = body["context"]?.string
             view.body = spec
+        }
+        if let header = value["header"] {
+            view.header = PanelViewSpec.Header(
+                title: header["title"]?.string,
+                badges: (header["badges"]?.array ?? []).compactMap(badge),
+                meta: header["meta"]?.array?.compactMap(\.string) ?? []
+            )
         }
         view.actions = try (value["action"]?.array ?? []).enumerated().map { index, value in
             try action(index, value, view: name)

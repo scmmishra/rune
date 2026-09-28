@@ -27,6 +27,14 @@ nonisolated struct PanelMessage: Identifiable, Sendable {
     let time: String?
     let isTrailing: Bool
     let isMuted: Bool
+    var label: String?
+    var context: String?
+}
+
+nonisolated struct PanelHeader: Sendable {
+    let title: String?
+    let badges: [PanelBadge]
+    let meta: [String]
 }
 
 /// The live state of one open panel: its inputs, the list, and at most one opened item.
@@ -39,6 +47,7 @@ final class PanelModel: ObservableObject {
         var item: PanelItem
         /// The panel opened straight onto this view, so there is no list to go back to.
         var isRoot = false
+        var header: PanelHeader?
         var messages: [PanelMessage] = []
         var markdown: String?
         var isLoading = false
@@ -280,16 +289,20 @@ final class PanelModel: ObservableObject {
                 title: value["title"]?.string ?? "",
                 subtitle: value["subtitle"]?.string,
                 trailing: value["trailing"]?.string,
-                badges: value["badges"]?.array?.compactMap { badge in
-                    guard let text = badge["text"]?.string else { return nil }
-                    return PanelBadge(text: text, rule: Int(badge["rule"]?.text ?? "") ?? 0)
-                } ?? [],
+                badges: Self.badges(value["badges"]),
                 isUnread: value["unread"]?.bool ?? false,
                 actions: value["actions"]?.array?.map { $0.bool ?? false } ?? [],
                 raw: value["raw"] ?? .null
             )
         }
         return (items, mapped["done"]?.bool ?? true)
+    }
+
+    private static func badges(_ value: PanelValue?) -> [PanelBadge] {
+        value?.array?.compactMap { badge in
+            guard let text = badge["text"]?.string else { return nil }
+            return PanelBadge(text: text, rule: Int(badge["rule"]?.text ?? "") ?? 0)
+        } ?? []
     }
 
     private func loadOptions(for input: PanelInput) {
@@ -324,9 +337,20 @@ final class PanelModel: ObservableObject {
         loadDetail()
     }
 
+    var canGoBack: Bool {
+        guard let detail else { return false }
+        return !detail.isRoot || detail.view.back != nil
+    }
+
     func closeDetail() {
-        guard detail?.isRoot != true else { return }
+        guard let current = detail, canGoBack else { return }
         detailTask?.cancel()
+        // A view the panel opened on steps back to its list, which becomes the panel's view.
+        if current.isRoot, let back = current.view.back {
+            rootName = back
+            detail = nil
+            reload()
+        }
         prompting = nil
         promptText = ""
         actionError = nil
@@ -359,11 +383,18 @@ final class PanelModel: ObservableObject {
                         actions: mapped["actions"]?.array?.map { $0.bool ?? false } ?? [], raw: raw
                     )
                 }
+                if let header = mapped["header"], header != .null {
+                    detail?.header = PanelHeader(
+                        title: header["title"]?.string,
+                        badges: Self.badges(header["badges"]),
+                        meta: header["meta"]?.array?.compactMap(\.string).filter { !$0.isEmpty } ?? []
+                    )
+                }
                 let body = mapped["body"] ?? .null
                 switch current.view.body?.kind {
                 case .markdown?:
                     detail?.markdown = body.string ?? ""
-                case .thread?:
+                case .thread?, .timeline?:
                     detail?.messages = (body.array ?? []).enumerated().map { index, value in
                         PanelMessage(
                             id: index,
@@ -371,7 +402,9 @@ final class PanelModel: ObservableObject {
                             text: value["text"]?.string ?? "",
                             time: value["time"]?.string,
                             isTrailing: value["side"]?.string == "trailing",
-                            isMuted: value["muted"]?.bool ?? false
+                            isMuted: value["muted"]?.bool ?? false,
+                            label: value["label"]?.string,
+                            context: value["context"]?.string
                         )
                     }
                 case nil: break
