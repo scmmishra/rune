@@ -3,7 +3,7 @@ import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
     case searchProject, reload, openProject, switchBranch, switchTerminal, newTerminal, closeTerminal, hideTerminal,
-         changeGuide, showWelcome, checkForUpdates
+         changeGuide, openPanel, showWelcome, checkForUpdates
 
     var id: Self { self }
 
@@ -13,7 +13,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .openProject: "⇧⌘O"
         case .switchBranch: "⇧⌘B"
         case .newTerminal: "⇧⌘T"
-        case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .showWelcome, .checkForUpdates: nil
+        case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .openPanel, .showWelcome, .checkForUpdates: nil
         }
     }
 
@@ -28,6 +28,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .newTerminal: "New Terminal"
         case .closeTerminal: "Close Terminal"
         case .hideTerminal: "Hide Secondary Terminal"
+        case .openPanel: "Open Panel…"
         case .showWelcome: "Show Welcome…"
         case .checkForUpdates: "Check for Updates…"
         }
@@ -43,6 +44,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .newTerminal: "plus.rectangle"
         case .closeTerminal: "xmark.rectangle"
         case .hideTerminal: "rectangle.righthalf.inset.filled"
+        case .openPanel: "rectangle.stack"
         case .showWelcome: "hand.wave"
         case .checkForUpdates: "arrow.down.circle"
         }
@@ -59,6 +61,8 @@ struct CommandPalette: View {
     /// Local branches fetched when the palette opened; empty until that fetch lands.
     let branches: [String]
     let currentBranch: String
+    /// Panels from `~/.rune/panels`, read when the palette opened.
+    let panels: [PanelDefinition]
     @ObservedObject var guide: ChangeGuideModel
     let onSelectGuide: (GuideScope) -> Void
     @ObservedObject var terminals: TerminalSessions
@@ -67,6 +71,7 @@ struct CommandPalette: View {
     let onSelectTerminal: (TerminalSession) -> Void
     let onOpenProject: (WorkspaceIdentity) -> Void
     let onSwitchBranch: (String) -> Void
+    let onOpenPanel: (PanelDefinition) -> Void
     /// The command whose options the palette is showing, if the user stepped into one.
     @State private var parent: WorkspaceCommand?
     @State private var guideBranches: GitGuideBranches?
@@ -79,6 +84,7 @@ struct CommandPalette: View {
         case terminal(TerminalSession)
         case project(WorkspaceIdentity)
         case branch(String)
+        case panel(PanelDefinition)
 
         var id: String {
             switch self {
@@ -87,6 +93,7 @@ struct CommandPalette: View {
             case let .terminal(session): "terminal:" + session.id.uuidString
             case let .project(workspace): "project:" + workspace.path
             case let .branch(name): "branch:" + name
+            case let .panel(panel): "panel:" + panel.fileURL.path
             }
         }
 
@@ -98,6 +105,7 @@ struct CommandPalette: View {
             case .terminal: .switchTerminal
             case .project: .openProject
             case .branch: .switchBranch
+            case .panel: .openPanel
             }
         }
 
@@ -108,6 +116,7 @@ struct CommandPalette: View {
             case let .terminal(session): session.name
             case let .project(workspace): workspace.name
             case let .branch(name): name
+            case let .panel(panel): panel.title
             }
         }
 
@@ -117,6 +126,7 @@ struct CommandPalette: View {
             case .scope, .branch: "arrow.triangle.branch"
             case .terminal: "terminal"
             case .project: "folder"
+            case let .panel(panel): panel.icon
             }
         }
     }
@@ -135,6 +145,7 @@ struct CommandPalette: View {
         case .switchTerminal: terminals.all.map(Entry.terminal)
         case .openProject: projects.map(Entry.project)
         case .switchBranch: branches.map(Entry.branch)
+        case .openPanel: panels.map(Entry.panel)
         default: []
         }
     }
@@ -198,6 +209,7 @@ struct CommandPalette: View {
         switch parent {
         case .changeGuide: "Change Brief: choose changes"
         case .switchTerminal: "Switch to terminal"
+        case .openPanel: "Open a panel"
         default: "Run a command"
         }
     }
@@ -218,11 +230,16 @@ struct CommandPalette: View {
                     parent = .switchTerminal
                     query = ""
                     selection = "terminal:" + terminals.panel.id.uuidString
+                case .command(.openPanel) where !panels.isEmpty:
+                    parent = .openPanel
+                    query = ""
+                    selection = panels.first.map { Entry.panel($0).id }
                 case let .command(command): onSelect(command)
                 case let .scope(scope): onSelectGuide(scope)
                 case let .terminal(session): onSelectTerminal(session)
                 case let .project(workspace): onOpenProject(workspace)
                 case let .branch(name): onSwitchBranch(name)
+                case let .panel(panel): onOpenPanel(panel)
                 }
             }
         ) { entry in
@@ -247,6 +264,9 @@ struct CommandPalette: View {
                         .truncationMode(.middle)
                 }
                 Spacer(minLength: 0)
+                if case let .panel(panel) = entry, panel.isProjectSpecific {
+                    Text("Project").foregroundStyle(.secondary)
+                }
                 if case let .branch(name) = entry, name == currentBranch {
                     Image(systemName: "checkmark").foregroundStyle(.secondary)
                 }
