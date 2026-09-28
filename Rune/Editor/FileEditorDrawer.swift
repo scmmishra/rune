@@ -62,7 +62,9 @@ struct FileEditorDrawer: View {
 
             Divider()
 
-            if let loadError {
+            if fileURL.isImage {
+                ImagePreview(source: .file(fileURL))
+            } else if let loadError {
                 ContentUnavailableView(
                     "Unable to Open File",
                     systemImage: "doc.badge.ellipsis",
@@ -71,7 +73,7 @@ struct FileEditorDrawer: View {
             } else if showsRenderedPreview {
                 Group {
                     if fileURL.isSVG {
-                        SVGPreview(text: text)
+                        ImagePreview(source: .svg(text))
                     } else {
                         MarkdownPreview(text: text)
                     }
@@ -182,6 +184,15 @@ struct FileEditorDrawer: View {
     }
 
     private func load() async {
+        // Images render straight from disk; there is no text to load or save.
+        if fileURL.isImage {
+            text = ""
+            savedText = ""
+            loadError = nil
+            loadedURL = fileURL
+            isLoading = false
+            return
+        }
         isLoading = true
         let fileURL = fileURL
         let result = await Task.detached(priority: .userInitiated) { () -> (String, String?) in
@@ -203,7 +214,7 @@ struct FileEditorDrawer: View {
     }
 
     private func save() {
-        guard loadError == nil, !isLoading else { return }
+        guard loadError == nil, !isLoading, !fileURL.isImage else { return }
 
         do {
             try text.write(to: fileURL, atomically: true, encoding: .utf8)
