@@ -23,12 +23,13 @@ struct FileEditorDrawer: View {
     @State private var isLoading = true
     /// The file whose contents are in `text`. A reveal waits for its file to load.
     @State private var loadedURL: URL?
-    @AppStorage("prefersRenderedMarkdown") private var prefersRenderedMarkdown = true
+    // Shared by Markdown and SVG; the key predates SVG previews.
+    @AppStorage("prefersRenderedMarkdown") private var prefersRenderedPreview = true
     /// This file's choice. Unset, a search match opens as source so it can be revealed.
-    @State private var rendersMarkdown: Bool?
+    @State private var rendersPreview: Bool?
 
-    private var showsRenderedMarkdown: Bool {
-        fileURL.isMarkdown && (rendersMarkdown ?? (reveal == nil && revealLine == nil && prefersRenderedMarkdown))
+    private var showsRenderedPreview: Bool {
+        fileURL.hasRenderedPreview && (rendersPreview ?? (reveal == nil && revealLine == nil && prefersRenderedPreview))
     }
 
     /// The range to select: an explicit one from search, or the line a terminal link named.
@@ -67,10 +68,16 @@ struct FileEditorDrawer: View {
                     systemImage: "doc.badge.ellipsis",
                     description: Text(loadError)
                 )
-            } else if showsRenderedMarkdown {
-                MarkdownPreview(text: text)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(nsColor: .textBackgroundColor))
+            } else if showsRenderedPreview {
+                Group {
+                    if fileURL.isSVG {
+                        SVGPreview(text: text)
+                    } else {
+                        MarkdownPreview(text: text)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .textBackgroundColor))
             } else {
                 CodeEditorView(
                     text: $text,
@@ -93,7 +100,7 @@ struct FileEditorDrawer: View {
             DrawerEscapeMonitor(onEscape: searchNavigation?.onBack ?? onClose)
         }
         .task(id: fileURL) {
-            rendersMarkdown = nil
+            rendersPreview = nil
             await load()
         }
         .focusedSceneValue(\.saveCurrentFile, save)
@@ -127,12 +134,12 @@ struct FileEditorDrawer: View {
 
             Spacer()
 
-            if fileURL.isMarkdown, loadError == nil {
-                Picker("Markdown view", selection: Binding(
-                    get: { showsRenderedMarkdown },
+            if fileURL.hasRenderedPreview, loadError == nil {
+                Picker("File view", selection: Binding(
+                    get: { showsRenderedPreview },
                     set: { rendered in
-                        rendersMarkdown = rendered
-                        prefersRenderedMarkdown = rendered
+                        rendersPreview = rendered
+                        prefersRenderedPreview = rendered
                     }
                 )) {
                     Text("Preview").tag(true)
