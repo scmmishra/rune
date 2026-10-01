@@ -85,56 +85,23 @@ struct GitSidebarView: View {
     }
 
     private var changesList: some View {
-        ScrollViewReader { proxy in
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                if !model.snapshot.staged.isEmpty {
-                    section(
-                        "STAGED",
-                        changes: model.snapshot.staged,
-                        area: .staged,
-                        showsBrief: leadingSection == "STAGED",
-                        bulkActionTitle: "Unstage All",
-                        bulkAction: {
-                            Task { await model.unstageAll() }
-                        }
-                    )
-                }
-
-                if !model.snapshot.unstaged.isEmpty {
-                    section("CHANGES", changes: model.snapshot.unstaged, area: .unstaged,
-                            showsBrief: leadingSection == "CHANGES")
-                }
-
-                if !model.snapshot.untracked.isEmpty {
-                    section("UNTRACKED", changes: model.snapshot.untracked, area: .unstaged,
-                            showsBrief: leadingSection == "UNTRACKED")
-                }
-
-                if model.hasLoaded, model.snapshot.changes.isEmpty, model.errorMessage == nil {
-                    Text("Working tree clean")
-                        .runeFont(size: 11)
-                        .foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 24)
-                }
-            }
-            .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
-            .padding(.top, 4)
-        }
-        .overlay { QuietProgressView(isActive: !model.hasLoaded) }
-        .onChange(of: selectedDiffID) { _, selected in
-            if let selected { proxy.scrollTo(selected) }
-        }
-        }
-    }
-
-    private var selectedDiffID: String? {
-        selectedDiff.map { rowID(path: $0.change.path, area: $0.area) }
-    }
-
-    private func rowID(path: String, area: GitChange.Area) -> String {
-        (area == .staged ? "staged:" : "unstaged:") + path
+        // Equatable, so a model republish that leaves the changes alone (a watcher tick, a
+        // history page, a keystroke in the commit field) never rebuilds the rows.
+        GitChangesList(
+            rootURL: rootURL,
+            model: model,
+            changes: model.snapshot.changes,
+            isRepository: model.snapshot.isRepository,
+            isBusy: model.isBusy,
+            hasLoaded: model.hasLoaded,
+            hasError: model.errorMessage != nil,
+            selectedDiff: selectedDiff,
+            onOpenGuide: onOpenGuide,
+            onOpenFile: onOpenFile,
+            onOpenDiff: openDiff,
+            onDiscard: { pendingDiscard = $0 }
+        )
+        .equatable()
     }
 
     private var diffSelections: [GitDiffSelection] {
@@ -160,133 +127,6 @@ struct GitSidebarView: View {
             }
         )
         .equatable()
-    }
-
-    /// The topmost section carries the brief action, so it never claims a row of its own.
-    private var leadingSection: String {
-        if !model.snapshot.staged.isEmpty { return "STAGED" }
-        if !model.snapshot.unstaged.isEmpty { return "CHANGES" }
-        return "UNTRACKED"
-    }
-
-    private func section(
-        _ title: String,
-        changes: [GitChange],
-        area: GitChange.Area,
-        showsBrief: Bool = false,
-        bulkActionTitle: String? = nil,
-        bulkAction: (() -> Void)? = nil
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Text(title)
-                Text("\(changes.count)")
-                    .foregroundStyle(.tertiary)
-                Spacer(minLength: 4)
-                if showsBrief {
-                    Button(action: onOpenGuide) {
-                        HStack(spacing: 3) {
-                            Text("Brief")
-                            Image(systemName: "sparkles")
-                        }
-                    }
-                    .buttonStyle(GitSectionActionStyle())
-                    .disabled(!model.snapshot.isRepository)
-                    .help("Open the change brief")
-                }
-                if let bulkActionTitle, let bulkAction {
-                    Button(bulkActionTitle, action: bulkAction)
-                        .buttonStyle(GitSectionActionStyle())
-                        .disabled(model.isBusy)
-                }
-            }
-            .sidebarSectionLabel()
-            .padding(.trailing, 1)
-            .frame(height: 18)
-
-            ForEach(changes) { change in
-                GitChangeRow(
-                    change: change,
-                    area: area,
-                    isDisabled: model.isBusy,
-                    onOpen: {
-                        openDiff(change, area: area)
-                    },
-                    onToggle: {
-                        Task {
-                            switch area {
-                            case .staged:
-                                await model.unstage(change)
-                            case .unstaged:
-                                await model.stage(change)
-                            }
-                        }
-                    }
-                )
-                .background {
-                    if selectedDiff?.change.path == change.path && selectedDiff?.area == area {
-                        RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius).fill(Color.accentColor.opacity(0.16))
-                    }
-                }
-                .contextMenu {
-                    changeContextMenu(for: change, area: area)
-                }
-                .id(rowID(path: change.path, area: area))
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func changeContextMenu(for change: GitChange, area: GitChange.Area) -> some View {
-        let fileURL = rootURL.appending(path: change.path).standardizedFileURL
-        let fileExists = FileManager.default.fileExists(atPath: fileURL.path)
-        let canDiscard = change.unstagedState != .untracked || fileExists
-
-        Button {
-            onOpenFile(fileURL)
-        } label: {
-            Label("Preview File", systemImage: "eye")
-        }
-        .disabled(!fileExists)
-
-        Button {
-            openDiff(change, area: area)
-        } label: {
-            Label("Preview Diff", systemImage: "doc.text.magnifyingglass")
-        }
-
-        Divider()
-
-        Button("Copy Path") {
-            copyToPasteboard(fileURL.path)
-        }
-
-        Button("Copy Relative Path") {
-            copyToPasteboard(change.path)
-        }
-
-        Divider()
-
-        if area == .unstaged {
-            Button(role: .destructive) {
-                pendingDiscard = change
-            } label: {
-                Label("Discard Changes", systemImage: "arrow.uturn.backward")
-            }
-            .disabled(!canDiscard || model.isBusy)
-        }
-
-        Button(role: .destructive) {
-            Task { await model.trash(change) }
-        } label: {
-            Label("Move to Trash", systemImage: "trash")
-        }
-        .disabled(!fileExists || model.isBusy)
-    }
-
-    private func copyToPasteboard(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
     }
 
     private func openDiff(_ change: GitChange, area: GitChange.Area) {
@@ -883,6 +723,216 @@ private struct ConventionalCommitPrefix {
         let trailing = suffix[suffix.index(after: closingParenthesis)...]
         return !scope.isEmpty && (trailing.isEmpty || trailing == "!")
     }
+}
+
+/// The staged, changed and untracked rows. It takes plain values instead of observing the
+/// model, and compares only those, so it re-renders when the changes do and not otherwise.
+private struct GitChangesList: View, Equatable {
+    let rootURL: URL
+    /// Only for actions. Reading published state from it here would go unobserved.
+    let model: GitSidebarModel
+    let changes: [GitChange]
+    let isRepository: Bool
+    let isBusy: Bool
+    let hasLoaded: Bool
+    let hasError: Bool
+    let selectedDiff: GitDiffSelection?
+    let onOpenGuide: () -> Void
+    let onOpenFile: (URL) -> Void
+    let onOpenDiff: (GitChange, GitChange.Area) -> Void
+    let onDiscard: (GitChange) -> Void
+
+    static func == (lhs: GitChangesList, rhs: GitChangesList) -> Bool {
+        lhs.rootURL == rhs.rootURL && lhs.changes == rhs.changes && lhs.isRepository == rhs.isRepository &&
+            lhs.isBusy == rhs.isBusy && lhs.hasLoaded == rhs.hasLoaded && lhs.hasError == rhs.hasError &&
+            lhs.selectedDiff == rhs.selectedDiff
+    }
+
+    private static let rowSpacing: CGFloat = 2
+    private static let sectionSpacing: CGFloat = 12
+
+    var body: some View {
+        let snapshot = GitSnapshot(branch: "", changes: changes, commits: [], isRepository: isRepository)
+        let staged = snapshot.staged
+        let unstaged = snapshot.unstaged
+        let untracked = snapshot.untracked
+        // The topmost section carries the brief action, so it never claims a row of its own.
+        let leading = !staged.isEmpty ? "STAGED" : !unstaged.isEmpty ? "CHANGES" : "UNTRACKED"
+
+        ScrollViewReader { proxy in
+        ScrollView {
+            // Rows are direct children of the lazy stack. Wrapping a section in its own
+            // VStack builds every row up front, which stalls the UI on a diff of hundreds of files.
+            LazyVStack(alignment: .leading, spacing: Self.rowSpacing) {
+                if !staged.isEmpty {
+                    section(
+                        "STAGED",
+                        changes: staged,
+                        area: .staged,
+                        isLeading: leading == "STAGED",
+                        bulkActionTitle: "Unstage All",
+                        bulkAction: { [model] in
+                            Task { await model.unstageAll() }
+                        }
+                    )
+                }
+
+                if !unstaged.isEmpty {
+                    section("CHANGES", changes: unstaged, area: .unstaged, isLeading: leading == "CHANGES")
+                }
+
+                if !untracked.isEmpty {
+                    section("UNTRACKED", changes: untracked, area: .unstaged, isLeading: leading == "UNTRACKED")
+                }
+
+                if hasLoaded, changes.isEmpty, !hasError {
+                    Text("Working tree clean")
+                        .runeFont(size: 11)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 24)
+                }
+            }
+            .padding(.horizontal, WorkspaceMetrics.columnInset - 4)
+            .padding(.top, 4)
+        }
+        .overlay { QuietProgressView(isActive: !hasLoaded) }
+        .onChange(of: selectedDiffID) { _, selected in
+            if let selected { proxy.scrollTo(selected) }
+        }
+        }
+    }
+
+    private var selectedDiffID: String? {
+        guard let selectedDiff else { return nil }
+        return selectedDiff.area == .staged ? selectedDiff.change.stagedRowID : selectedDiff.change.unstagedRowID
+    }
+
+    @ViewBuilder
+    private func section(
+        _ title: String,
+        changes: [GitChange],
+        area: GitChange.Area,
+        isLeading: Bool,
+        bulkActionTitle: String? = nil,
+        bulkAction: (() -> Void)? = nil
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+            Text("\(changes.count)")
+                .foregroundStyle(.tertiary)
+            Spacer(minLength: 4)
+            if isLeading {
+                Button(action: onOpenGuide) {
+                    HStack(spacing: 3) {
+                        Text("Brief")
+                        Image(systemName: "sparkles")
+                    }
+                }
+                .buttonStyle(GitSectionActionStyle())
+                .disabled(!isRepository)
+                .help("Open the change brief")
+            }
+            if let bulkActionTitle, let bulkAction {
+                Button(bulkActionTitle, action: bulkAction)
+                    .buttonStyle(GitSectionActionStyle())
+                    .disabled(isBusy)
+            }
+        }
+        .sidebarSectionLabel()
+        .padding(.trailing, 1)
+        .frame(height: 18)
+        .padding(.top, isLeading ? 0 : Self.sectionSpacing - Self.rowSpacing)
+
+        // The row ID is the ForEach identity, not an `.id()` modifier, so that scrolling
+        // to the selected diff can reach a row the lazy stack has not built yet.
+        ForEach(changes, id: area == .staged ? \.stagedRowID : \.unstagedRowID) { change in
+            GitChangeRow(
+                change: change,
+                area: area,
+                isDisabled: isBusy,
+                onOpen: {
+                    onOpenDiff(change, area)
+                },
+                onToggle: { [model] in
+                    Task {
+                        switch area {
+                        case .staged:
+                            await model.unstage(change)
+                        case .unstaged:
+                            await model.stage(change)
+                        }
+                    }
+                }
+            )
+            .background {
+                if selectedDiff?.change.path == change.path && selectedDiff?.area == area {
+                    RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius).fill(Color.accentColor.opacity(0.16))
+                }
+            }
+            .contextMenu {
+                changeContextMenu(for: change, area: area)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func changeContextMenu(for change: GitChange, area: GitChange.Area) -> some View {
+        let fileURL = rootURL.appending(path: change.path).standardizedFileURL
+        let fileExists = FileManager.default.fileExists(atPath: fileURL.path)
+        let canDiscard = change.unstagedState != .untracked || fileExists
+
+        Button {
+            onOpenFile(fileURL)
+        } label: {
+            Label("Preview File", systemImage: "eye")
+        }
+        .disabled(!fileExists)
+
+        Button {
+            onOpenDiff(change, area)
+        } label: {
+            Label("Preview Diff", systemImage: "doc.text.magnifyingglass")
+        }
+
+        Divider()
+
+        Button("Copy Path") {
+            copyToPasteboard(fileURL.path)
+        }
+
+        Button("Copy Relative Path") {
+            copyToPasteboard(change.path)
+        }
+
+        Divider()
+
+        if area == .unstaged {
+            Button(role: .destructive) {
+                onDiscard(change)
+            } label: {
+                Label("Discard Changes", systemImage: "arrow.uturn.backward")
+            }
+            .disabled(!canDiscard || isBusy)
+        }
+
+        Button(role: .destructive) { [model] in
+            Task { await model.trash(change) }
+        } label: {
+            Label("Move to Trash", systemImage: "trash")
+        }
+        .disabled(!fileExists || isBusy)
+    }
+
+    private func copyToPasteboard(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+}
+
+private extension GitChange {
+    var stagedRowID: String { "staged:" + path }
+    var unstagedRowID: String { "unstaged:" + path }
 }
 
 private struct GitChangeRow: View {
