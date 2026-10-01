@@ -37,6 +37,41 @@ struct MarkdownPreview: View {
     }
 }
 
+/// Markdown drawn inline, without its own scroll view, for short text such as a comment.
+/// Parsed on first use and cached, so a list of comments lays out once without popping in.
+struct MarkdownContent: View {
+    let blocks: [MarkdownBlock]
+
+    private final class Box { let blocks: [MarkdownBlock]; init(_ blocks: [MarkdownBlock]) { self.blocks = blocks } }
+    private static let cache: NSCache<NSString, Box> = {
+        let cache = NSCache<NSString, Box>()
+        cache.countLimit = 500
+        return cache
+    }()
+
+    init(text: String) {
+        if let cached = Self.cache.object(forKey: text as NSString) {
+            blocks = cached.blocks
+        } else {
+            blocks = MarkdownDocument.blocks(from: text)
+            Self.cache.setObject(Box(blocks), forKey: text as NSString)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(blocks) { block in
+                MarkdownBlockView(block: block)
+            }
+        }
+        .textSelection(.enabled)
+        .environment(\.openURL, OpenURLAction { url in
+            guard ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") else { return .discarded }
+            return .systemAction
+        })
+    }
+}
+
 nonisolated struct MarkdownBlock: Identifiable, Sendable {
     enum Kind: Sendable {
         case heading(Int)

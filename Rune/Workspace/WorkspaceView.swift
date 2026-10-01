@@ -42,6 +42,7 @@ struct WorkspaceView: View {
     @State private var recentWorkspaces: [WorkspaceIdentity] = []
     @State private var paletteBranches: [String] = []
     @State private var paletteBranchTask: Task<Void, Never>?
+    @State private var palettePanels: [PanelDefinition] = []
     // Held without observing: only the drawer redraws as the query and results change,
     // not the whole workspace on every keystroke.
     @State private var search = ProjectSearchModel()
@@ -296,6 +297,7 @@ struct WorkspaceView: View {
                                 projects: recentWorkspaces,
                                 branches: paletteBranches,
                                 currentBranch: repository.snapshot.branch,
+                                panels: palettePanels,
                                 guide: guide,
                                 onSelectGuide: { scope in
                                     guide.scope = scope
@@ -316,7 +318,8 @@ struct WorkspaceView: View {
                                     isCommandPalettePresented = false
                                     guard name != repository.snapshot.branch, !repository.isBusy else { return }
                                     Task { await repository.switchBranch(name, create: false) }
-                                }
+                                },
+                                onOpenPanel: showPanel
                             )
                         } else if isBranchPickerPresented {
                             BranchPickerView(rootURL: directoryURL, onClose: { isBranchPickerPresented = false })
@@ -427,6 +430,8 @@ struct WorkspaceView: View {
         dismissPalettes()
         if shouldPresent {
             recentWorkspaces = RecentWorkspaces.load()
+            // A handful of small files: read them now so an edited panel shows its latest version.
+            palettePanels = PanelLibrary.load(project: directoryURL)
             loadPaletteBranches()
         }
         isCommandPalettePresented = shouldPresent
@@ -488,6 +493,10 @@ struct WorkspaceView: View {
         case .showWelcome: openWindow(id: "onboarding")
         case .checkForUpdates: updater.controller.updater.checkForUpdates()
         case .openProject: presentProjects()
+        // With no panels yet, show where they go.
+        case .openPanel:
+            try? FileManager.default.createDirectory(at: PanelDefinition.directory, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(PanelDefinition.directory)
         // The palette lists terminals itself rather than handing this back.
         case .switchTerminal: break
         case .switchBranch:
@@ -576,6 +585,15 @@ struct WorkspaceView: View {
         )
     }
 
+    private func showPanel(_ panel: PanelDefinition) {
+        dismissPalettes()
+        drawerCleanupTask?.cancel()
+        withAnimation(.snappy(duration: 0.22)) {
+            openDrawer = .panel(panel)
+            isDrawerVisible = true
+        }
+    }
+
     private func showCommit(_ commit: GitCommit) {
         drawerCleanupTask?.cancel()
         withAnimation(.snappy(duration: 0.22)) {
@@ -609,6 +627,9 @@ struct WorkspaceView: View {
             EmptyView()
         case let .commit(commit):
             GitCommitDrawer(rootURL: rootURL, commit: commit, onClose: closeDrawer)
+        case let .panel(panel):
+            PanelDrawer(definition: panel, rootURL: rootURL, onEditFile: open, onClose: closeDrawer)
+                .id(panel.fileURL)
         }
     }
 
@@ -855,6 +876,7 @@ private enum WorkspaceDrawer {
     case searchMatch(ProjectSearchMatch)
     case diff(GitChange, GitChange.Area)
     case commit(GitCommit)
+    case panel(PanelDefinition)
 }
 
 private struct WorkspacePlaceholder: View {
