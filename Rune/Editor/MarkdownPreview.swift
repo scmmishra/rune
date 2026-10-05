@@ -201,6 +201,10 @@ private struct MarkdownBlockView: View {
 
 private struct MarkdownCodeBlock: View {
     let code: String
+    @State private var isHovered = false
+    @State private var copied = false
+
+    private static let copiedDuration: Duration = .seconds(1.5)
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -217,6 +221,32 @@ private struct MarkdownCodeBlock: View {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .stroke(Color.primary.opacity(0.11), lineWidth: 1)
         }
+        .overlay(alignment: .topTrailing) {
+            Button(action: copy) {
+                Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(WorkspaceButtonStyle())
+            .help("Copy code")
+            .padding(4)
+            .opacity(isHovered || copied ? 1 : 0)
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+        }
+        .onHover { isHovered = $0 }
+        // Blocks leave the lazy stack while scrolling; a task tied to the view stops with it.
+        .task(id: copied) {
+            guard copied else { return }
+            try? await Task.sleep(for: Self.copiedDuration)
+            copied = false
+        }
+    }
+
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(code, forType: .string)
+        copied = true
     }
 }
 
