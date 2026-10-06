@@ -110,7 +110,8 @@ struct TerminalDrawer: View {
                         .accessibilityAction(named: "Rename terminal", beginRenaming)
                 }
                 TerminalStatusDot(session: session)
-                    .opacity(headerEmphasis)
+                    // A waiting pane's dot is the one thing in a muted header that must show.
+                    .opacity(session.needsAttention ? 1 : headerEmphasis)
                 if session.savedCommandID != nil {
                     Text(session.commandStatus).runeFont(size: 11).foregroundStyle(.secondary)
                 } else if session.hasExited {

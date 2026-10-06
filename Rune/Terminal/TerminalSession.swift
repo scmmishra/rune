@@ -235,6 +235,9 @@ final class TerminalSessions: ObservableObject {
     private let workingDirectory: URL?
     private var nextNumber = 1
     private var commandObservations: [UUID: AnyCancellable] = [:]
+    /// A tab shows that any of its panes is waiting, so the tab row has to hear about panes
+    /// it is not otherwise watching.
+    private var attentionObservations: [UUID: AnyCancellable] = [:]
     private var isShuttingDown = false
     private var primaryRestartedAt: ContinuousClock.Instant?
     private static let minimumPrimaryLifetime: Duration = .seconds(5)
@@ -283,6 +286,18 @@ final class TerminalSessions: ObservableObject {
     /// Where a ⌘-clicked link goes. Applied to every session, new ones included.
     var onOpenLink: ((TerminalLink) -> Void)? {
         didSet { all.forEach(routeLinks) }
+    }
+
+    /// The pane of a tab that is waiting for you, if any.
+    func waitingPane(in tab: TerminalTab) -> TerminalSession? {
+        tab.paneIDs.lazy.compactMap { self.session($0) }.first(where: \.needsAttention)
+    }
+
+    private func observeAttention(_ session: TerminalSession) {
+        attentionObservations[session.id] = session.$needsAttention
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
     private func routeLinks(_ session: TerminalSession) {
@@ -336,6 +351,7 @@ final class TerminalSessions: ObservableObject {
         navigation = TerminalNavigation(primaryID: primary.id)
         tabs = [TerminalTab(id: primary.id, paneID: primary.id)]
         routeLinks(primary)
+        observeAttention(primary)
         observePrimaryExit()
     }
 
@@ -363,6 +379,7 @@ final class TerminalSessions: ObservableObject {
                                   detectsAgent: false, id: id)
         primary.customName = customName
         routeLinks(primary)
+        observeAttention(primary)
         observePrimaryExit()
     }
 
@@ -383,6 +400,7 @@ final class TerminalSessions: ObservableObject {
             self.remove(session)
         }
         routeLinks(session)
+        observeAttention(session)
         return session
     }
 
@@ -407,6 +425,7 @@ final class TerminalSessions: ObservableObject {
         guard session.id != primary.id else { return }
         session.stop()
         commandObservations.removeValue(forKey: session.id)
+        attentionObservations.removeValue(forKey: session.id)
         if let index = tabs.firstIndex(where: { $0.contains(session.id) }) {
             // A tab's last pane takes the tab with it; any other gives its room to a sibling.
             if !tabs[index].close(session.id) {

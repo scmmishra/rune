@@ -26,6 +26,8 @@ struct TerminalTabBar: View {
                         if let session = sessions.session(tab.focusedID) {
                             TerminalTabItem(
                                 session: session,
+                                // A pane waiting in the background speaks for the whole tab.
+                                status: sessions.waitingPane(in: tab) ?? session,
                                 tiles: tab.tileIDs.compactMap { sessions.session($0) },
                                 isPrimary: session.id == sessions.primary.id,
                                 isSplit: tab.isSplit,
@@ -69,6 +71,8 @@ private struct TerminalTabItem: View {
     // Fixed-width tabs keep the row on a steady rhythm; the bar scrolls once they overflow.
     private static let width: CGFloat = 140
     @ObservedObject var session: TerminalSession
+    /// The pane whose state the tab's dot shows: one that is waiting, else the focused one.
+    @ObservedObject var status: TerminalSession
     /// The tab's panes as tiles, the focused one first.
     let tiles: [TerminalSession]
     let isPrimary: Bool
@@ -102,10 +106,10 @@ private struct TerminalTabItem: View {
                     .foregroundStyle(isSelected || isPeeked ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                 Spacer(minLength: 0)
                 // The status dot shares the trailing slot with the close button and shortcut badge.
-                TerminalStatusDot(session: session)
+                TerminalStatusDot(session: status)
                     .frame(width: 16, height: 16)
-                    .opacity(showsClose || showsShortcut ? 0 : isSelected ? 1 : 0.55)
-                    .saturation(isSelected ? 1 : 0.7)
+                    .opacity(showsClose || showsShortcut ? 0 : isSelected || status.needsAttention ? 1 : 0.55)
+                    .saturation(isSelected || status.needsAttention ? 1 : 0.7)
             }
             .padding(.leading, 6)
             .padding(.trailing, 6)
@@ -114,7 +118,7 @@ private struct TerminalTabItem: View {
         }
         .buttonStyle(.plain)
         // One nudge when a terminal asks for you, and the dot stays amber until you visit.
-        .phaseAnimator([0, -3, 3, -2, 0], trigger: session.attentionCount) { view, offset in
+        .phaseAnimator([0, -3, 3, -2, 0], trigger: status.attentionCount) { view, offset in
             view.offset(x: reduceMotion ? 0 : offset)
         } animation: { _ in .spring(duration: 0.09) }
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
