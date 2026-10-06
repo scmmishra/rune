@@ -76,34 +76,10 @@ nonisolated struct TerminalNavigation {
         if activeID == id { focus(panelID) }
     }
 
-    /// Move focus between the panel and the peek column without changing either.
-    mutating func focusNextSurface() {
-        guard !peekedIDs.isEmpty else { return }
-        if activeID == panelID {
-            focus(peekedIDs.first ?? panelID)
-        } else if let index = peekedIDs.firstIndex(of: activeID) {
-            focus(index + 1 < peekedIDs.count ? peekedIDs[index + 1] : panelID)
-        } else {
-            focus(panelID)
-        }
-    }
-
-    /// Move the keyboard to a session without changing where it is shown.
-    mutating func focusOnly(_ id: UUID) {
-        guard sessionIDs.contains(id), activeID != id else { return }
-        focus(id)
-    }
-
     private mutating func focus(_ id: UUID) {
         activeID = id
         recentIDs.removeAll { $0 == id }
         recentIDs.insert(id, at: 0)
-    }
-
-    /// The most recently used session that is not already on screen, for ⌘D.
-    func recentPeekCandidate(among candidates: Set<UUID>) -> UUID? {
-        let hidden = { (id: UUID) in candidates.contains(id) && id != self.panelID && !self.peekedIDs.contains(id) }
-        return recentIDs.first(where: hidden) ?? sessionIDs.first(where: hidden)
     }
 
     func neighbor(in direction: Int) -> UUID {

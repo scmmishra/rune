@@ -10,8 +10,7 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
     let onNewTerminal: () -> Void
     let onSelectTerminal: (Int) -> Void
     let onPeekTerminal: (Int) -> Void
-    /// Returns true when a peek opened and is waiting for Return, false when ⌘D closed one.
-    let onPeekRecent: () -> Bool
+    let onPaneAction: (TerminalPaneAction) -> Void
     /// Holding ⌘-number: returns true when it opened a peek that releasing should close.
     let onHoldPeek: (Int) -> Bool
     let onEndHoldPeek: () -> Void
@@ -97,7 +96,7 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
                 }
 
                 // ⌘Return opens an armed peek as well, so Enter works while Command is
-                // still held after ⌘D or a ⌘-number hold.
+                // still held after a ⌘-number hold.
                 if event.type == .keyDown, event.keyCode == 36 || event.keyCode == 76,
                    modifiersOnly(event) == .command, self.armedHere || self.parent.isPeekArmed {
                     self.disarm()
@@ -124,10 +123,19 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
                 }
 
                 if let shortcut = TerminalShortcut.matching(event) {
+                    let isTerminalFocused = window.firstResponder is RuneTerminalView
                     // Preserve hunk navigation in previews, but never let a
-                    // visible preview take terminal cycling from a focused shell.
-                    if case .cycle = shortcut, self.parent.preservesPreviewHunkShortcuts,
-                       !(window.firstResponder is RuneTerminalView) { return event }
+                    // visible preview take pane navigation from a focused shell.
+                    if case .pane(.focus) = shortcut, self.parent.preservesPreviewHunkShortcuts,
+                       !isTerminalFocused { return event }
+                    // ⌘W closes a pane only from a terminal. Anywhere else it stays the
+                    // window's own Close.
+                    if shortcut == .pane(.close), !isTerminalFocused { return event }
+                    // Holding ⌃⌘-arrow keeps moving the divider.
+                    if event.type == .keyDown, event.isARepeat, case let .pane(action) = shortcut,
+                       case .resize = action {
+                        self.parent.onPaneAction(action)
+                    }
                     if event.type == .keyDown, !event.isARepeat {
                         switch shortcut {
                         case let .select(number): self.beginHold(number: number, keyCode: event.keyCode)
@@ -136,7 +144,7 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
                             self.armedHere = true
                         case let .cycle(direction): self.parent.onCycleTerminal(direction)
                         case .togglePrimary: self.parent.onTogglePrimaryTerminal()
-                        case .peekRecent: self.armedHere = self.parent.onPeekRecent()
+                        case let .pane(action): self.parent.onPaneAction(action)
                         }
                     }
                     return nil

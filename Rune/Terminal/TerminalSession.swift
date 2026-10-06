@@ -43,7 +43,7 @@ final class TerminalSession: ObservableObject, Identifiable {
     }
 
     @Published var processStatus: TerminalProcessStatus?
-    /// Ports, memory and CPU, sampled only while the terminal is open beside the panel.
+    /// Ports, memory and CPU, sampled only while the terminal's header is on screen.
     /// A separate object so its once-a-second updates redraw the readout alone.
     let resources = TerminalResourceMeter()
     /// The foreground process of every shell session, the primary included. Unlike
@@ -227,7 +227,11 @@ final class TerminalSession: ObservableObject, Identifiable {
 final class TerminalSessions: ObservableObject {
     @Published private(set) var primary: TerminalSession
     @Published private(set) var supporting: [TerminalSession] = []
+    /// Navigation tracks tabs and saved commands, never single panes: a tab is known by
+    /// its own ID and a command by its session's.
     @Published private(set) var navigation: TerminalNavigation
+    /// The primary's tab first, then tabs in the order they were opened.
+    @Published private(set) var tabs: [TerminalTab]
     private let workingDirectory: URL?
     private var nextNumber = 1
     private var commandObservations: [UUID: AnyCancellable] = [:]
@@ -236,14 +240,43 @@ final class TerminalSessions: ObservableObject {
     private static let minimumPrimaryLifetime: Duration = .seconds(5)
 
     var all: [TerminalSession] { [primary] + supporting }
-    /// Sessions that get a tab. A saved command is a process you watch, not a shell
-    /// you work in, so it only ever appears beside the panel.
-    var tabbed: [TerminalSession] { all.filter { $0.savedCommandID == nil } }
-    var active: TerminalSession { all.first { $0.id == navigation.activeID } ?? primary }
-    /// The session filling the terminal panel.
-    var panel: TerminalSession { all.first { $0.id == navigation.panelID } ?? primary }
-    /// Sessions open beside the panel, in column order.
-    var peeked: [TerminalSession] { navigation.peekedIDs.compactMap { id in all.first { $0.id == id } } }
+    /// Where the keyboard is: the focused pane of a tab, or a saved command beside the panel.
+    var active: TerminalSession { shown(for: navigation.activeID) ?? primary }
+    /// The tab filling the terminal panel.
+    var panelTab: TerminalTab { tabs.first { $0.id == navigation.panelID } ?? tabs[0] }
+    /// The focused pane of the tab filling the terminal panel.
+    var panel: TerminalSession { session(panelTab.focusedID) ?? primary }
+    /// Sessions open beside the panel, in column order. A peeked tab shows its focused pane.
+    var peeked: [TerminalSession] { navigation.peekedIDs.compactMap(shown) }
+    /// Once any tab is split, the tab row and every pane are cards of their own.
+    var isSplit: Bool { tabs.contains(where: \.isSplit) }
+
+    func session(_ id: UUID) -> TerminalSession? { all.first { $0.id == id } }
+    func tab(containing session: TerminalSession) -> TerminalTab? { tabs.first { $0.contains(session.id) } }
+    func isPeeked(_ session: TerminalSession) -> Bool {
+        navigation.isPeeked(navigationID(for: session)) && shown(for: navigationID(for: session)) === session
+    }
+
+    /// The tab a pane belongs to, or the session itself for a saved command.
+    private func navigationID(for session: TerminalSession) -> UUID { tab(containing: session)?.id ?? session.id }
+
+    /// The session a navigation ID puts on screen.
+    private func shown(for navigationID: UUID) -> TerminalSession? {
+        session(tabs.first { $0.id == navigationID }?.focusedID ?? navigationID)
+    }
+
+    /// The session ⌘-number and the tab at `index` stand for.
+    func tabSession(at index: Int) -> TerminalSession? {
+        tabs.indices.contains(index) ? session(tabs[index].focusedID) : nil
+    }
+
+    /// The session a navigation target resolves to, such as the next tab when cycling.
+    func session(forNavigation id: UUID) -> TerminalSession? { shown(for: id) }
+
+    private func updateTab(containing session: TerminalSession, _ change: (inout TerminalTab) -> Void) {
+        guard let index = tabs.firstIndex(where: { $0.contains(session.id) }) else { return }
+        change(&tabs[index])
+    }
     /// A peek column past this many slots leaves each terminal too short to read.
     static let peekLimit = 3
 
@@ -262,23 +295,46 @@ final class TerminalSessions: ObservableObject {
 
     func peek(_ session: TerminalSession) {
         session.clearAttention()
-        navigation.peek(session.id, limit: Self.peekLimit)
+        navigation.peek(navigationID(for: session), limit: Self.peekLimit)
     }
 
-    func closePeek(_ session: TerminalSession) { navigation.closePeek(session.id) }
+    func closePeek(_ session: TerminalSession) { navigation.closePeek(navigationID(for: session)) }
 
-    func focus(_ session: TerminalSession) {
-        session.clearAttention()
-        navigation.focusOnly(session.id)
+    /// Splits the focused pane of the panel's tab. The new shell starts in the project
+    /// root and takes the focus.
+    func split(_ axis: TerminalSplitAxis) -> TerminalSession {
+        let tabID = panelTab.id
+        let session = makeShell()
+        supporting.append(session)
+        if let index = tabs.firstIndex(where: { $0.id == tabID }) { tabs[index].split(axis, adding: session.id) }
+        // A split made while the keyboard is in a peek still lands in the panel.
+        navigation.select(tabID)
+        return session
     }
 
-    func focusNextSurface() { navigation.focusNextSurface() }
+    func toggleZoom() { updatePanelTab { $0.toggleZoom() } }
+    func resizePane(dx: Int, dy: Int) { updatePanelTab { $0.resize(dx: dx, dy: dy) } }
+    func equalizePanes() { updatePanelTab { $0.equalize() } }
+    func setRatio(_ ratio: CGFloat, ofSplit splitID: UUID) { updatePanelTab { $0.setRatio(ratio, ofSplit: splitID) } }
+
+    /// Moves the focus to the pane beside the focused one, if there is one that way.
+    func focusPane(dx: Int, dy: Int) {
+        guard navigation.activeID == panelTab.id, let id = panelTab.neighbor(dx: dx, dy: dy),
+              let session = session(id) else { return }
+        select(session)
+    }
+
+    private func updatePanelTab(_ change: (inout TerminalTab) -> Void) {
+        guard let index = tabs.firstIndex(where: { $0.id == navigation.panelID }) else { return }
+        change(&tabs[index])
+    }
 
     init(workingDirectory: URL?) {
         self.workingDirectory = workingDirectory
         let primary = TerminalSession(name: "Main Terminal", workingDirectory: workingDirectory, detectsAgent: false)
         self.primary = primary
         navigation = TerminalNavigation(primaryID: primary.id)
+        tabs = [TerminalTab(id: primary.id, paneID: primary.id)]
         routeLinks(primary)
         observePrimaryExit()
     }
@@ -310,16 +366,23 @@ final class TerminalSessions: ObservableObject {
         observePrimaryExit()
     }
 
+    /// Opens a shell in a tab of its own.
     func add() -> TerminalSession {
+        let session = makeShell()
+        navigation.add(session.id)
+        tabs.append(TerminalTab(id: session.id, paneID: session.id))
+        supporting.append(session)
+        return session
+    }
+
+    private func makeShell() -> TerminalSession {
         let session = TerminalSession(name: "Terminal \(nextNumber)", workingDirectory: workingDirectory)
         nextNumber += 1
         session.onExit = { [weak self, weak session] in
             guard let self, let session else { return }
             self.remove(session)
         }
-        navigation.add(session.id)
         routeLinks(session)
-        supporting.append(session)
         return session
     }
 
@@ -333,16 +396,26 @@ final class TerminalSessions: ObservableObject {
         return session
     }
 
+    /// Brings a session's tab into the panel and gives the session the keyboard.
     func select(_ session: TerminalSession) {
         session.clearAttention()
-        navigation.select(session.id)
+        updateTab(containing: session) { $0.focus(session.id) }
+        navigation.select(navigationID(for: session))
     }
 
     func remove(_ session: TerminalSession) {
         guard session.id != primary.id else { return }
         session.stop()
         commandObservations.removeValue(forKey: session.id)
-        navigation.remove(session.id)
+        if let index = tabs.firstIndex(where: { $0.contains(session.id) }) {
+            // A tab's last pane takes the tab with it; any other gives its room to a sibling.
+            if !tabs[index].close(session.id) {
+                navigation.remove(tabs[index].id)
+                tabs.remove(at: index)
+            }
+        } else {
+            navigation.remove(session.id)
+        }
         supporting.removeAll { $0.id == session.id }
     }
 
@@ -352,6 +425,12 @@ final class TerminalSessions: ObservableObject {
             // automatic respawn cooldown used for failing shell startup.
             if session === primary { restartPrimary() } else { remove(session) }
         }
+    }
+
+    /// Closes every pane of a session's tab. The main terminal's tab stays, with a fresh shell.
+    func terminateTab(containing session: TerminalSession) async {
+        let panes = tab(containing: session)?.paneIDs.compactMap { self.session($0) } ?? [session]
+        for pane in panes { await terminate(pane) }
     }
 
     func monitorProcesses() async {
@@ -386,9 +465,11 @@ final class TerminalSessions: ObservableObject {
         let now = ContinuousClock.now
         if let lastResourceSample, now - lastResourceSample < .seconds(1) { return }
         lastResourceSample = now
-        let shown = Set(navigation.peekedIDs)
-        for session in supporting where !shown.contains(session.id) { session.resources.reset() }
-        let roots = supporting.filter { shown.contains($0.id) && !$0.hasExited }
+        // Only terminals whose header is on screen: peeks, and the panes of a split layout.
+        let tab = panelTab
+        let shown = Set(peeked.map(\.id)).union(isSplit ? tab.paneIDs.filter(tab.shows) : [])
+        for session in all where !shown.contains(session.id) { session.resources.reset() }
+        let roots = all.filter { shown.contains($0.id) && !$0.hasExited }
             .compactMap { session in session.rootProcess.map { (session, $0) } }
         guard !roots.isEmpty else { return }
         let targets = roots.map(\.1)

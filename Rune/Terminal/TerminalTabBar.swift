@@ -20,20 +20,26 @@ struct TerminalTabBar: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 HStack(spacing: 4) {
-                    ForEach(Array(sessions.tabbed.enumerated()), id: \.element.id) { index, session in
-                        TerminalTab(
-                            session: session,
-                            isPrimary: session.id == sessions.primary.id,
-                            shortcutNumber: index < 9 ? index + 1 : nil,
-                            showsShortcut: showsShortcuts,
-                            isSelected: session.id == sessions.navigation.panelID,
-                            isPeeked: sessions.navigation.isPeeked(session.id),
-                            isFocused: session.id == sessions.navigation.activeID,
-                            onSelect: { onSelect(session) },
-                            onPeek: { onPeek(session) },
-                            onClose: { onClose(session) }
-                        )
-                        .id(session.id)
+                    ForEach(Array(sessions.tabs.enumerated()), id: \.element.id) { index, tab in
+                        // A tab stands for its focused pane: its name, its status, and where
+                        // selecting or peeking the tab goes.
+                        if let session = sessions.session(tab.focusedID) {
+                            TerminalTabItem(
+                                session: session,
+                                tiles: tab.tileIDs.compactMap { sessions.session($0) },
+                                isPrimary: session.id == sessions.primary.id,
+                                isSplit: tab.isSplit,
+                                shortcutNumber: index < 9 ? index + 1 : nil,
+                                showsShortcut: showsShortcuts,
+                                isSelected: tab.id == sessions.navigation.panelID,
+                                isPeeked: sessions.navigation.isPeeked(tab.id),
+                                isFocused: tab.id == sessions.navigation.activeID,
+                                onSelect: { onSelect(session) },
+                                onPeek: { onPeek(session) },
+                                onClose: { onClose(session) }
+                            )
+                            .id(tab.id)
+                        }
                     }
                     Button(action: onAdd) {
                         Image(systemName: "plus")
@@ -59,11 +65,14 @@ struct TerminalTabBar: View {
     }
 }
 
-private struct TerminalTab: View {
+private struct TerminalTabItem: View {
     // Fixed-width tabs keep the row on a steady rhythm; the bar scrolls once they overflow.
     private static let width: CGFloat = 140
     @ObservedObject var session: TerminalSession
+    /// The tab's panes as tiles, the focused one first.
+    let tiles: [TerminalSession]
     let isPrimary: Bool
+    let isSplit: Bool
     let shortcutNumber: Int?
     let showsShortcut: Bool
     let isSelected: Bool
@@ -85,7 +94,7 @@ private struct TerminalTab: View {
     var body: some View {
         Button(action: { NSEvent.modifierFlags.contains(.option) ? onPeek() : onSelect() }) {
             HStack(spacing: 6) {
-                TerminalProcessTileView(session: session)
+                TerminalProcessTileStack(sessions: tiles)
                 Text(title)
                     .runeFont(size: 11, weight: isSelected || isPeeked ? .medium : .regular)
                     .lineLimit(1)
@@ -134,7 +143,7 @@ private struct TerminalTab: View {
             .allowsHitTesting(showsClose)
             .accessibilityLabel("Close \(title)")
             .accessibilityHidden(!showsClose)
-            .help("Close terminal…")
+            .help(isSplit ? "Close tab…" : "Close terminal…")
             .disabled(session.isStopping)
         }
         .background {
@@ -162,20 +171,16 @@ private struct TerminalTab: View {
                     isRenaming = true
                 }
             }
-            Button("Close Terminal…", role: .destructive) { isConfirmingClose = true }
+            Button(isSplit ? "Close Tab…" : "Close Terminal…", role: .destructive) { isConfirmingClose = true }
                 .disabled(session.isStopping)
         }
-        .onChange(of: session.needsCloseConfirmation) {
-            if session.needsCloseConfirmation {
-                isConfirmingClose = true
-                session.needsCloseConfirmation = false
-            }
-        }
-        .alert("Close \(title)?", isPresented: $isConfirmingClose) {
+        .alert(isSplit ? "Close this tab?" : "Close \(title)?", isPresented: $isConfirmingClose) {
             Button("Cancel", role: .cancel) {}
-            Button("Close Terminal", role: .destructive, action: onClose)
+            Button(isSplit ? "Close Tab" : "Close Terminal", role: .destructive, action: onClose)
         } message: {
-            Text(isPrimary
+            Text(isSplit
+                 ? "This ends the running processes in every pane of the tab."
+                 : isPrimary
                  ? "This ends the terminal’s running processes and starts a fresh terminal in its place."
                  : "This ends the terminal’s running processes. Saved commands remain available in the sidebar.")
         }

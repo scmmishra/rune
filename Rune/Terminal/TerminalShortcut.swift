@@ -5,31 +5,59 @@ nonisolated enum TerminalShortcut: Equatable {
     case peek(Int)
     case cycle(Int)
     case togglePrimary
-    /// ⌘D: show the last-used terminal beside the panel, or close that peek again.
-    case peekRecent
+    /// Splits, zoom, and moving between panes: Ghostty's own bindings for them.
+    case pane(TerminalPaneAction)
+
+    // Key codes, not characters: Shift and Control change what a key types.
+    private enum Key {
+        static let w: UInt16 = 13
+        static let d: UInt16 = 2
+        static let equals: UInt16 = 24
+        static let leftBracket: UInt16 = 33
+        static let rightBracket: UInt16 = 30
+        static let returnKey: UInt16 = 36
+        static let left: UInt16 = 123
+        static let right: UInt16 = 124
+        static let down: UInt16 = 125
+        static let up: UInt16 = 126
+    }
+
+    private static func arrow(_ keyCode: UInt16) -> (dx: Int, dy: Int)? {
+        switch keyCode {
+        case Key.left: (-1, 0)
+        case Key.right: (1, 0)
+        case Key.up: (0, -1)
+        case Key.down: (0, 1)
+        default: nil
+        }
+    }
 
     static func matching(_ event: NSEvent) -> Self? {
         let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if modifiers == .command, event.charactersIgnoringModifiers == "`" {
             return .togglePrimary
         }
-        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "d" {
-            return .peekRecent
+        switch (event.keyCode, modifiers) {
+        case (Key.d, .command): return .pane(.split(.columns))
+        case (Key.d, [.command, .shift]): return .pane(.split(.rows))
+        case (Key.returnKey, [.command, .shift]): return .pane(.zoom)
+        case (Key.w, .command): return .pane(.close)
+        case (Key.equals, [.command, .control]): return .pane(.equalize)
+        case (Key.leftBracket, [.command, .shift]): return .cycle(-1)
+        case (Key.rightBracket, [.command, .shift]): return .cycle(1)
+        default: break
+        }
+        // Arrow events also carry function/numeric-pad flags. Only compare the
+        // shortcut modifiers, and route before Ghostty's native key equivalents.
+        if let arrow = arrow(event.keyCode) {
+            if modifiers == [.command, .option] { return .pane(.focus(dx: arrow.dx, dy: arrow.dy)) }
+            if modifiers == [.command, .control] { return .pane(.resize(dx: arrow.dx, dy: arrow.dy)) }
         }
         if let characters = event.charactersIgnoringModifiers,
            let number = Int(characters), (1...9).contains(number) {
             // Command opens a session in the panel; adding Option opens it beside.
             if modifiers == .command { return .select(number) }
             if modifiers == [.command, .option] { return .peek(number) }
-        }
-        // Arrow events also carry function/numeric-pad flags. Only compare the
-        // shortcut modifiers, and route before Ghostty's native key equivalents.
-        if modifiers == [.command, .option] {
-            switch event.keyCode {
-            case 126: return .cycle(-1)
-            case 125: return .cycle(1)
-            default: break
-            }
         }
         return nil
     }

@@ -148,9 +148,32 @@ struct TerminalProcessIconView: View {
     }
 }
 
+/// A tab's panes as tiles: the first in front with its mark, the rest peeking out behind it.
+struct TerminalProcessTileStack: View {
+    let sessions: [TerminalSession]
+    /// How far each tile behind shows past the one before it.
+    private static let step: CGFloat = 5
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            ForEach(Array(sessions.enumerated().reversed()), id: \.element.id) { index, session in
+                TerminalProcessTileView(session: session, showsMark: index == 0)
+                    // Tiles further back are a little shorter, so the stack reads as receding.
+                    .scaleEffect(y: 1 - CGFloat(index) * 0.1)
+                    .offset(x: CGFloat(index) * Self.step)
+            }
+        }
+        .frame(width: TerminalProcessTileView.size.width + CGFloat(max(0, sessions.count - 1)) * Self.step,
+               alignment: .leading)
+        .animation(.easeOut(duration: 0.12), value: sessions.map(\.id))
+    }
+}
+
 /// The process's mark on a tile in its brand colors, for tabs.
 struct TerminalProcessTileView: View {
+    static let size = CGSize(width: 20, height: 16)
     @ObservedObject var session: TerminalSession
+    var showsMark = true
 
     /// A soft highlight across the top half, as if lit from above.
     private static let glare = LinearGradient(
@@ -178,7 +201,8 @@ struct TerminalProcessTileView: View {
             .scaledToFit()
             .frame(width: 10, height: 10)
             .foregroundStyle(Color(hex: tile.foreground))
-            .frame(width: 20, height: 16)
+            .opacity(showsMark ? 1 : 0)
+            .frame(width: Self.size.width, height: Self.size.height)
             .background(Color(hex: tile.background), in: shape)
             // Glass is drawn with gradients, not `glassEffect`: a tab bar of live glass layers
             // would cost more than these small static tiles are worth.

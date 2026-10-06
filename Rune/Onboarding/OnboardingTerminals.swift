@@ -12,14 +12,13 @@ final class OnboardingTerminalDemo: ObservableObject {
     }
 
     enum Lesson: String, CaseIterable, Identifiable {
-        case select, holdPeek, peekLast, open, cycle, main
+        case select, holdPeek, open, cycle, main
         var id: Self { self }
 
         var title: String {
             switch self {
             case .select: "Switch terminal"
             case .holdPeek: "Peek while held"
-            case .peekLast: "Peek last terminal"
             case .open: "Open the peek"
             case .cycle: "Previous / next"
             case .main: "Back to main"
@@ -30,9 +29,8 @@ final class OnboardingTerminalDemo: ObservableObject {
             switch self {
             case .select: ["⌘", "1–4"]
             case .holdPeek: ["hold", "⌘", "2–4"]
-            case .peekLast: ["⌘", "D"]
             case .open: ["↩"]
-            case .cycle: ["⌥", "⌘", "↑↓"]
+            case .cycle: ["⇧", "⌘", "[ ]"]
             case .main: ["⌘", "`"]
             }
         }
@@ -53,7 +51,6 @@ final class OnboardingTerminalDemo: ObservableObject {
     private var hold = TerminalHoldGesture()
     private var holdTask: Task<Void, Never>?
     private var holdPeekID: UUID?
-    private var recentPeekID: UUID?
     /// The fresh peek Return would open, as in the workspace.
     private var armedID: UUID?
     /// Two previews fit the illustration; the app allows more.
@@ -62,9 +59,6 @@ final class OnboardingTerminalDemo: ObservableObject {
     init() {
         navigation = TerminalNavigation(primaryID: sessions[0].id)
         sessions.dropFirst().forEach { navigation.add($0.id) }
-        // Start with some history so ⌘D has a "last terminal" to show.
-        navigation.select(sessions[1].id)
-        navigation.select(sessions[0].id)
     }
 
     func session(_ id: UUID) -> Session? { sessions.first { $0.id == id } }
@@ -104,6 +98,9 @@ final class OnboardingTerminalDemo: ObservableObject {
             return true
         }
         guard let shortcut = TerminalShortcut.matching(event) else { return false }
+        // The sketch has one pane per terminal, so pane shortcuts keep their usual meaning,
+        // such as ⌘W closing this window.
+        if case .pane = shortcut { return false }
         guard !event.isARepeat else { return true }
         switch shortcut {
         case let .select(number):
@@ -126,8 +123,8 @@ final class OnboardingTerminalDemo: ObservableObject {
             let id = navigation.toggleTarget
             animate { navigation.select(id) }
             learn(.main, id == navigation.primaryID ? "Back to Main" : "Back to \(name(id))")
-        case .peekRecent:
-            peekRecent()
+        case .pane:
+            break
         }
         return true
     }
@@ -155,20 +152,6 @@ final class OnboardingTerminalDemo: ObservableObject {
                 caption = "Let go, so \(name(id)) slid away"
             }
         }
-    }
-
-    private func peekRecent() {
-        if let id = recentPeekID, navigation.isPeeked(id) {
-            recentPeekID = nil
-            close(id)
-            learn(.peekLast, "⌘D again put \(name(id)) away")
-            return
-        }
-        let shells = Set(sessions.dropFirst().map(\.id))
-        guard let id = navigation.recentPeekCandidate(among: shells) else { return }
-        peek(id)
-        recentPeekID = id
-        learn(.peekLast, "Peeking \(name(id)), the last terminal you used · ↩ opens it")
     }
 
     private func peek(_ id: UUID) {
@@ -213,10 +196,12 @@ struct OnboardingTerminalsStep: View {
             }
             OnboardingWorkspaceSketch(demo: demo)
             Grid(horizontalSpacing: 18, verticalSpacing: 8) {
-                ForEach(0 ..< 3, id: \.self) { row in
+                let lessons = OnboardingTerminalDemo.Lesson.allCases
+                ForEach(Array(stride(from: 0, to: lessons.count, by: 2)), id: \.self) { index in
                     GridRow {
-                        lesson(OnboardingTerminalDemo.Lesson.allCases[row * 2])
-                        lesson(OnboardingTerminalDemo.Lesson.allCases[row * 2 + 1])
+                        lesson(lessons[index])
+                        // An odd number of lessons leaves the last row half empty.
+                        if lessons.indices.contains(index + 1) { lesson(lessons[index + 1]) }
                     }
                 }
             }
