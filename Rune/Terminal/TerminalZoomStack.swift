@@ -18,19 +18,28 @@ struct TerminalZoomStack: View {
             Color.clear
             // The card furthest back is drawn first, highest and narrowest.
             ForEach((1...max(1, depth)).reversed(), id: \.self) { level in
-                let shape = RoundedRectangle(cornerRadius: WorkspaceMetrics.panelRadius, style: .continuous)
-                shape.fill(TerminalSurface.color)
-                    // Cards further back sit in more shade.
-                    .overlay { shape.fill(Color.black.opacity(0.08 * Double(level))) }
-                    .overlay { shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1) }
-                    // Only the top edge shows; the rest lies under the zoomed pane.
-                    .frame(width: max(0, area.width - Self.inset * 2 * CGFloat(level)),
-                           height: Self.peek + WorkspaceMetrics.panelRadius * 2)
-                    .offset(x: area.minX + Self.inset * CGFloat(level),
-                            y: area.minY + Self.peek * CGFloat(depth - level))
+                card(level)
             }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    // Spelled out step by step: as one expression, Xcode 26.6 cannot type-check it in time.
+    private func card(_ level: Int) -> some View {
+        let shape = RoundedRectangle(cornerRadius: WorkspaceMetrics.panelRadius, style: .continuous)
+        let sideInset: CGFloat = Self.inset * CGFloat(level)
+        let width: CGFloat = max(0, area.width - sideInset * 2)
+        // Only the top edge shows; the rest lies under the zoomed pane.
+        let height: CGFloat = Self.peek + WorkspaceMetrics.panelRadius * 2
+        let x: CGFloat = area.minX + sideInset
+        let y: CGFloat = area.minY + Self.peek * CGFloat(depth - level)
+        // Cards further back sit in more shade.
+        let shade: Double = 0.08 * Double(level)
+        return shape.fill(TerminalSurface.color)
+            .overlay { shape.fill(Color.black.opacity(shade)) }
+            .overlay { shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1) }
+            .frame(width: width, height: height)
+            .offset(x: x, y: y)
     }
 }
