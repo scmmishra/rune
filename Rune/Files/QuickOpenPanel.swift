@@ -3,7 +3,7 @@ import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
     case searchProject, reload, openProject, switchBranch, switchTerminal, newTerminal, closeTerminal, hideTerminal,
-         changeGuide, showWelcome, checkForUpdates
+         changeGuide, saveLayoutToRepository, showWelcome, checkForUpdates
 
     var id: Self { self }
 
@@ -13,7 +13,8 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .openProject: "⇧⌘O"
         case .switchBranch: "⇧⌘B"
         case .newTerminal: "⇧⌘T"
-        case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .showWelcome, .checkForUpdates: nil
+        case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .saveLayoutToRepository,
+             .showWelcome, .checkForUpdates: nil
         }
     }
 
@@ -28,6 +29,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .newTerminal: "New Terminal"
         case .closeTerminal: "Close Terminal"
         case .hideTerminal: "Hide Secondary Terminal"
+        case .saveLayoutToRepository: "Save Workspace Layout to Repository"
         case .showWelcome: "Show Welcome…"
         case .checkForUpdates: "Check for Updates…"
         }
@@ -43,6 +45,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .newTerminal: "plus.rectangle"
         case .closeTerminal: "xmark.rectangle"
         case .hideTerminal: "rectangle.righthalf.inset.filled"
+        case .saveLayoutToRepository: "square.and.arrow.down"
         case .showWelcome: "hand.wave"
         case .checkForUpdates: "arrow.down.circle"
         }

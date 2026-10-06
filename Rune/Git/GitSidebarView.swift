@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+/// The Changes card: the branch, what changed, and the commit form.
 struct GitSidebarView: View {
     let rootURL: URL
     let topInset: CGFloat
@@ -8,7 +9,6 @@ struct GitSidebarView: View {
     let onSelectionsChange: ([GitDiffSelection]) -> Void
     let onOpenFile: (URL) -> Void
     let onOpenDiff: (GitDiffSelection, [GitDiffSelection]) -> Void
-    let onOpenCommit: (GitCommit) -> Void
     let onOpenGuide: () -> Void
 
     @EnvironmentObject private var model: GitSidebarModel
@@ -26,7 +26,6 @@ struct GitSidebarView: View {
         onSelectionsChange: @escaping ([GitDiffSelection]) -> Void,
         onOpenFile: @escaping (URL) -> Void,
         onOpenDiff: @escaping (GitDiffSelection, [GitDiffSelection]) -> Void,
-        onOpenCommit: @escaping (GitCommit) -> Void,
         onOpenGuide: @escaping () -> Void
     ) {
         self.rootURL = rootURL
@@ -36,28 +35,17 @@ struct GitSidebarView: View {
         self.onSelectionsChange = onSelectionsChange
         self.onOpenFile = onOpenFile
         self.onOpenDiff = onOpenDiff
-        self.onOpenCommit = onOpenCommit
         self.onOpenGuide = onOpenGuide
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            VStack(spacing: WorkspaceMetrics.gap) {
-                // A fixed share of the column, so staging or committing never moves history.
-                VStack(spacing: 0) {
-                    header
-                    changesList
-                    commitArea
-                }
-                .frame(height: geometry.size.height * 2 / 3)
-                .workspaceGroup()
-
-                historyArea
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .workspaceGroup()
-            }
-            .padding(.horizontal, WorkspaceMetrics.panelGap)
+        VStack(spacing: 0) {
+            header
+            changesList
+            commitArea
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .workspaceGroup()
         .onChange(of: diffSelections, initial: true) { onSelectionsChange(diffSelections) }
         .animation(.easeOut(duration: 0.16), value: isComposingCommit)
         .onChange(of: isCommitFocused) {
@@ -255,7 +243,15 @@ struct GitSidebarView: View {
         }
     }
 
-    private var historyArea: some View {
+}
+
+/// The History card: the branch's commits.
+struct GitHistoryCard: View {
+    let rootURL: URL
+    let onOpenCommit: (GitCommit) -> Void
+    @EnvironmentObject private var model: GitSidebarModel
+
+    var body: some View {
         GitHistoryView(
             commits: model.snapshot.commits,
             isRepository: model.snapshot.isRepository,
@@ -265,6 +261,8 @@ struct GitSidebarView: View {
             onOpenCommitInGitHub: openCommitInGitHub
         )
         .equatable()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .workspaceGroup()
     }
 
     private func openCommitInGitHub(_ commit: GitCommit) {

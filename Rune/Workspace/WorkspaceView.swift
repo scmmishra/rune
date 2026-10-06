@@ -9,6 +9,7 @@ struct WorkspaceView: View {
     @StateObject private var projectCommands: ProjectCommands
     @StateObject private var repository: GitSidebarModel
     @StateObject private var guide: ChangeGuideModel
+    @StateObject private var layoutModel: WorkspaceLayoutModel
 
     init(directoryURL: URL?, onOpenProject: @escaping () -> Void, onOpenWorkspace: @escaping (WorkspaceIdentity) -> Void) {
         _guide = StateObject(wrappedValue: ChangeGuideModel(rootURL: directoryURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)))
@@ -17,6 +18,7 @@ struct WorkspaceView: View {
         _projectCommands = StateObject(wrappedValue: ProjectCommands(
             root: directoryURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath), sessions: sessions
         ))
+        _layoutModel = StateObject(wrappedValue: WorkspaceLayoutModel(root: directoryURL))
         self.directoryURL = directoryURL
         self.onOpenProject = onOpenProject
         self.onOpenWorkspace = onOpenWorkspace
@@ -50,8 +52,6 @@ struct WorkspaceView: View {
     @State private var isDrawerVisible = false
     @State private var drawerCleanupTask: Task<Void, Never>?
     @State private var diffSelections: [GitDiffSelection] = []
-    @State private var fileSidebarWidth: CGFloat = 240
-    @State private var gitSidebarWidth: CGFloat = 240
     @State private var dragStart: CGFloat?
     @State private var isCommandHeld = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -86,48 +86,38 @@ struct WorkspaceView: View {
     var body: some View {
         GeometryReader { geometry in
             let drawerWidth = min(max(480, geometry.size.width * 0.62), geometry.size.width * 0.78)
-            let gitWidth = min(gitSidebarWidth, geometry.size.width * 0.28)
-            let fileWidth = min(fileSidebarWidth, geometry.size.width * 0.28)
-            let terminalWidth = max(0, geometry.size.width - fileWidth - gitWidth - 8)
             let headerTop = WorkspaceMetrics.titleBarClearance(isFullScreen: isWindowFullScreen)
             let isSplit = terminals.isSplit
-            // Where panes go: the terminal column below the tab row.
+            // The window as a row of card columns around the hub.
+            let arrangement = layoutModel.layout.arrangement(
+                in: geometry.size.width, margin: WorkspaceMetrics.outerMargin, gap: WorkspaceMetrics.gap
+            )
+            let contentHeight = max(0, geometry.size.height - headerTop - WorkspaceMetrics.outerMargin)
+            // Where panes go: the hub below the tab row.
             let paneTop = headerTop + TerminalTabBar.height + (isSplit ? WorkspaceMetrics.gap : 0)
-            let paneWidth = max(0, terminalWidth - WorkspaceMetrics.panelGap * 2)
-            // A lone pane sits inside the panel's card, one point in so the card's border shows.
+            // A lone pane sits inside the hub's card, one point in so the card's border shows.
             let paneInset: CGFloat = isSplit ? 0 : 1
-            let paneLeft = geometry.size.width - gitWidth - 4 - WorkspaceMetrics.panelGap - paneWidth
             let paneHeight = max(0, geometry.size.height - paneTop - WorkspaceMetrics.outerMargin - paneInset)
-            let paneArea = CGRect(x: paneLeft + paneInset, y: paneTop,
-                                  width: max(0, paneWidth - paneInset * 2), height: paneHeight)
+            let paneArea = CGRect(x: arrangement.hubX + paneInset, y: paneTop,
+                                  width: max(0, arrangement.hubWidth - paneInset * 2), height: paneHeight)
             ZStack(alignment: .trailing) {
-                HStack(spacing: 0) {
-                    Group {
-                        if let directoryURL {
-                            FileTreeView(terminals: {
-                                ProjectCommandsView(model: projectCommands, sessions: terminals, onSelect: showTerminal)
-                            }, rootURL: directoryURL, onOpenFile: open, onOpenProjects: presentProjects,
-                               topInset: 0)
-                        } else {
-                            Color.clear
+                ZStack(alignment: .topLeading) {
+                    Color.clear
+                    if let directoryURL {
+                        ForEach(arrangement.slots) { slot in
+                            cardColumn(slot, rootURL: directoryURL)
+                                .frame(width: slot.width, height: contentHeight)
+                                .offset(x: slot.x, y: headerTop)
+                            columnDivider(slot, availableWidth: geometry.size.width)
+                                .frame(height: contentHeight)
+                                .offset(x: slot.side == .leading ? slot.x + slot.width + 2 : slot.x - 6, y: headerTop)
                         }
                     }
-                    .overlay(alignment: .bottomLeading) {
-                        WorkspaceHelpButton(isPresented: $isHelpPresented)
-                            .padding(12)
-                    }
-                    .padding(.top, headerTop)
-                    .padding(.bottom, WorkspaceMetrics.outerMargin)
-                    .padding(.leading, WorkspaceMetrics.outerMargin)
-                    .padding(.trailing, WorkspaceMetrics.panelGap)
-                    .frame(width: fileWidth)
-                    sidebarDivider(width: $fileSidebarWidth, direction: 1, availableWidth: geometry.size.width)
-
                     Group {
                         if directoryURL != nil {
-                            // Only the tab row lives here. Every terminal is placed over this
-                            // column further down, so a pane keeps one identity however the
-                            // tab is split.
+                            // Only the tab row lives here. Every terminal is placed over the
+                            // hub further down, so a pane keeps one identity however the tab
+                            // is split.
                             VStack(spacing: isSplit ? WorkspaceMetrics.gap : 0) {
                                 TerminalTabBar(sessions: terminals, showsShortcuts: isCommandHeld,
                                                onSelect: showTerminal, onPeek: peekTerminal,
@@ -142,46 +132,10 @@ struct WorkspaceView: View {
                         }
                     }
                     .workspacePanel(isVisible: directoryURL != nil && !isSplit, fill: TerminalSurface.color)
-                    .padding(.top, headerTop)
-                    .padding(.bottom, WorkspaceMetrics.outerMargin)
-                    .padding(.horizontal, WorkspaceMetrics.panelGap)
-                    .frame(minWidth: min(480, geometry.size.width * 0.40))
-
-                    sidebarDivider(width: $gitSidebarWidth, direction: -1, availableWidth: geometry.size.width)
-                    Group {
-                        if let directoryURL {
-                            VStack(spacing: WorkspaceMetrics.gap) {
-                            GitSidebarView(
-                                rootURL: directoryURL,
-                                topInset: 0,
-                                onOpenBranches: {
-                                    presentBranches()
-                                },
-                                selectedDiff: selectedDiff,
-                                onSelectionsChange: { diffSelections = $0 },
-                                onOpenFile: open,
-                                onOpenDiff: { selection, selections in
-                                    showDiff(selection, among: selections)
-                                },
-                                onOpenCommit: { commit in
-                                    showCommit(commit)
-                                },
-                                onOpenGuide: showGuide
-                            )
-                            .id(directoryURL)
-                            AgentUsagePanel(sessions: terminals)
-                                .padding(.horizontal, WorkspaceMetrics.panelGap)
-                            }
-                        } else {
-                            Color.clear
-                        }
-                    }
-                    .padding(.top, headerTop)
-                    .padding(.bottom, WorkspaceMetrics.outerMargin)
-                    .padding(.leading, WorkspaceMetrics.panelGap)
-                    .padding(.trailing, WorkspaceMetrics.outerMargin)
-                    .frame(width: gitWidth)
+                    .frame(width: arrangement.hubWidth, height: contentHeight)
+                    .offset(x: arrangement.hubX, y: headerTop)
                 }
+                .frame(width: geometry.size.width, height: geometry.size.height)
 
                 if isGuideOpen && isDrawerVisible && !isPalettePresented {
                     Color.clear
@@ -365,14 +319,6 @@ struct WorkspaceView: View {
             drawerCleanupTask?.cancel()
             terminals.stopAll()
         }
-        .onAppear {
-            guard let directoryURL else { return }
-            let widths = UserDefaults.standard.array(forKey: "sidebarWidths:" + directoryURL.path) as? [Double]
-            if let widths, widths.count == 2 {
-                fileSidebarWidth = max(160, widths[0])
-                gitSidebarWidth = max(160, widths[1])
-            }
-        }
         .ignoresSafeArea(.container, edges: .top)
         .focusedSceneValue(\.presentQuickOpen) {
             presentQuickOpen()
@@ -450,6 +396,12 @@ struct WorkspaceView: View {
         case .searchProject: showSearch()
         case .reload: repository.reload()
         case .hideTerminal: hideTerminalDrawer()
+        case .saveLayoutToRepository:
+            do {
+                try layoutModel.saveToRepository()
+            } catch {
+                NSAlert(error: error).runModal()
+            }
         case .newTerminal: addTerminal()
         // The tab bar owns the confirmation, so ask there rather than ending processes here.
         case .closeTerminal: terminals.panel.needsCloseConfirmation = true
@@ -877,8 +829,55 @@ struct WorkspaceView: View {
         openDrawer = .diff(selection.change, selection.area)
     }
 
-    private func sidebarDivider(width: Binding<CGFloat>, direction: CGFloat, availableWidth: CGFloat) -> some View {
-        Color.clear
+    /// One column of cards, stacked by each card's own sizing.
+    private func cardColumn(_ slot: WorkspaceArrangement.Slot, rootURL: URL) -> some View {
+        WorkspaceCardColumnLayout(spacing: WorkspaceMetrics.gap) {
+            ForEach(slot.cards, id: \.self) { id in
+                card(id, rootURL: rootURL)
+                    .workspaceCardSizing(WorkspaceCardDefinition.definition(for: id)?.sizing ?? .fixed)
+            }
+        }
+    }
+
+    /// What each card draws. The layout only knows a card by its ID and sizing.
+    @ViewBuilder
+    private func card(_ id: WorkspaceCardID, rootURL: URL) -> some View {
+        switch id {
+        case .commands:
+            ProjectCommandsView(model: projectCommands, sessions: terminals, onSelect: showTerminal)
+        case .files:
+            FileTreeView(rootURL: rootURL, onOpenFile: open, onOpenProjects: presentProjects)
+                .overlay(alignment: .bottomLeading) {
+                    WorkspaceHelpButton(isPresented: $isHelpPresented)
+                        .padding(12)
+                }
+        case .changes:
+            GitSidebarView(
+                rootURL: rootURL,
+                topInset: 0,
+                onOpenBranches: presentBranches,
+                selectedDiff: selectedDiff,
+                onSelectionsChange: { diffSelections = $0 },
+                onOpenFile: open,
+                onOpenDiff: { selection, selections in showDiff(selection, among: selections) },
+                onOpenGuide: showGuide
+            )
+            .id(rootURL)
+        case .history:
+            GitHistoryCard(rootURL: rootURL, onOpenCommit: showCommit)
+                .id(rootURL)
+        case .usage:
+            AgentUsagePanel(sessions: terminals)
+        default:
+            EmptyView()
+        }
+    }
+
+    /// The handle in the gap between a card column and its neighbour toward the hub.
+    private func columnDivider(_ slot: WorkspaceArrangement.Slot, availableWidth: CGFloat) -> some View {
+        // Dragging toward the hub widens the column, whichever side it is on.
+        let direction: CGFloat = slot.side == .leading ? 1 : -1
+        return Color.clear
             .frame(width: 4)
             .contentShape(Rectangle())
             .onHover { isHovered in
@@ -893,15 +892,17 @@ struct WorkspaceView: View {
             // Source: https://developer.apple.com/documentation/swiftui/draggesture/coordinatespace
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in
-                    if dragStart == nil { dragStart = width.wrappedValue }
-                    width.wrappedValue = min(max(160, (dragStart ?? width.wrappedValue) + direction * value.translation.width), availableWidth * 0.28)
+                    if dragStart == nil { dragStart = slot.width }
+                    let width = (dragStart ?? slot.width) + direction * value.translation.width
+                    layoutModel.update { $0.setWidth(width, ofColumn: slot.id) }
                 }
                 .onEnded { _ in
                     dragStart = nil
-                    guard let directoryURL else { return }
-                    UserDefaults.standard.set([Double(fileSidebarWidth), Double(gitSidebarWidth)], forKey: "sidebarWidths:" + directoryURL.path)
+                    // Keep the width the window allowed, not one dragged past its limit.
+                    layoutModel.update { $0.setWidth(slot.width, ofColumn: slot.id) }
+                    layoutModel.save()
                 })
-            .accessibilityLabel("Resize sidebar")
+            .accessibilityLabel("Resize column")
     }
 }
 

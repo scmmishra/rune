@@ -1,31 +1,24 @@
 import AppKit
 import SwiftUI
 
-struct FileTreeView<Terminals: View>: View {
-    @ViewBuilder let terminals: () -> Terminals
+/// The Files card: the project's tree, headed by the project itself.
+struct FileTreeView: View {
     let rootURL: URL
     let onOpenFile: (URL) -> Void
     let onOpenProjects: () -> Void
-    let topInset: CGFloat
     @State private var isTitleHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WorkspaceMetrics.gap) {
-            terminals()
+        VStack(alignment: .leading, spacing: 0) {
+            projectSwitcher
 
-            // The tree is the project's root, so its card is headed by the project itself.
-            VStack(alignment: .leading, spacing: 0) {
-                projectSwitcher
-
-                FileTreeContents(rootURL: rootURL, onOpenFile: onOpenFile)
-                    .id(rootURL)
-                    .safeAreaPadding(.bottom, 48)
-                    .padding(.horizontal, 4)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .workspaceGroup()
+            FileTreeContents(rootURL: rootURL, onOpenFile: onOpenFile)
+                .id(rootURL)
+                .safeAreaPadding(.bottom, 48)
+                .padding(.horizontal, 4)
         }
-        .padding(.top, topInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .workspaceGroup()
     }
 
     private var projectSwitcher: some View {
