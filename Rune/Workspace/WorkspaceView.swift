@@ -53,6 +53,11 @@ struct WorkspaceView: View {
     @State private var drawerCleanupTask: Task<Void, Never>?
     @State private var diffSelections: [GitDiffSelection] = []
     @State private var dragStart: CGFloat?
+    // Held without observing: the pointer's every move redraws the drag overlay alone.
+    @State private var cardDrag = WorkspaceCardDrag()
+    /// The card being dragged. Set once at each end of a drag, to lift the cards above the
+    /// terminals while one of them is carried across.
+    @State private var draggedCard: WorkspaceCardID?
     @State private var isCommandHeld = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openWindow) private var openWindow
@@ -103,11 +108,8 @@ struct WorkspaceView: View {
             ZStack(alignment: .trailing) {
                 ZStack(alignment: .topLeading) {
                     Color.clear
-                    if let directoryURL {
+                    if directoryURL != nil {
                         ForEach(arrangement.slots) { slot in
-                            cardColumn(slot, rootURL: directoryURL)
-                                .frame(width: slot.width, height: contentHeight)
-                                .offset(x: slot.x, y: headerTop)
                             columnDivider(slot, availableWidth: geometry.size.width)
                                 .frame(height: contentHeight)
                                 .offset(x: slot.side == .leading ? slot.x + slot.width + 2 : slot.x - 6, y: headerTop)
@@ -136,6 +138,17 @@ struct WorkspaceView: View {
                     .offset(x: arrangement.hubX, y: headerTop)
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
+
+                if let directoryURL {
+                    cards(arrangement, rootURL: directoryURL, top: headerTop, height: contentHeight,
+                          size: geometry.size)
+                        // A carried card passes over the terminals, not under them.
+                        .zIndex(draggedCard == nil ? 0 : 1.1)
+                }
+
+                WorkspaceCardDragOverlay(drag: cardDrag)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .zIndex(1.2)
 
                 if isGuideOpen && isDrawerVisible && !isPalettePresented {
                     Color.clear
@@ -258,6 +271,7 @@ struct WorkspaceView: View {
                 }
             }
             .clipped()
+            .coordinateSpace(.named(Self.workspaceSpace))
         }
         .background(WorkspaceChrome.color)
         .background { WindowFullScreenObserver(isFullScreen: $isWindowFullScreen) }
@@ -829,14 +843,68 @@ struct WorkspaceView: View {
         openDrawer = .diff(selection.change, selection.area)
     }
 
-    /// One column of cards, stacked by each card's own sizing.
-    private func cardColumn(_ slot: WorkspaceArrangement.Slot, rootURL: URL) -> some View {
-        WorkspaceCardColumnLayout(spacing: WorkspaceMetrics.gap) {
-            ForEach(slot.cards, id: \.self) { id in
+    private static let workspaceSpace = "workspace"
+    private static let cardMoveAnimation = Animation.snappy(duration: 0.22)
+
+    /// Every card, placed by column. One list for all columns, so a card that moves to
+    /// another column keeps its view and whatever it was holding, such as a commit draft.
+    private func cards(_ arrangement: WorkspaceArrangement, rootURL: URL, top: CGFloat, height: CGFloat,
+                       size: CGSize) -> some View {
+        WorkspaceCardsLayout(slots: arrangement.slots, top: top, height: height, spacing: WorkspaceMetrics.gap) {
+            ForEach(layoutModel.layout.cards, id: \.self) { id in
                 card(id, rootURL: rootURL)
-                    .workspaceCardSizing(WorkspaceCardDefinition.definition(for: id)?.sizing ?? .fixed)
+                    .modifier(WorkspaceDraggedCard(drag: cardDrag, id: id))
+                    // Measured outside the drag's offset, so this is the card's place in its
+                    // column, not where the pointer has carried it.
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.workspaceSpace)) } action: {
+                        cardDrag.cardFrames[id] = $0
+                    }
+                    .simultaneousGesture(cardDragGesture(id, arrangement: arrangement, top: top, height: height, size: size))
+                    .workspaceCard(id)
             }
         }
+        .frame(width: size.width, height: size.height)
+    }
+
+    /// Dragging a card by its header moves it. The gesture sits beside the header's own
+    /// buttons instead of over them, so a click still reaches them.
+    private func cardDragGesture(_ id: WorkspaceCardID, arrangement: WorkspaceArrangement, top: CGFloat,
+                                 height: CGFloat, size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .named(Self.workspaceSpace))
+            .onChanged { value in
+                if !cardDrag.isActive {
+                    // Only the header band starts a move; the rest of a card scrolls and selects.
+                    guard draggedCard == nil, let frame = cardDrag.cardFrames[id],
+                          value.startLocation.y - frame.minY <= WorkspaceMetrics.bandHeight else { return }
+                    draggedCard = id
+                    cardDrag.begin(id)
+                    NSCursor.closedHand.push()
+                }
+                guard cardDrag.card == id else { return }
+                cardDrag.move(by: value.translation, target: layoutModel.layout.dropTarget(
+                    for: id, at: value.location, arrangement: arrangement, cardFrames: cardDrag.cardFrames,
+                    top: top, height: height, width: size.width, gap: WorkspaceMetrics.gap
+                ))
+            }
+            .onEnded { _ in
+                guard cardDrag.card == id else { return }
+                NSCursor.pop()
+                // One animation carries the card from under the pointer to its new place, or
+                // back to where it came from.
+                var dropped = false
+                withAnimation(Self.cardMoveAnimation) {
+                    if let target = cardDrag.end() {
+                        layoutModel.update { $0.place(id, at: target.destination) }
+                        dropped = true
+                    }
+                }
+                if dropped { layoutModel.save() }
+                // The cards stay above the terminals until the card has settled.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(240))
+                    if !cardDrag.isActive { draggedCard = nil }
+                }
+            }
     }
 
     /// What each card draws. The layout only knows a card by its ID and sizing.

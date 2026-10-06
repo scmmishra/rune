@@ -1,3 +1,4 @@
+import Combine
 import CryptoKit
 import Foundation
 
@@ -24,10 +25,10 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
         trailing: [WorkspaceColumn(width: WorkspaceColumn.defaultWidth, cards: [.changes, .history, .usage])]
     )
 
-    enum Side: Sendable { case leading, trailing }
+    enum Side: Equatable, Sendable { case leading, trailing }
 
     /// Where a card can be put.
-    enum Destination: Sendable {
+    enum Destination: Equatable, Sendable {
         /// Into an existing column, before the card at `index`.
         case column(UUID, index: Int)
         /// Into a column of its own, before the column at `index` on that side of the hub.
@@ -167,6 +168,96 @@ nonisolated extension WorkspaceLayout {
             x += fitted(column) + gap
         }
         return WorkspaceArrangement(slots: slots, hubX: hubX, hubWidth: hubWidth, collapsed: collapsed)
+    }
+}
+
+/// Where a dragged card would land, and the line that shows it.
+nonisolated struct WorkspaceDropTarget: Equatable, Sendable {
+    let destination: WorkspaceLayout.Destination
+    let marker: CGRect
+}
+
+nonisolated extension WorkspaceLayout {
+    /// How close to a column's side edge a drop makes a new column beside it.
+    private static let edgeZone: CGFloat = 28
+    private static let markerThickness: CGFloat = 2
+
+    /// The drop a pointer position stands for. Nil when it would leave the card where it is.
+    ///
+    /// The middle of a column drops into it, between the cards nearest the pointer. A
+    /// column's side edges, either half of the hub, and the window's margins make a new column.
+    func dropTarget(for card: WorkspaceCardID, at point: CGPoint, arrangement: WorkspaceArrangement,
+                    cardFrames: [WorkspaceCardID: CGRect], top: CGFloat, height: CGFloat,
+                    width: CGFloat, gap: CGFloat) -> WorkspaceDropTarget? {
+        func newColumn(_ side: Side, _ index: Int, x: CGFloat) -> WorkspaceDropTarget? {
+            // A card alone in its column gains nothing from a new column beside that one.
+            let columns = side == .leading ? leading : trailing
+            if let own = columns.firstIndex(where: { $0.cards == [card] }), index == own || index == own + 1 { return nil }
+            let marker = CGRect(x: x - Self.markerThickness / 2, y: top, width: Self.markerThickness, height: height)
+            return WorkspaceDropTarget(destination: .newColumn(side, index: index), marker: marker)
+        }
+
+        if let slot = arrangement.slots.first(where: { point.x >= $0.x - gap / 2 && point.x < $0.x + $0.width + gap / 2 }) {
+            let columns = slot.side == .leading ? leading : trailing
+            guard let columnIndex = columns.firstIndex(where: { $0.id == slot.id }) else { return nil }
+            if point.x < slot.x + Self.edgeZone { return newColumn(slot.side, columnIndex, x: slot.x - gap / 2) }
+            if point.x > slot.x + slot.width - Self.edgeZone {
+                return newColumn(slot.side, columnIndex + 1, x: slot.x + slot.width + gap / 2)
+            }
+            // Into the column, before the first card whose middle is below the pointer.
+            let frames = slot.cards.map { cardFrames[$0] ?? .zero }
+            let index = frames.firstIndex { point.y < $0.midY } ?? slot.cards.count
+            if let own = slot.cards.firstIndex(of: card), index == own || index == own + 1 { return nil }
+            let y = index < frames.count ? frames[index].minY - gap / 2 : (frames.last?.maxY ?? top) + gap / 2
+            let marker = CGRect(x: slot.x, y: y - Self.markerThickness / 2, width: slot.width, height: Self.markerThickness)
+            return WorkspaceDropTarget(destination: .column(slot.id, index: index), marker: marker)
+        }
+        if point.x >= arrangement.hubX, point.x < arrangement.hubX + arrangement.hubWidth {
+            // Either half of the hub makes a column right beside it.
+            return point.x < arrangement.hubX + arrangement.hubWidth / 2
+                ? newColumn(.leading, leading.count, x: arrangement.hubX - gap / 2)
+                : newColumn(.trailing, 0, x: arrangement.hubX + arrangement.hubWidth + gap / 2)
+        }
+        return point.x < arrangement.hubX
+            ? newColumn(.leading, 0, x: gap / 2)
+            : newColumn(.trailing, trailing.count, x: width - gap / 2)
+    }
+}
+
+/// A card drag in progress. The workspace holds it without observing it, so the pointer's
+/// every move redraws only the dragged card and the overlay, not the whole window.
+@MainActor
+final class WorkspaceCardDrag: ObservableObject {
+    @Published private(set) var card: WorkspaceCardID?
+    /// How far the pointer has carried the card from where it was picked up.
+    @Published private(set) var translation = CGSize.zero
+    /// Where the card was picked up, which stays outlined until it is dropped.
+    @Published private(set) var origin: CGRect?
+    @Published private(set) var target: WorkspaceDropTarget?
+    /// Where each card sits in its column, kept current by the cards themselves.
+    var cardFrames: [WorkspaceCardID: CGRect] = [:]
+
+    var isActive: Bool { card != nil }
+
+    func begin(_ card: WorkspaceCardID) {
+        self.card = card
+        origin = cardFrames[card]
+    }
+
+    func move(by translation: CGSize, target: WorkspaceDropTarget?) {
+        self.translation = translation
+        if self.target != target { self.target = target }
+    }
+
+    /// Ends the drag and returns where the card was dropped, if anywhere.
+    func end() -> WorkspaceDropTarget? {
+        defer {
+            card = nil
+            translation = .zero
+            origin = nil
+            target = nil
+        }
+        return target
     }
 }
 

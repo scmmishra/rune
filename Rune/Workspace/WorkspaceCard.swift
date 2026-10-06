@@ -49,20 +49,28 @@ nonisolated struct WorkspaceCardDefinition: Identifiable, Sendable {
     static func definition(for id: WorkspaceCardID) -> WorkspaceCardDefinition? { byID[id] }
 }
 
-nonisolated private struct WorkspaceCardSizingKey: LayoutValueKey {
-    static let defaultValue = WorkspaceCardSizing.fixed
+nonisolated private struct WorkspaceCardIDKey: LayoutValueKey {
+    static let defaultValue: WorkspaceCardID? = nil
 }
 
 extension View {
-    func workspaceCardSizing(_ sizing: WorkspaceCardSizing) -> some View {
-        layoutValue(key: WorkspaceCardSizingKey.self, value: sizing)
+    /// Names the card for `WorkspaceCardsLayout`, which looks up its place and sizing by it.
+    func workspaceCard(_ id: WorkspaceCardID) -> some View {
+        layoutValue(key: WorkspaceCardIDKey.self, value: id)
     }
 }
 
-/// Stacks a column's cards with no gaps to fill: fixed cards take the height of their
-/// content, and fill cards share what is left. A column of only fixed cards leaves its
-/// spare room at the bottom, since stretching a fixed card would break its design.
-struct WorkspaceCardColumnLayout: Layout {
+/// Places every card of the workspace, column by column. One layout holds them all, so a
+/// card keeps its view, and its state, when it moves to another column.
+///
+/// Within a column there are no gaps to fill: fixed cards take the height of their content,
+/// and fill cards share what is left. A column of only fixed cards leaves its spare room at
+/// the bottom, since stretching a fixed card would break its design.
+struct WorkspaceCardsLayout: Layout {
+    var slots: [WorkspaceArrangement.Slot]
+    /// The band the columns occupy, in the layout's own coordinates.
+    var top: CGFloat
+    var height: CGFloat
     var spacing: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -70,19 +78,30 @@ struct WorkspaceCardColumnLayout: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let sizings = subviews.map { $0[WorkspaceCardSizingKey.self] }
-        let available = max(0, bounds.height - spacing * CGFloat(max(0, subviews.count - 1)))
-        // Measure fixed cards once per pass; that is the only measuring a resize costs.
-        let natural = zip(subviews, sizings).map { subview, sizing -> CGFloat? in
-            guard sizing == .fixed else { return nil }
-            return subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
+        var placed: Set<WorkspaceCardID> = []
+        for slot in slots {
+            let cards = slot.cards.compactMap { id in subviews.first { $0[WorkspaceCardIDKey.self] == id } }
+            let sizings = slot.cards.map { WorkspaceCardDefinition.definition(for: $0)?.sizing ?? .fixed }
+            guard cards.count == sizings.count else { continue }
+            let available = max(0, height - spacing * CGFloat(max(0, cards.count - 1)))
+            // Measure fixed cards once per pass; that is the only measuring a resize costs.
+            let natural = zip(cards, sizings).map { card, sizing -> CGFloat? in
+                guard sizing == .fixed else { return nil }
+                return card.sizeThatFits(ProposedViewSize(width: slot.width, height: nil)).height
+            }
+            let heights = Self.heights(sizings: sizings, natural: natural, available: available)
+            var y = bounds.minY + top
+            for (card, cardHeight) in zip(cards, heights) {
+                card.place(at: CGPoint(x: bounds.minX + slot.x, y: y),
+                           proposal: ProposedViewSize(width: slot.width, height: cardHeight))
+                y += cardHeight + spacing
+            }
+            placed.formUnion(slot.cards)
         }
-        let heights = Self.heights(sizings: sizings, natural: natural, available: available)
-        var y = bounds.minY
-        for (subview, height) in zip(subviews, heights) {
-            subview.place(at: CGPoint(x: bounds.minX, y: y),
-                          proposal: ProposedViewSize(width: bounds.width, height: height))
-            y += height + spacing
+        // Cards of a collapsed column stay alive off screen, ready for when it returns.
+        for subview in subviews {
+            guard let id = subview[WorkspaceCardIDKey.self], !placed.contains(id) else { continue }
+            subview.place(at: CGPoint(x: bounds.minX - 10_000, y: bounds.minY), proposal: .zero)
         }
     }
 
