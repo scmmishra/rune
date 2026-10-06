@@ -21,7 +21,8 @@ struct TerminalDrawer: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                TerminalStatusDot(session: session)
+                TerminalProcessIconView(session: session)
+                    .foregroundStyle(.secondary)
                 if isRenaming {
                     TextField("Terminal name", text: $draftName)
                         .textFieldStyle(.plain)
@@ -46,6 +47,7 @@ struct TerminalDrawer: View {
                         .accessibilityAction(named: "Focus terminal", onActivate)
                         .accessibilityAction(named: "Rename terminal", beginRenaming)
                 }
+                TerminalStatusDot(session: session)
                 if session.savedCommandID != nil {
                     Text(session.commandStatus).runeFont(size: 11).foregroundStyle(.secondary)
                 } else if session.hasExited {

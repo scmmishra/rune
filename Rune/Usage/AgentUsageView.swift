@@ -146,14 +146,6 @@ private struct AgentMark: View {
 
 private extension TerminalAgent {
     var shortName: String { self == .claude ? "Claude" : rawValue }
-
-    var markAsset: String? {
-        switch self {
-        case .claude: "agent-claude"
-        case .codex: "agent-codex"
-        default: nil
-        }
-    }
 }
 
 private extension AgentUsage.Window {

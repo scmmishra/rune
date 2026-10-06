@@ -79,24 +79,26 @@ private struct TerminalTab: View {
     @State private var draftName = ""
 
     private var title: String { isPrimary ? session.customName ?? "Terminal" : session.name }
-    // The close affordance only appears on hover, so the slot stays reserved to keep titles still.
+    // The close affordance replaces the status dot on hover, so titles stay still.
     private var showsClose: Bool { isHovered && !session.isStopping }
 
     var body: some View {
         Button(action: { NSEvent.modifierFlags.contains(.option) ? onPeek() : onSelect() }) {
             HStack(spacing: 6) {
-                TerminalStatusDot(session: session)
-                    .opacity(isSelected || isHovered ? 1 : 0.55)
-                    .saturation(isSelected || isHovered ? 1 : 0.7)
+                TerminalProcessTileView(session: session)
                 Text(title)
                     .runeFont(size: 11, weight: isSelected || isPeeked ? .medium : .regular)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundStyle(isSelected || isPeeked ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                 Spacer(minLength: 0)
-                Color.clear.frame(width: 16, height: 16)
+                // The status dot shares the trailing slot with the close button and shortcut badge.
+                TerminalStatusDot(session: session)
+                    .frame(width: 16, height: 16)
+                    .opacity(showsClose || showsShortcut ? 0 : isSelected ? 1 : 0.55)
+                    .saturation(isSelected ? 1 : 0.7)
             }
-            .padding(.leading, 10)
+            .padding(.leading, 6)
             .padding(.trailing, 6)
             .frame(width: Self.width, height: 24)
             .contentShape(Rectangle())

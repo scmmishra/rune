@@ -27,4 +27,12 @@ nonisolated enum TerminalAgent: String, CaseIterable {
         })
         return agents.count == 1 ? agents.first : nil
     }
+
+    var markAsset: String? {
+        switch self {
+        case .claude: "agent-claude"
+        case .codex: "agent-codex"
+        default: nil
+        }
+    }
 }

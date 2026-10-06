@@ -5,6 +5,7 @@ nonisolated struct TerminalProcessStatus: Equatable, Sendable {
     let name: String
     let isRunning: Bool
     let isIdle: Bool
+    var tile = TerminalProcessTile.shell
 }
 
 /// What a terminal's whole process tree is using at one moment.
@@ -34,7 +35,8 @@ nonisolated enum TerminalProcessMonitor {
             result[id] = TerminalProcessStatus(
                 name: agent?.rawValue ?? name,
                 isRunning: foreground.kp_proc.p_stat != SSTOP && !isIdle,
-                isIdle: isIdle
+                isIdle: isIdle,
+                tile: .process(name, arguments: processArguments, isShell: isShell)
             )
         }
         return result

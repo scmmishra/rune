@@ -72,6 +72,12 @@ final class TerminalSession: ObservableObject, Identifiable {
         return TerminalAgent.detect(in: foreground.name)
             ?? (Self.runtimes.contains(foreground.name) ? detectedAgent : nil)
     }
+
+    /// The mark and tile colors for what runs in the foreground.
+    var processTile: TerminalProcessTile {
+        if let agent { return .agent(agent) }
+        return foreground?.tile ?? .shell
+    }
     @Published private(set) var hasExited = false
     @Published var needsCloseConfirmation = false
 
