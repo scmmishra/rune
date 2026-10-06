@@ -210,7 +210,7 @@ struct ProjectCommandsView: View {
 
 /// Joins a group's processes to the group's dot: a short branch into each row, and a
 /// rounded corner on the last one where the trunk ends.
-private struct TreeConnector: Shape {
+nonisolated private struct TreeConnector: Shape {
     let isFirst: Bool
     let isLast: Bool
     /// Under the group dot: the row's 8pt inset plus half the 5pt dot.
