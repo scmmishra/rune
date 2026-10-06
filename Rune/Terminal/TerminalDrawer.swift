@@ -38,9 +38,11 @@ struct TerminalDrawer: View {
 
     static let controlsAnimation = Animation.snappy(duration: 0.16)
 
-    /// Among split panes, only the focused one shows its usage and controls at full
-    /// strength. The rest stay muted, hovered or not, so the eye goes to where typing lands.
+    /// Among split panes, only the focused one shows its header at full strength. The rest
+    /// stay muted, hovered or not, so the eye goes to where typing lands.
     private var headerEmphasis: Double { style == .card && !isFocused ? 0.5 : 1 }
+
+    private var headerHeight: CGFloat { style == .card ? 28 : 38 }
 
     private var showsHeader: Bool { style != .merged || session.savedCommandID != nil }
     private var showsPaneControls: Bool { style == .card && (isHovered || isFocused) }
@@ -79,6 +81,7 @@ struct TerminalDrawer: View {
             HStack(spacing: 8) {
                 TerminalProcessIconView(session: session)
                     .foregroundStyle(.secondary)
+                    .opacity(headerEmphasis)
                 if isRenaming {
                     TextField("Terminal name", text: $draftName)
                         .textFieldStyle(.plain)
@@ -92,7 +95,10 @@ struct TerminalDrawer: View {
                         }
                 } else {
                     Text(session.name)
-                        .runeFont(size: 12, weight: .medium)
+                        // A pane's title is a label, not a heading: smaller and lighter than
+                        // a preview's, and at full strength only where the keyboard is.
+                        .runeFont(size: style == .card ? 11 : 12, weight: style == .card ? .regular : .medium)
+                        .foregroundStyle(style == .card && !isFocused ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                         .lineLimit(1)
                         .onTapGesture(count: 2, perform: beginRenaming)
                         // Activate immediately without waiting for the rename gesture to fail.
@@ -104,6 +110,7 @@ struct TerminalDrawer: View {
                         .accessibilityAction(named: "Rename terminal", beginRenaming)
                 }
                 TerminalStatusDot(session: session)
+                    .opacity(headerEmphasis)
                 if session.savedCommandID != nil {
                     Text(session.commandStatus).runeFont(size: 11).foregroundStyle(.secondary)
                 } else if session.hasExited {
@@ -140,13 +147,14 @@ struct TerminalDrawer: View {
                 }
             }
             .padding(.horizontal, 12)
-            .frame(height: showsHeader ? 38 : 0)
+            .frame(height: showsHeader ? headerHeight : 0)
             .clipped()
             .opacity(showsHeader ? 1 : 0)
             .allowsHitTesting(showsHeader)
             .accessibilityHidden(!showsHeader)
 
-            if showsHeader { Divider() }
+            // A pane's header shares the terminal's surface, so no rule sets it apart.
+            if showsHeader, style != .card { Divider() }
             TerminalPane(
                 terminal: session.terminal,
                 // A preview keeps rendering live output; it just never takes focus,
