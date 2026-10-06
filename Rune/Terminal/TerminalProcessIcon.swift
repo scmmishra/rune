@@ -7,16 +7,8 @@ nonisolated struct TerminalProcessTile: Equatable, Sendable {
     let background: UInt32
     let foreground: UInt32
 
-    /// A shell without a mark of its own, and any terminal Rune knows nothing about yet.
+    /// Every shell, and any terminal Rune knows nothing about yet.
     static let shell = TerminalProcessTile(background: 0x1D2420, foreground: 0x5FD38D)
-
-    /// Shells keep the shell tile's colors and swap the glyph for their own mark.
-    private static let assetsByShell = [
-        "bash": "process-gnubash",
-        "fish": "process-fishshell",
-        "nu": "process-nushell",
-        "zsh": "process-zsh",
-    ]
 
     private static let assetsByProcess = [
         "bun": "process-bun",
@@ -105,11 +97,8 @@ nonisolated struct TerminalProcessTile: Equatable, Sendable {
     ]
 
     static func process(_ process: String, arguments: [String], isShell: Bool) -> TerminalProcessTile {
+        if isShell { return shell }
         let name = normalized(process)
-        if isShell {
-            return TerminalProcessTile(asset: assetsByShell[name], background: shell.background,
-                                       foreground: shell.foreground)
-        }
         // npm, pnpm and yarn run as a runtime with their script as argv[1], such as
         // `node …/npm-cli.js`. Other arguments are not inspected.
         if scriptRuntimes.contains(name), arguments.count > 1 {
