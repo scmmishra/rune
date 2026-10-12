@@ -878,3 +878,27 @@ private nonisolated enum GuideComparisonError: LocalizedError {
         switch self { case let .message(message): message }
     }
 }
+
+extension GitRepository {
+    /// HEAD's copy of a file as it would be checked out, or nil if HEAD does not have it.
+    nonisolated static func headContents(of fileURL: URL) -> Data? {
+        // `--filters` applies line-ending and smudge filters, so the result compares
+        // cleanly with the working file under `core.autocrlf` or Git LFS.
+        let result = runGit(["cat-file", "--filters", "HEAD:./" + fileURL.lastPathComponent],
+                            at: fileURL.deletingLastPathComponent(), readOnly: true)
+        return result.status == 0 ? result.data : nil
+    }
+
+    /// Diffs two files on disk. Neither has to be in a repository.
+    nonisolated static func lineChanges(from base: URL, to buffer: URL) -> GitLineChanges {
+        let result = runGit(["diff", "--no-index", "--no-color", "--no-ext-diff", "-U0", "--", base.path, buffer.path],
+                            at: base.deletingLastPathComponent(), readOnly: true)
+        return GitLineChanges(diff: String(decoding: result.data, as: UTF8.self))
+    }
+
+    nonisolated static func blame(of fileURL: URL) -> GitBlame? {
+        let result = runGit(["blame", "--porcelain", "HEAD", "--", "./" + fileURL.lastPathComponent],
+                            at: fileURL.deletingLastPathComponent(), readOnly: true)
+        return result.status == 0 ? GitBlame(porcelain: String(decoding: result.data, as: UTF8.self)) : nil
+    }
+}

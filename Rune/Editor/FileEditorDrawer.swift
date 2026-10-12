@@ -15,6 +15,8 @@ struct FileEditorDrawer: View {
     /// A one-based line to show, from a path like `Sources/App.swift:42` in terminal output.
     var revealLine: Int?
     var searchNavigation: SearchResultNavigation?
+    /// HEAD's commit, or nil outside a repository. The editor annotates against it.
+    var gitHead: String?
     let onClose: () -> Void
 
     @State private var text = ""
@@ -85,7 +87,8 @@ struct FileEditorDrawer: View {
                     text: $text,
                     fileURL: fileURL,
                     isEditable: !isLoading,
-                    reveal: loadedURL == fileURL && !isLoading ? revealRange : nil
+                    reveal: loadedURL == fileURL && !isLoading ? revealRange : nil,
+                    gitHead: gitHead
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()

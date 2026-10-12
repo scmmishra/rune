@@ -518,18 +518,23 @@ struct WorkspaceView: View {
         }
     }
 
+    /// The commit HEAD points at. File previews annotate against it.
+    private var gitHead: String? {
+        repository.snapshot.commits.first { $0.refs.contains(where: \.isHead) }?.id
+    }
+
     @ViewBuilder
     private func drawer(_ drawer: WorkspaceDrawer, rootURL: URL) -> some View {
         switch drawer {
         case .guide:
             ChangeGuideDrawer(rootURL: rootURL, model: guide, onClose: closeDrawer)
         case let .file(fileURL, line):
-            FileEditorDrawer(fileURL: fileURL, revealLine: line, onClose: closeDrawer)
+            FileEditorDrawer(fileURL: fileURL, revealLine: line, gitHead: gitHead, onClose: closeDrawer)
         case .search:
             ProjectSearchDrawer(model: search, onOpen: openSearchMatch, onClose: closeDrawer)
         case let .searchMatch(match):
             FileEditorDrawer(fileURL: match.url, reveal: match.range,
-                             searchNavigation: searchNavigation(for: match), onClose: closeDrawer)
+                             searchNavigation: searchNavigation(for: match), gitHead: gitHead, onClose: closeDrawer)
         case let .diff(change, area):
             GitDiffDrawer(
                 rootURL: rootURL,

@@ -9,6 +9,8 @@ struct CodeEditorView: View {
     var presentation: Presentation = .source
     /// A range to select and center once the text is shown, such as a search match.
     var reveal: NSRange?
+    /// HEAD's commit. Set, the editor marks changed lines and blames the active line.
+    var gitHead: String?
     @State private var request = 0
     @State private var action = PreviewAction.find
 
@@ -30,7 +32,8 @@ struct CodeEditorView: View {
                 .frame(height: 28)
             }
             NativeCodeEditorView(text: $text, fileURL: fileURL, isEditable: isEditable,
-                                 presentation: presentation, request: request, action: action, reveal: reveal)
+                                 presentation: presentation, request: request, action: action, reveal: reveal,
+                                 gitHead: gitHead)
         }
         .background {
             // Retain the preview-scoped shortcut without a visible toolbar control.
@@ -116,6 +119,7 @@ struct NativeCodeEditorView: NSViewRepresentable {
     var request = 0
     var action = PreviewAction.find
     var reveal: NSRange?
+    var gitHead: String?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -123,6 +127,7 @@ struct NativeCodeEditorView: NSViewRepresentable {
 
     static func dismantleNSView(_ view: NSScrollView, coordinator: Coordinator) {
         coordinator.highlightTask?.cancel()
+        coordinator.cancelAnnotations()
         clearPreviewFind(in: view)
         (view.documentView as? NSTextView)?.isIncrementalSearchingEnabled = false
     }
@@ -235,6 +240,7 @@ struct NativeCodeEditorView: NSViewRepresentable {
                 typography: typography
             )
         }
+        context.coordinator.annotateIfNeeded(textView)
 
         // Forget the last reveal while none is requested, so the same range in the
         // next file loaded into this view is still revealed.
@@ -261,6 +267,17 @@ struct NativeCodeEditorView: NSViewRepresentable {
         private var isRendering = false
         private let worker = HighlightWorker()
         var highlightTask: Task<Void, Never>?
+        private let annotator = GitFileAnnotator()
+        private var annotated: Annotated?
+        private var blamed: Annotated?
+        private var changesTask: Task<Void, Never>?
+        private var blameTask: Task<Void, Never>?
+
+        /// The file and commit that the Git annotations describe.
+        private struct Annotated: Equatable {
+            let fileURL: URL
+            let head: String
+        }
 
         init(parent: NativeCodeEditorView) {
             self.parent = parent
@@ -275,6 +292,7 @@ struct NativeCodeEditorView: NSViewRepresentable {
             (textView.enclosingScrollView?.verticalRulerView as? LineNumberRulerView)?
                 .reload(font: typography.nsFont(size: 12))
             highlight(textView, fileURL: parent.fileURL, typography: typography, debounce: true)
+            annotate(textView, debounce: true)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -297,7 +315,66 @@ struct NativeCodeEditorView: NSViewRepresentable {
             (textView.enclosingScrollView?.verticalRulerView as? LineNumberRulerView)?
                 .reload(font: typography.nsFont(size: 12))
             highlight(textView, fileURL: fileURL, typography: typography)
+            annotate(textView)
             isRendering = false
+        }
+
+        /// What to annotate now. Nothing while a file loads, because the buffer is
+        /// still empty or still holds the previous file.
+        private var annotationTarget: Annotated? {
+            guard parent.presentation == .source, parent.isEditable, let head = parent.gitHead else { return nil }
+            return Annotated(fileURL: parent.fileURL, head: head)
+        }
+
+        /// Catches changes that do not alter the text: a new commit, or a file that finished loading empty.
+        func annotateIfNeeded(_ textView: NSTextView) {
+            if annotated != annotationTarget { annotate(textView) }
+        }
+
+        func cancelAnnotations() {
+            changesTask?.cancel()
+            blameTask?.cancel()
+        }
+
+        private func annotate(_ textView: NSTextView, debounce: Bool = false) {
+            changesTask?.cancel()
+            let target = annotationTarget
+            annotated = target
+            guard let target else {
+                blameTask?.cancel()
+                blamed = nil
+                show(changes: nil, in: textView)
+                (textView as? RuneTextView)?.blame = nil
+                return
+            }
+            let source = textView.string
+            let annotator = annotator
+            changesTask = Task { [weak self, weak textView] in
+                // Typing settles before Git runs. The marks follow the text a beat later.
+                if debounce { try? await Task.sleep(for: .milliseconds(150)) }
+                guard !Task.isCancelled else { return }
+                let changes = await annotator.changes(in: source, fileURL: target.fileURL, head: target.head)
+                guard !Task.isCancelled, let self, let textView,
+                      self.annotated == target, textView.string == source else { return }
+                self.show(changes: changes, in: textView)
+            }
+
+            // Blame describes HEAD, so one run serves every edit until HEAD moves.
+            // `GitLineChanges.headLine(for:)` maps edited buffer lines back onto it.
+            guard blamed != target else { return }
+            blamed = target
+            blameTask?.cancel()
+            (textView as? RuneTextView)?.blame = nil
+            blameTask = Task { [weak self, weak textView] in
+                let blame = await Task.detached(priority: .utility) { GitRepository.blame(of: target.fileURL) }.value
+                guard !Task.isCancelled, let self, self.blamed == target else { return }
+                (textView as? RuneTextView)?.blame = blame
+            }
+        }
+
+        private func show(changes: GitLineChanges?, in textView: NSTextView) {
+            (textView.enclosingScrollView?.verticalRulerView as? LineNumberRulerView)?.changes = changes
+            (textView as? RuneTextView)?.changes = changes
         }
 
         private func highlight(
@@ -357,6 +434,10 @@ private final class EditorScrollView: NSScrollView {
 }
 
 private final class RuneTextView: NSTextView {
+    var changes: GitLineChanges? { didSet { refreshCurrentLineHighlight() } }
+    var blame: GitBlame? { didSet { refreshCurrentLineHighlight() } }
+    private static let blameDates = RelativeDateTimeFormatter()
+
     // Draw the active line outside NSTextStorage so cursor movement does not alter
     // syntax attributes or make the document appear edited.
     // Source: https://developer.apple.com/documentation/appkit/nstextview/drawbackground(in:)
@@ -364,10 +445,26 @@ private final class RuneTextView: NSTextView {
         super.drawBackground(in: rect)
 
         guard isEditable,
-              let lineRect = currentLineRect,
-              lineRect.intersects(rect) else { return }
+              let line = currentLine,
+              line.rect.intersects(rect) else { return }
         NSColor.labelColor.withAlphaComponent(0.045).setFill()
-        lineRect.fill()
+        line.rect.fill()
+
+        // The blame sits after the line's text, so it is drawn like the highlight
+        // and never enters the document.
+        guard let font, let textEnd = line.textEnd, let blame = currentLineBlame(at: line.location) else { return }
+        let baseline = line.rect.minY + line.baseline - font.ascender
+        (blame as NSString).draw(at: NSPoint(x: textEnd + font.pointSize * 3, y: baseline),
+                                 withAttributes: [.font: font, .foregroundColor: NSColor.tertiaryLabelColor])
+    }
+
+    private func currentLineBlame(at location: Int) -> String? {
+        guard let changes, let blame,
+              let ruler = enclosingScrollView?.verticalRulerView as? LineNumberRulerView else { return nil }
+        guard let headLine = changes.headLine(for: ruler.lineNumber(at: location)) else { return "Not committed yet" }
+        guard let commit = blame.commit(atLine: headLine) else { return nil }
+        let date = Self.blameDates.localizedString(for: commit.date, relativeTo: Date())
+        return "\(commit.author), \(date) · \(commit.summary)"
     }
 
     func reveal(_ range: NSRange) {
@@ -394,7 +491,8 @@ private final class RuneTextView: NSTextView {
         setNeedsDisplay(visibleRect)
     }
 
-    private var currentLineRect: NSRect? {
+    /// The caret's line. `textEnd` is nil on the empty line after a final newline.
+    private var currentLine: (rect: NSRect, location: Int, textEnd: CGFloat?, baseline: CGFloat)? {
         guard let layoutManager,
               let textContainer else { return nil }
 
@@ -404,6 +502,8 @@ private final class RuneTextView: NSTextView {
             for: NSRange(location: caretLocation, length: 0)
         )
         let fragmentRect: NSRect
+        var textEnd: CGFloat?
+        var baseline: CGFloat = 0
 
         if caretLineRange.location == text.length {
             let extraLineRect = layoutManager.extraLineFragmentRect
@@ -427,13 +527,21 @@ private final class RuneTextView: NSTextView {
                 forGlyphAt: glyphIndex,
                 effectiveRange: nil
             )
+            textEnd = textContainerOrigin.x
+                + layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil).maxX
+            baseline = layoutManager.location(forGlyphAt: glyphIndex).y
         }
 
-        return NSRect(
-            x: bounds.minX,
-            y: textContainerOrigin.y + fragmentRect.minY,
-            width: bounds.width,
-            height: fragmentRect.height
+        return (
+            NSRect(
+                x: bounds.minX,
+                y: textContainerOrigin.y + fragmentRect.minY,
+                width: bounds.width,
+                height: fragmentRect.height
+            ),
+            caretLineRange.location,
+            textEnd,
+            baseline
         )
     }
 }

@@ -7,6 +7,11 @@ final class LineNumberRulerView: NSRulerView {
     private var numberFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
     private var columnWidth: CGFloat = 0
     private var hasLoaded = false
+    /// How the buffer differs from HEAD. Nil draws no change marks.
+    var changes: GitLineChanges? {
+        didSet { if changes != oldValue { needsDisplay = true } }
+    }
+    private static let changeWidth: CGFloat = 3
     private static let padding: CGFloat = 10
     private static let columnGap: CGFloat = 10
 
@@ -57,6 +62,9 @@ final class LineNumberRulerView: NSRulerView {
 
     @objc func redraw() { needsDisplay = true }
 
+    /// The one-based line that holds a character.
+    func lineNumber(at location: Int) -> Int { numbers.rowIndex(at: location) + 1 }
+
     // AppKit owns the gutter independently of the document's horizontal scroll position.
     // Source: https://developer.apple.com/documentation/appkit/nsrulerview/drawhashmarksandlabels(in:)
     override func drawHashMarksAndLabels(in rect: NSRect) {
@@ -100,6 +108,21 @@ final class LineNumberRulerView: NSRulerView {
             if point.y > bounds.maxY { break }
             guard point.y + fragment.height >= rect.minY, point.y <= rect.maxY else { continue }
             let y = point.y + baseline - numberFont.ascender
+
+            if let changes, let line = row.new {
+                // Marks hug the separator so they read as part of the code's edge.
+                let x = bounds.maxX - 1 - Self.changeWidth
+                if let kind = changes.kinds[line] {
+                    (kind == .added ? NSColor.systemGreen : NSColor.systemBlue).setFill()
+                    NSRect(x: x, y: point.y, width: Self.changeWidth, height: fragment.height).fill()
+                }
+                // Removed lines have no row of their own. Mark the boundary they left.
+                NSColor.systemRed.setFill()
+                let mark = NSRect(x: x - Self.changeWidth, y: -Self.changeWidth / 2,
+                                  width: Self.changeWidth * 2, height: Self.changeWidth)
+                if line == 1, changes.deletedAfter.contains(0) { mark.offsetBy(dx: 0, dy: point.y).fill() }
+                if changes.deletedAfter.contains(line) { mark.offsetBy(dx: 0, dy: point.y + fragment.height).fill() }
+            }
 
             func draw(_ number: Int?, rightEdge: CGFloat) {
                 guard let number else { return }
