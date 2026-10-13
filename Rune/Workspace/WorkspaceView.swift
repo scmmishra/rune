@@ -11,14 +11,15 @@ struct WorkspaceView: View {
     @StateObject private var guide: ChangeGuideModel
     @StateObject private var layoutModel: WorkspaceLayoutModel
 
-    init(directoryURL: URL?, onOpenProject: @escaping () -> Void, onOpenWorkspace: @escaping (WorkspaceIdentity) -> Void) {
+    init(directoryURL: URL?, setupID: String? = nil, onOpenProject: @escaping () -> Void,
+         onOpenWorkspace: @escaping (WorkspaceIdentity) -> Void) {
         _guide = StateObject(wrappedValue: ChangeGuideModel(rootURL: directoryURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)))
         let sessions = TerminalSessions(workingDirectory: directoryURL)
         _terminals = StateObject(wrappedValue: sessions)
         _projectCommands = StateObject(wrappedValue: ProjectCommands(
             root: directoryURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath), sessions: sessions
         ))
-        _layoutModel = StateObject(wrappedValue: WorkspaceLayoutModel(root: directoryURL))
+        _layoutModel = StateObject(wrappedValue: WorkspaceLayoutModel(root: directoryURL, setupID: setupID))
         self.directoryURL = directoryURL
         self.onOpenProject = onOpenProject
         self.onOpenWorkspace = onOpenWorkspace
@@ -40,6 +41,12 @@ struct WorkspaceView: View {
     @State private var isProjectPickerPresented = false
     @State private var isHelpPresented = false
     @State private var recentWorkspaces: [WorkspaceIdentity] = []
+    /// Read when a palette opens, like the recent projects beside them.
+    @State private var setups: [WorkspaceSetup] = []
+    @State private var setupPrompt: SetupPrompt?
+    @State private var setupNameDraft = ""
+    @State private var isConfirmingSetupDelete = false
+    @Environment(\.dismiss) private var dismissWindow
     @State private var paletteBranches: [String] = []
     @State private var paletteBranchTask: Task<Void, Never>?
     // Held without observing: only the drawer redraws as the query and results change,
@@ -209,7 +216,7 @@ struct WorkspaceView: View {
                     Group {
                         if isProjectPickerPresented {
                             ProjectPickerView(
-                                workspaces: recentWorkspaces,
+                                workspaces: recentWorkspaces, setups: setups,
                                 onClose: { isProjectPickerPresented = false },
                                 onOpen: { workspace in
                                     isProjectPickerPresented = false
@@ -229,6 +236,8 @@ struct WorkspaceView: View {
                                 rootURL: directoryURL,
                                 canShowGuide: repository.snapshot.isRepository,
                                 projects: recentWorkspaces,
+                                setups: setups,
+                                hasSetup: layoutModel.setup != nil,
                                 branches: paletteBranches,
                                 currentBranch: repository.snapshot.branch,
                                 guide: guide,
@@ -326,6 +335,24 @@ struct WorkspaceView: View {
             }
         }
         .environmentObject(repository)
+        .navigationTitle(windowTitle)
+        .alert(setupPromptText.title, isPresented: isSetupPromptPresented) {
+            TextField("Name", text: $setupNameDraft)
+            Button("Cancel", role: .cancel) {}
+            Button(setupPromptText.action, action: finishSetupPrompt)
+        } message: {
+            Text(setupPromptText.message)
+        }
+        .alert(setupDeleteTitle, isPresented: $isConfirmingSetupDelete) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete Setup", role: .destructive) {
+                layoutModel.deleteSetup()
+                // The window was this setup; without it there is nothing left to show here.
+                dismissWindow()
+            }
+        } message: {
+            Text("This closes the window and ends its terminals. The project and its default arrangement are not affected.")
+        }
         .onAppear { if directoryURL != nil { repository.start() } }
         .onDisappear {
             repository.stop()
@@ -355,6 +382,7 @@ struct WorkspaceView: View {
         dismissPalettes()
         if shouldPresent {
             recentWorkspaces = RecentWorkspaces.load()
+            setups = WorkspaceSetupStore.all()
             loadPaletteBranches()
         }
         isCommandPalettePresented = shouldPresent
@@ -410,6 +438,15 @@ struct WorkspaceView: View {
         case .searchProject: showSearch()
         case .reload: repository.reload()
         case .hideTerminal: hideTerminalDrawer()
+        // The palette lists setups itself rather than handing this back.
+        case .openSetup: break
+        case .newSetup:
+            setupNameDraft = ""
+            setupPrompt = .new
+        case .renameSetup:
+            setupNameDraft = layoutModel.setup?.name ?? ""
+            setupPrompt = .rename
+        case .deleteSetup: isConfirmingSetupDelete = true
         case .saveLayoutToRepository:
             do {
                 try layoutModel.saveToRepository()
@@ -437,6 +474,7 @@ struct WorkspaceView: View {
         isCommandPalettePresented = false
         isBranchPickerPresented = false
         recentWorkspaces = RecentWorkspaces.load()
+        setups = WorkspaceSetupStore.all()
         isProjectPickerPresented = shouldPresent
     }
 
@@ -848,6 +886,53 @@ struct WorkspaceView: View {
         openDrawer = .diff(selection.change, selection.area)
     }
 
+    private enum SetupPrompt { case new, rename }
+
+    // Spelled out here, not inline in the body: its modifier chain is long enough that
+    // Xcode 26.6 gives up type-checking expressions added to it.
+    private var isSetupPromptPresented: Binding<Bool> {
+        Binding(get: { setupPrompt != nil }, set: { if !$0 { setupPrompt = nil } })
+    }
+
+    private var setupPromptText: (title: String, action: String, message: String) {
+        if setupPrompt == .rename {
+            return ("Rename Setup", "Rename", "The setup keeps its arrangement and its window.")
+        }
+        let project = directoryURL?.lastPathComponent ?? "This Project"
+        return ("New Setup with \(project)", "Create",
+                "The setup starts as a copy of this arrangement and opens in a window of its own.")
+    }
+
+    private var setupDeleteTitle: String {
+        let name = layoutModel.setup?.name ?? "this setup"
+        return "Delete \(name)?"
+    }
+
+    private var windowTitle: String {
+        let project = directoryURL?.lastPathComponent ?? "Rune"
+        return layoutModel.setup.map { "\($0.name) — \(project)" } ?? project
+    }
+
+    /// Creates or renames a setup with the name typed into the prompt.
+    private func finishSetupPrompt() {
+        let name = setupNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = setupPrompt
+        setupPrompt = nil
+        guard !name.isEmpty else { return }
+        do {
+            switch prompt {
+            case .new:
+                if let setup = try layoutModel.makeSetup(named: name), let workspace = WorkspaceIdentity(setup: setup) {
+                    onOpenWorkspace(workspace)
+                }
+            case .rename: try layoutModel.renameSetup(to: name)
+            case nil: break
+            }
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
     private static let workspaceSpace = "workspace"
     private static let cardMoveAnimation = Animation.snappy(duration: 0.22)
 
@@ -919,7 +1004,8 @@ struct WorkspaceView: View {
         case .commands:
             ProjectCommandsView(model: projectCommands, sessions: terminals, onSelect: showTerminal)
         case .files:
-            FileTreeView(rootURL: rootURL, onOpenFile: open, onOpenProjects: presentProjects)
+            FileTreeView(rootURL: rootURL, setupName: layoutModel.setup?.name, onOpenFile: open,
+                         onOpenProjects: presentProjects)
                 .overlay(alignment: .bottomLeading) {
                     WorkspaceHelpButton(isPresented: $isHelpPresented)
                         .padding(12)

@@ -48,21 +48,24 @@ private struct WorkspaceWindow: View {
     var body: some View {
         Group {
             if let workspace {
-                WorkspaceView(directoryURL: workspace.directoryURL, onOpenProject: chooseProject, onOpenWorkspace: open)
-                    .id(workspace.path)
-                    .background { WorkspaceFramePersistence(path: workspace.path) }
+                // The workspace names its own window, since a setup can be renamed while open.
+                WorkspaceView(directoryURL: workspace.directoryURL, setupID: workspace.setupID,
+                              onOpenProject: chooseProject, onOpenWorkspace: open)
+                    .id(workspace)
+                    .background { WorkspaceFramePersistence(workspace: workspace) }
             } else if routedCommandLineDirectory {
                 ProjectPickerView(
-                    workspaces: recentWorkspaces,
+                    workspaces: recentWorkspaces, setups: WorkspaceSetupStore.all(),
                     onClose: {}, onOpen: open, onChooseDirectory: chooseProject
                 )
                 .frame(width: 600, height: 420)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle("Rune")
             } else {
                 Color(nsColor: .windowBackgroundColor)
+                    .navigationTitle("Rune")
             }
         }
-            .navigationTitle(workspace?.name ?? "Rune")
             .onAppear {
                 if let workspace { RecentWorkspaces.record(workspace) }
                 guard !routedCommandLineDirectory, workspace == nil else { return }

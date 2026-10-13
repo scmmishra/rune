@@ -4,6 +4,8 @@ import SwiftUI
 /// The Files card: the project's tree, headed by the project itself.
 struct FileTreeView: View {
     let rootURL: URL
+    /// The window's setup, named beside the project so two windows on one repository tell apart.
+    var setupName: String?
     let onOpenFile: (URL) -> Void
     let onOpenProjects: () -> Void
     @State private var isTitleHovered = false
@@ -27,6 +29,12 @@ struct FileTreeView: View {
                 .runeFont(size: 12, weight: .semibold)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            if let setupName {
+                Text(setupName)
+                    .runeFont(size: 12)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Image(systemName: "chevron.down")
                 .font(.system(size: 8, weight: .bold))
                 .foregroundStyle(isTitleHovered ? .secondary : .tertiary)

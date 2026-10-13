@@ -3,7 +3,12 @@ import AppKit
 import SwiftUI
 
 struct WorkspaceFramePersistence: NSViewRepresentable {
+    /// The window's own name: its folder, and its setup when it has one.
     let path: String
+
+    init(workspace: WorkspaceIdentity) {
+        path = workspace.path + (workspace.setupID.map { "#" + $0 } ?? "")
+    }
 
     func makeNSView(context: Context) -> FrameView { FrameView(path: path) }
     func updateNSView(_ view: FrameView, context: Context) {}
@@ -26,8 +31,16 @@ struct WorkspaceFramePersistence: NSViewRepresentable {
     }
 }
 
+/// What a workspace window shows: a repository's default space, or one of its setups.
+/// The setup is part of the identity, so one repository can be open in both at once.
 struct WorkspaceIdentity: Codable, Hashable {
     let path: String
+    var setupID: String?
+
+    init?(setup: WorkspaceSetup) {
+        self.init(url: URL(fileURLWithPath: setup.repository, isDirectory: true))
+        setupID = setup.id
+    }
 
     init?(url: URL) {
         let directoryURL = url.resolvingSymlinksInPath().standardizedFileURL

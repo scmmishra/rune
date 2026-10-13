@@ -3,7 +3,8 @@ import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
     case searchProject, reload, openProject, switchBranch, switchTerminal, newTerminal, closeTerminal, hideTerminal,
-         changeGuide, saveLayoutToRepository, showWelcome, checkForUpdates
+         changeGuide, openSetup, newSetup, renameSetup, deleteSetup, saveLayoutToRepository, showWelcome,
+         checkForUpdates
 
     var id: Self { self }
 
@@ -13,8 +14,8 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .openProject: "⇧⌘O"
         case .switchBranch: "⇧⌘B"
         case .newTerminal: "⇧⌘T"
-        case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .saveLayoutToRepository,
-             .showWelcome, .checkForUpdates: nil
+        case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .openSetup, .newSetup,
+             .renameSetup, .deleteSetup, .saveLayoutToRepository, .showWelcome, .checkForUpdates: nil
         }
     }
 
@@ -29,6 +30,11 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .newTerminal: "New Terminal"
         case .closeTerminal: "Close Terminal"
         case .hideTerminal: "Hide Secondary Terminal"
+        case .openSetup: "Open Setup…"
+        // The palette names the project in this one; see `CommandPalette.title(of:)`.
+        case .newSetup: "New Setup…"
+        case .renameSetup: "Rename Setup…"
+        case .deleteSetup: "Delete Setup…"
         case .saveLayoutToRepository: "Save Workspace Layout to Repository"
         case .showWelcome: "Show Welcome…"
         case .checkForUpdates: "Check for Updates…"
@@ -45,6 +51,10 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .newTerminal: "plus.rectangle"
         case .closeTerminal: "xmark.rectangle"
         case .hideTerminal: "rectangle.righthalf.inset.filled"
+        case .openSetup: WorkspaceSetup.symbol
+        case .newSetup: "plus.rectangle.on.rectangle"
+        case .renameSetup: "pencil"
+        case .deleteSetup: "trash"
         case .saveLayoutToRepository: "square.and.arrow.down"
         case .showWelcome: "hand.wave"
         case .checkForUpdates: "arrow.down.circle"
@@ -59,6 +69,10 @@ struct CommandPalette: View {
     let rootURL: URL
     let canShowGuide: Bool
     let projects: [WorkspaceIdentity]
+    /// Every setup, of this repository and others.
+    let setups: [WorkspaceSetup]
+    /// Whether this window shows a setup, which is what Rename and Delete act on.
+    let hasSetup: Bool
     /// Local branches fetched when the palette opened; empty until that fetch lands.
     let branches: [String]
     let currentBranch: String
@@ -81,6 +95,7 @@ struct CommandPalette: View {
         case scope(GuideScope)
         case terminal(TerminalSession)
         case project(WorkspaceIdentity)
+        case setup(WorkspaceSetup)
         case branch(String)
 
         var id: String {
@@ -89,6 +104,7 @@ struct CommandPalette: View {
             case let .scope(scope): "scope:" + scope.rawValue
             case let .terminal(session): "terminal:" + session.id.uuidString
             case let .project(workspace): "project:" + workspace.path
+            case let .setup(setup): "setup:" + setup.id
             case let .branch(name): "branch:" + name
             }
         }
@@ -100,6 +116,7 @@ struct CommandPalette: View {
             case .scope: .changeGuide
             case .terminal: .switchTerminal
             case .project: .openProject
+            case .setup: .openSetup
             case .branch: .switchBranch
             }
         }
@@ -110,6 +127,7 @@ struct CommandPalette: View {
             case let .scope(scope): scope.rawValue
             case let .terminal(session): session.name
             case let .project(workspace): workspace.name
+            case let .setup(setup): setup.name
             case let .branch(name): name
             }
         }
@@ -120,6 +138,7 @@ struct CommandPalette: View {
             case .scope, .branch: "arrow.triangle.branch"
             case .terminal: "terminal"
             case .project: "folder"
+            case .setup: WorkspaceSetup.symbol
             }
         }
     }
@@ -130,6 +149,20 @@ struct CommandPalette: View {
             .filter { $0 != .switchBranch || canSwitchBranch }
             .filter { $0 != .hideTerminal || canHideTerminal }
             .filter { $0 != .checkForUpdates || canCheckForUpdates }
+            .filter { $0 != .openSetup || !setups.isEmpty }
+            .filter { ($0 != .renameSetup && $0 != .deleteSetup) || hasSetup }
+            // Only the default space can be saved into the repository.
+            .filter { $0 != .saveLayoutToRepository || !hasSetup }
+    }
+
+    /// A command's title as the palette shows and searches it.
+    private func title(of command: WorkspaceCommand) -> String {
+        command == .newSetup ? "New Setup with \(rootURL.lastPathComponent)…" : command.title
+    }
+
+    private func title(of entry: Entry) -> String {
+        if case let .command(command) = entry { return title(of: command) }
+        return entry.title
     }
 
     private func options(of command: WorkspaceCommand) -> [Entry] {
@@ -137,6 +170,7 @@ struct CommandPalette: View {
         case .changeGuide: guide.isGenerating ? [] : GuideScope.allCases.map(Entry.scope)
         case .switchTerminal: terminals.all.map(Entry.terminal)
         case .openProject: projects.map(Entry.project)
+        case .openSetup: setups.map(Entry.setup)
         case .switchBranch: branches.map(Entry.branch)
         default: []
         }
@@ -170,7 +204,7 @@ struct CommandPalette: View {
     private func search(_ bytes: [UInt8]) -> [Entry] {
         var results: [(entry: Entry, score: Int, isCoherent: Bool)] = []
         for command in commands {
-            let title = command.title.lowercased()
+            let title = title(of: command).lowercased()
             let commandScore = FuzzyMatcher.pathScore(bytes, path: title, filename: title)
             if let commandScore {
                 // Favor commands over their options when both match about as well.
@@ -225,6 +259,7 @@ struct CommandPalette: View {
                 case let .scope(scope): onSelectGuide(scope)
                 case let .terminal(session): onSelectTerminal(session)
                 case let .project(workspace): onOpenProject(workspace)
+                case let .setup(setup): if let workspace = WorkspaceIdentity(setup: setup) { onOpenProject(workspace) }
                 case let .branch(name): onSwitchBranch(name)
                 }
             }
@@ -235,14 +270,19 @@ struct CommandPalette: View {
                     .frame(width: 12, height: 12)
                 if parent == nil, let command = entry.parent {
                     // Mute the command so the option itself reads as the result.
-                    Text(command.title.trimmingCharacters(in: CharacterSet(charactersIn: "…")))
+                    Text(title(of: command).trimmingCharacters(in: CharacterSet(charactersIn: "…")))
                         .foregroundStyle(.secondary)
                         .fixedSize()
                     Image(systemName: "chevron.right")
                         .imageScale(.small)
                         .foregroundStyle(.tertiary)
                 }
-                Text(entry.title).lineLimit(1)
+                Text(title(of: entry)).lineLimit(1)
+                if case let .setup(setup) = entry {
+                    Text(setup.repositoryName)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 if case let .project(workspace) = entry {
                     Text(workspace.path)
                         .foregroundStyle(.secondary)

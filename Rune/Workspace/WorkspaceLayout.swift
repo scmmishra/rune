@@ -323,29 +323,115 @@ nonisolated enum WorkspaceLayoutStore {
     }
 }
 
-/// The layout of one workspace window, loaded once and saved as it changes.
+/// A named arrangement for one repository. A repository's default space needs no setup;
+/// a setup is that same space under a name, opened in a window of its own.
+nonisolated struct WorkspaceSetup: Codable, Identifiable, Equatable, Sendable {
+    var version = 1
+    let id: String
+    var name: String
+    /// The repository's folder.
+    let repository: String
+    var layout: WorkspaceLayout
+
+    var repositoryName: String { URL(fileURLWithPath: repository).lastPathComponent }
+}
+
+/// Setups live in the home folder, one file each, so they are the user's own and no
+/// repository can add one.
+nonisolated enum WorkspaceSetupStore {
+    private static var directory: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appending(path: ".rune/setups")
+    }
+
+    private static func file(for id: String) -> URL { directory.appending(path: id + ".json") }
+
+    /// Every setup whose repository still exists, by name.
+    static func all() -> [WorkspaceSetup] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        return files.filter { $0.pathExtension == "json" }
+            .compactMap { setup($0.deletingPathExtension().lastPathComponent) }
+            .filter { FileManager.default.fileExists(atPath: $0.repository) }
+            .sorted { ($0.name.lowercased(), $0.repository) < ($1.name.lowercased(), $1.repository) }
+    }
+
+    static func setup(_ id: String) -> WorkspaceSetup? {
+        // The file is named by its ID, so a renamed or copied file cannot pose as another setup.
+        guard let data = try? Data(contentsOf: file(for: id)),
+              var setup = try? JSONDecoder().decode(WorkspaceSetup.self, from: data), setup.id == id else { return nil }
+        setup.layout = setup.layout.normalized
+        if setup.layout.cards.isEmpty { setup.layout = .standard }
+        return setup
+    }
+
+    static func save(_ setup: WorkspaceSetup) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try encoder.encode(setup).write(to: file(for: setup.id), options: .atomic)
+    }
+
+    static func delete(_ id: String) {
+        try? FileManager.default.removeItem(at: file(for: id))
+    }
+}
+
+/// The arrangement of one workspace window, loaded once and saved as it changes. It is the
+/// repository's default space, or a setup when the window was opened as one.
 @MainActor
 final class WorkspaceLayoutModel: ObservableObject {
     @Published private(set) var layout: WorkspaceLayout
+    /// The setup this window shows, without its layout kept current; `layout` holds that.
+    @Published private(set) var setup: WorkspaceSetup?
     private let root: URL?
 
-    init(root: URL?) {
+    init(root: URL?, setupID: String?) {
         self.root = root
-        layout = root.map(WorkspaceLayoutStore.load) ?? .standard
+        // A setup deleted since the window was last open falls back to the default space.
+        let setup = setupID.flatMap(WorkspaceSetupStore.setup)
+        self.setup = setup
+        layout = setup?.layout ?? root.map(WorkspaceLayoutStore.load) ?? .standard
     }
 
     /// Changes the layout without saving, for the steps of a drag.
     func update(_ change: (inout WorkspaceLayout) -> Void) { change(&layout) }
 
     func save() {
-        guard let root else { return }
         let layout = layout
-        Task.detached(priority: .utility) { WorkspaceLayoutStore.save(layout, for: root) }
+        if var setup {
+            setup.layout = layout
+            Task.detached(priority: .utility) { try? WorkspaceSetupStore.save(setup) }
+        } else if let root {
+            Task.detached(priority: .utility) { WorkspaceLayoutStore.save(layout, for: root) }
+        }
     }
 
     /// Writes the layout into the repository, where it then wins over the home folder's copy.
     func saveToRepository() throws {
         guard let root else { return }
         try WorkspaceLayoutStore.saveToRepository(layout, for: root)
+    }
+
+    /// Saves the current arrangement as a new setup for this repository. This window keeps
+    /// showing what it showed; the setup opens in a window of its own.
+    func makeSetup(named name: String) throws -> WorkspaceSetup? {
+        guard let root else { return nil }
+        let setup = WorkspaceSetup(id: UUID().uuidString, name: name,
+                                   repository: root.resolvingSymlinksInPath().standardizedFileURL.path, layout: layout)
+        try WorkspaceSetupStore.save(setup)
+        return setup
+    }
+
+    func renameSetup(to name: String) throws {
+        guard var renamed = setup else { return }
+        renamed.name = name
+        renamed.layout = layout
+        try WorkspaceSetupStore.save(renamed)
+        setup = renamed
+    }
+
+    func deleteSetup() {
+        guard let setup else { return }
+        WorkspaceSetupStore.delete(setup.id)
+        self.setup = nil
     }
 }
