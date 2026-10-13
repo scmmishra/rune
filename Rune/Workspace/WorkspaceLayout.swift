@@ -37,10 +37,10 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
 
     var columns: [WorkspaceColumn] { leading + trailing }
     var cards: [WorkspaceCardID] { columns.flatMap(\.cards) }
-    /// Built-in cards the layout leaves out.
-    var hidden: [WorkspaceCardID] {
+    /// The cards among `available` that the layout leaves out.
+    func hidden(among available: [WorkspaceCardDefinition]) -> [WorkspaceCardDefinition] {
         let shown = Set(cards)
-        return WorkspaceCardDefinition.builtIn.map(\.id).filter { !shown.contains($0) }
+        return available.filter { !shown.contains($0.id) }
     }
 
     /// Moves a card, or shows a hidden one. A column left empty goes away.
@@ -104,8 +104,9 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
         trailing.removeAll(where: \.cards.isEmpty)
     }
 
-    /// A layout that came from a file: no card twice, no card Rune cannot draw, no empty
-    /// or duplicate column, and no width below the minimum.
+    /// A layout that came from a file: no card twice, no empty or duplicate column, and no
+    /// width below the minimum. A card Rune does not know stays, since it is likely a custom
+    /// card whose file is missing; it shows as that until the file returns or it is removed.
     var normalized: WorkspaceLayout {
         var seenCards: Set<WorkspaceCardID> = []
         var seenColumns: Set<UUID> = []
@@ -113,9 +114,7 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
             columns.compactMap { column in
                 guard seenColumns.insert(column.id).inserted else { return nil }
                 var column = column
-                column.cards = column.cards.filter {
-                    WorkspaceCardDefinition.definition(for: $0) != nil && seenCards.insert($0).inserted
-                }
+                column.cards = column.cards.filter { seenCards.insert($0).inserted }
                 column.width = max(WorkspaceColumn.minWidth, column.width)
                 return column.cards.isEmpty ? nil : column
             }
@@ -303,10 +302,7 @@ nonisolated enum WorkspaceLayoutStore {
         for file in [repositoryFile(for: root), homeFile(for: root)] {
             guard let data = try? Data(contentsOf: file),
                   let space = try? JSONDecoder().decode(SpaceFile.self, from: data) else { continue }
-            let layout = space.layout.normalized
-            // A file that names only cards Rune does not know would leave just the hub.
-            // A file with no cards at all is a choice: every card was removed.
-            if !layout.cards.isEmpty || space.layout.cards.isEmpty { return layout }
+            return space.layout.normalized
         }
         return migratedStandard(for: root)
     }
@@ -374,9 +370,7 @@ nonisolated enum WorkspaceSetupStore {
         // The file is named by its ID, so a renamed or copied file cannot pose as another setup.
         guard let data = try? Data(contentsOf: file(for: id)),
               var setup = try? JSONDecoder().decode(WorkspaceSetup.self, from: data), setup.id == id else { return nil }
-        let layout = setup.layout.normalized
-        // Only unknown cards would leave just the hub; no cards at all is the user's choice.
-        setup.layout = layout.cards.isEmpty && !setup.layout.cards.isEmpty ? .standard : layout
+        setup.layout = setup.layout.normalized
         return setup
     }
 

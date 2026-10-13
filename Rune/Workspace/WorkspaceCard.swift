@@ -46,17 +46,24 @@ nonisolated struct WorkspaceCardDefinition: Identifiable, Sendable {
 
     private static let byID = Dictionary(uniqueKeysWithValues: builtIn.map { ($0.id, $0) })
 
-    static func definition(for id: WorkspaceCardID) -> WorkspaceCardDefinition? { byID[id] }
+    static func builtIn(for id: WorkspaceCardID) -> WorkspaceCardDefinition? { byID[id] }
 }
 
 nonisolated private struct WorkspaceCardIDKey: LayoutValueKey {
     static let defaultValue: WorkspaceCardID? = nil
 }
 
+nonisolated private struct WorkspaceCardSizingKey: LayoutValueKey {
+    static let defaultValue = WorkspaceCardSizing.fixed
+}
+
 extension View {
-    /// Names the card for `WorkspaceCardsLayout`, which looks up its place and sizing by it.
-    func workspaceCard(_ id: WorkspaceCardID) -> some View {
+    /// Names the card for `WorkspaceCardsLayout`, which finds its place by the ID, and says
+    /// how it takes height there. The sizing travels with the view because a custom card's
+    /// comes from its file, which the layout does not read.
+    func workspaceCard(_ id: WorkspaceCardID, sizing: WorkspaceCardSizing) -> some View {
         layoutValue(key: WorkspaceCardIDKey.self, value: id)
+            .layoutValue(key: WorkspaceCardSizingKey.self, value: sizing)
     }
 }
 
@@ -81,8 +88,8 @@ struct WorkspaceCardsLayout: Layout {
         var placed: Set<WorkspaceCardID> = []
         for slot in slots {
             let cards = slot.cards.compactMap { id in subviews.first { $0[WorkspaceCardIDKey.self] == id } }
-            let sizings = slot.cards.map { WorkspaceCardDefinition.definition(for: $0)?.sizing ?? .fixed }
-            guard cards.count == sizings.count else { continue }
+            guard cards.count == slot.cards.count else { continue }
+            let sizings = cards.map { $0[WorkspaceCardSizingKey.self] }
             let available = max(0, height - spacing * CGFloat(max(0, cards.count - 1)))
             // Measure fixed cards once per pass; that is the only measuring a resize costs.
             let natural = zip(cards, sizings).map { card, sizing -> CGFloat? in

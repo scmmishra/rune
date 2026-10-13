@@ -41,6 +41,9 @@ struct WorkspaceView: View {
     @State private var isProjectPickerPresented = false
     @State private var isHelpPresented = false
     @State private var recentWorkspaces: [WorkspaceIdentity] = []
+    @ObservedObject private var cardCatalog = CustomCardCatalog.shared
+    // Held without observing: a variable changing concerns the cards bound to it, not the window.
+    @State private var spaceVariables = SpaceVariables()
     /// Read when a palette opens, like the recent projects beside them.
     @State private var setups: [WorkspaceSetup] = []
     @State private var setupPrompt: SetupPrompt?
@@ -238,7 +241,8 @@ struct WorkspaceView: View {
                                 projects: recentWorkspaces,
                                 setups: setups,
                                 hasSetup: layoutModel.setup != nil,
-                                layout: layoutModel.layout,
+                                shownCards: layoutModel.layout.cards.compactMap(cardDefinition),
+                                hiddenCards: layoutModel.layout.hidden(among: availableCards),
                                 onShowCard: { id in
                                     isCommandPalettePresented = false
                                     changeCards { $0.show(id) }
@@ -327,6 +331,7 @@ struct WorkspaceView: View {
         }
         .task { await terminals.monitorProcesses() }
         .task { if directoryURL != nil { await projectCommands.load() } }
+        .onAppear { cardCatalog.reload() }
         .onChange(of: terminals.supporting.map(\.id)) {
             if case let .terminal(id) = openDrawer,
                !terminals.supporting.contains(where: { $0.id == id }) {
@@ -392,6 +397,7 @@ struct WorkspaceView: View {
         if shouldPresent {
             recentWorkspaces = RecentWorkspaces.load()
             setups = WorkspaceSetupStore.all()
+            cardCatalog.reload()
             loadPaletteBranches()
         }
         isCommandPalettePresented = shouldPresent
@@ -445,7 +451,9 @@ struct WorkspaceView: View {
         switch command {
         case .changeGuide: showGuide()
         case .searchProject: showSearch()
-        case .reload: repository.reload()
+        case .reload:
+            repository.reload()
+            cardCatalog.reload()
         case .hideTerminal: hideTerminalDrawer()
         // The palette lists these options itself rather than handing them back.
         case .openSetup, .showCard, .removeCard: break
@@ -963,7 +971,7 @@ struct WorkspaceView: View {
                     .contextMenu {
                         Button("Remove Card") { changeCards { $0.hide(id) } }
                         // Removed cards come back from the same menu they left by.
-                        let hidden = layoutModel.layout.hidden.compactMap(WorkspaceCardDefinition.definition)
+                        let hidden = layoutModel.layout.hidden(among: availableCards)
                         if !hidden.isEmpty {
                             Menu("Add Card") {
                                 ForEach(hidden) { card in
@@ -972,7 +980,7 @@ struct WorkspaceView: View {
                             }
                         }
                     }
-                    .workspaceCard(id)
+                    .workspaceCard(id, sizing: cardDefinition(id)?.sizing ?? .fixed)
             }
         }
         .frame(width: size.width, height: size.height)
@@ -1056,7 +1064,34 @@ struct WorkspaceView: View {
         case .usage:
             AgentUsagePanel(sessions: terminals)
         default:
-            EmptyView()
+            if let custom = cardCatalog.card(id) {
+                CustomCardView(card: custom, root: rootURL, space: spaceVariables,
+                               branch: { repository.snapshot.branch },
+                               onAction: { performCardAction($0, rootURL: rootURL) }, onReload: cardCatalog.reload)
+            } else {
+                MissingCardView(id: id)
+            }
+        }
+    }
+
+    /// Every card that can be in a layout: the built-in ones, then the user's own.
+    private var availableCards: [WorkspaceCardDefinition] {
+        WorkspaceCardDefinition.builtIn + cardCatalog.cards.map(\.definition)
+    }
+
+    private func cardDefinition(_ id: WorkspaceCardID) -> WorkspaceCardDefinition? {
+        WorkspaceCardDefinition.builtIn(for: id) ?? cardCatalog.card(id)?.definition
+    }
+
+    /// What clicking a custom card's item does.
+    private func performCardAction(_ action: CardAction, rootURL: URL) {
+        switch action {
+        case let .open(url): NSWorkspace.shared.open(url)
+        case let .file(path):
+            // The same reading as a link clicked in a terminal: a path, with an optional line.
+            guard case let .file(fileURL, line) = TerminalLink.parse(path, relativeTo: rootURL) else { return }
+            open(fileURL, line: line)
+        case let .set(values): spaceVariables.set(values)
         }
     }
 

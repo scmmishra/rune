@@ -77,8 +77,9 @@ struct CommandPalette: View {
     let setups: [WorkspaceSetup]
     /// Whether this window shows a setup, which is what Rename and Delete act on.
     let hasSetup: Bool
-    /// The window's arrangement, for the cards that can be shown or removed.
-    let layout: WorkspaceLayout
+    /// The cards on screen, and those that could be added: built-in and custom.
+    let shownCards: [WorkspaceCardDefinition]
+    let hiddenCards: [WorkspaceCardDefinition]
     let onShowCard: (WorkspaceCardID) -> Void
     let onRemoveCard: (WorkspaceCardID) -> Void
     /// Local branches fetched when the palette opened; empty until that fetch lands.
@@ -167,8 +168,8 @@ struct CommandPalette: View {
             .filter { $0 != .hideTerminal || canHideTerminal }
             .filter { $0 != .checkForUpdates || canCheckForUpdates }
             .filter { $0 != .openSetup || !setups.isEmpty }
-            .filter { $0 != .showCard || !layout.hidden.isEmpty }
-            .filter { $0 != .removeCard || !layout.cards.isEmpty }
+            .filter { $0 != .showCard || !hiddenCards.isEmpty }
+            .filter { $0 != .removeCard || !shownCards.isEmpty }
             .filter { ($0 != .renameSetup && $0 != .deleteSetup) || hasSetup }
             // Only the default space can be saved into the repository.
             .filter { $0 != .saveLayoutToRepository || !hasSetup }
@@ -190,8 +191,8 @@ struct CommandPalette: View {
         case .switchTerminal: terminals.all.map(Entry.terminal)
         case .openProject: projects.map(Entry.project)
         case .openSetup: setups.map(Entry.setup)
-        case .showCard: layout.hidden.compactMap(WorkspaceCardDefinition.definition).map(Entry.showCard)
-        case .removeCard: layout.cards.compactMap(WorkspaceCardDefinition.definition).map(Entry.removeCard)
+        case .showCard: hiddenCards.map(Entry.showCard)
+        case .removeCard: shownCards.map(Entry.removeCard)
         case .switchBranch: branches.map(Entry.branch)
         default: []
         }
