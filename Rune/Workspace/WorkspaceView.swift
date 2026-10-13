@@ -238,6 +238,15 @@ struct WorkspaceView: View {
                                 projects: recentWorkspaces,
                                 setups: setups,
                                 hasSetup: layoutModel.setup != nil,
+                                layout: layoutModel.layout,
+                                onShowCard: { id in
+                                    isCommandPalettePresented = false
+                                    changeCards { $0.show(id) }
+                                },
+                                onRemoveCard: { id in
+                                    isCommandPalettePresented = false
+                                    changeCards { $0.hide(id) }
+                                },
                                 branches: paletteBranches,
                                 currentBranch: repository.snapshot.branch,
                                 guide: guide,
@@ -438,8 +447,8 @@ struct WorkspaceView: View {
         case .searchProject: showSearch()
         case .reload: repository.reload()
         case .hideTerminal: hideTerminalDrawer()
-        // The palette lists setups itself rather than handing this back.
-        case .openSetup: break
+        // The palette lists these options itself rather than handing them back.
+        case .openSetup, .showCard, .removeCard: break
         case .newSetup:
             setupNameDraft = ""
             setupPrompt = .new
@@ -950,10 +959,29 @@ struct WorkspaceView: View {
                         cardDrag.cardFrames[id] = $0
                     }
                     .simultaneousGesture(cardDragGesture(id, arrangement: arrangement, top: top, height: height, size: size))
+                    // A card's own rows keep their menus; this one shows over the rest of it.
+                    .contextMenu {
+                        Button("Remove Card") { changeCards { $0.hide(id) } }
+                        // Removed cards come back from the same menu they left by.
+                        let hidden = layoutModel.layout.hidden.compactMap(WorkspaceCardDefinition.definition)
+                        if !hidden.isEmpty {
+                            Menu("Add Card") {
+                                ForEach(hidden) { card in
+                                    Button(card.title) { changeCards { $0.show(card.id) } }
+                                }
+                            }
+                        }
+                    }
                     .workspaceCard(id)
             }
         }
         .frame(width: size.width, height: size.height)
+    }
+
+    /// Changes which cards the arrangement holds, and saves it.
+    private func changeCards(_ change: (inout WorkspaceLayout) -> Void) {
+        withAnimation(Self.cardMoveAnimation) { layoutModel.update(change) }
+        layoutModel.save()
     }
 
     /// Dragging a card by its header moves it. The gesture sits beside the header's own

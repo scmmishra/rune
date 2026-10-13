@@ -68,6 +68,21 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
         pruneEmptyColumns()
     }
 
+    /// Brings a removed card back, at the bottom of the outermost column on the side it
+    /// sits by default, or in a new column when that side has none.
+    mutating func show(_ card: WorkspaceCardID) {
+        guard !cards.contains(card) else { return }
+        let side: Side = Self.standard.leading.contains { $0.cards.contains(card) } ? .leading : .trailing
+        switch side {
+        case .leading:
+            if let column = leading.first { place(card, at: .column(column.id, index: column.cards.count)) }
+            else { place(card, at: .newColumn(.leading, index: 0)) }
+        case .trailing:
+            if let column = trailing.last { place(card, at: .column(column.id, index: column.cards.count)) }
+            else { place(card, at: .newColumn(.trailing, index: 0)) }
+        }
+    }
+
     mutating func setWidth(_ width: CGFloat, ofColumn id: UUID) {
         update(id) { $0.width = max(WorkspaceColumn.minWidth, width) }
     }
@@ -289,8 +304,9 @@ nonisolated enum WorkspaceLayoutStore {
             guard let data = try? Data(contentsOf: file),
                   let space = try? JSONDecoder().decode(SpaceFile.self, from: data) else { continue }
             let layout = space.layout.normalized
-            // A file that names no card Rune knows would leave only the hub.
-            if !layout.cards.isEmpty { return layout }
+            // A file that names only cards Rune does not know would leave just the hub.
+            // A file with no cards at all is a choice: every card was removed.
+            if !layout.cards.isEmpty || space.layout.cards.isEmpty { return layout }
         }
         return migratedStandard(for: root)
     }
@@ -358,8 +374,9 @@ nonisolated enum WorkspaceSetupStore {
         // The file is named by its ID, so a renamed or copied file cannot pose as another setup.
         guard let data = try? Data(contentsOf: file(for: id)),
               var setup = try? JSONDecoder().decode(WorkspaceSetup.self, from: data), setup.id == id else { return nil }
-        setup.layout = setup.layout.normalized
-        if setup.layout.cards.isEmpty { setup.layout = .standard }
+        let layout = setup.layout.normalized
+        // Only unknown cards would leave just the hub; no cards at all is the user's choice.
+        setup.layout = layout.cards.isEmpty && !setup.layout.cards.isEmpty ? .standard : layout
         return setup
     }
 

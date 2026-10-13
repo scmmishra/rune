@@ -3,7 +3,7 @@ import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
     case searchProject, reload, openProject, switchBranch, switchTerminal, newTerminal, closeTerminal, hideTerminal,
-         changeGuide, openSetup, newSetup, renameSetup, deleteSetup, saveLayoutToRepository, showWelcome,
+         changeGuide, showCard, removeCard, openSetup, newSetup, renameSetup, deleteSetup, saveLayoutToRepository, showWelcome,
          checkForUpdates
 
     var id: Self { self }
@@ -14,7 +14,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .openProject: "⇧⌘O"
         case .switchBranch: "⇧⌘B"
         case .newTerminal: "⇧⌘T"
-        case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .openSetup, .newSetup,
+        case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .showCard, .removeCard, .openSetup, .newSetup,
              .renameSetup, .deleteSetup, .saveLayoutToRepository, .showWelcome, .checkForUpdates: nil
         }
     }
@@ -30,6 +30,8 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .newTerminal: "New Terminal"
         case .closeTerminal: "Close Terminal"
         case .hideTerminal: "Hide Secondary Terminal"
+        case .showCard: "Show Card…"
+        case .removeCard: "Remove Card…"
         case .openSetup: "Open Setup…"
         // The palette names the project in this one; see `CommandPalette.title(of:)`.
         case .newSetup: "New Setup…"
@@ -51,6 +53,8 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .newTerminal: "plus.rectangle"
         case .closeTerminal: "xmark.rectangle"
         case .hideTerminal: "rectangle.righthalf.inset.filled"
+        case .showCard: "plus.rectangle"
+        case .removeCard: "minus.rectangle"
         case .openSetup: WorkspaceSetup.symbol
         case .newSetup: "plus.rectangle.on.rectangle"
         case .renameSetup: "pencil"
@@ -73,6 +77,10 @@ struct CommandPalette: View {
     let setups: [WorkspaceSetup]
     /// Whether this window shows a setup, which is what Rename and Delete act on.
     let hasSetup: Bool
+    /// The window's arrangement, for the cards that can be shown or removed.
+    let layout: WorkspaceLayout
+    let onShowCard: (WorkspaceCardID) -> Void
+    let onRemoveCard: (WorkspaceCardID) -> Void
     /// Local branches fetched when the palette opened; empty until that fetch lands.
     let branches: [String]
     let currentBranch: String
@@ -96,6 +104,8 @@ struct CommandPalette: View {
         case terminal(TerminalSession)
         case project(WorkspaceIdentity)
         case setup(WorkspaceSetup)
+        case showCard(WorkspaceCardDefinition)
+        case removeCard(WorkspaceCardDefinition)
         case branch(String)
 
         var id: String {
@@ -105,6 +115,8 @@ struct CommandPalette: View {
             case let .terminal(session): "terminal:" + session.id.uuidString
             case let .project(workspace): "project:" + workspace.path
             case let .setup(setup): "setup:" + setup.id
+            case let .showCard(card): "showCard:" + card.id.rawValue
+            case let .removeCard(card): "removeCard:" + card.id.rawValue
             case let .branch(name): "branch:" + name
             }
         }
@@ -117,6 +129,8 @@ struct CommandPalette: View {
             case .terminal: .switchTerminal
             case .project: .openProject
             case .setup: .openSetup
+            case .showCard: .showCard
+            case .removeCard: .removeCard
             case .branch: .switchBranch
             }
         }
@@ -128,6 +142,7 @@ struct CommandPalette: View {
             case let .terminal(session): session.name
             case let .project(workspace): workspace.name
             case let .setup(setup): setup.name
+            case let .showCard(card), let .removeCard(card): card.title
             case let .branch(name): name
             }
         }
@@ -139,6 +154,8 @@ struct CommandPalette: View {
             case .terminal: "terminal"
             case .project: "folder"
             case .setup: WorkspaceSetup.symbol
+            case .showCard: "plus.rectangle"
+            case .removeCard: "minus.rectangle"
             }
         }
     }
@@ -150,6 +167,8 @@ struct CommandPalette: View {
             .filter { $0 != .hideTerminal || canHideTerminal }
             .filter { $0 != .checkForUpdates || canCheckForUpdates }
             .filter { $0 != .openSetup || !setups.isEmpty }
+            .filter { $0 != .showCard || !layout.hidden.isEmpty }
+            .filter { $0 != .removeCard || !layout.cards.isEmpty }
             .filter { ($0 != .renameSetup && $0 != .deleteSetup) || hasSetup }
             // Only the default space can be saved into the repository.
             .filter { $0 != .saveLayoutToRepository || !hasSetup }
@@ -171,6 +190,8 @@ struct CommandPalette: View {
         case .switchTerminal: terminals.all.map(Entry.terminal)
         case .openProject: projects.map(Entry.project)
         case .openSetup: setups.map(Entry.setup)
+        case .showCard: layout.hidden.compactMap(WorkspaceCardDefinition.definition).map(Entry.showCard)
+        case .removeCard: layout.cards.compactMap(WorkspaceCardDefinition.definition).map(Entry.removeCard)
         case .switchBranch: branches.map(Entry.branch)
         default: []
         }
@@ -235,6 +256,9 @@ struct CommandPalette: View {
         switch parent {
         case .changeGuide: "Change Brief: choose changes"
         case .switchTerminal: "Switch to terminal"
+        case .openSetup: "Open setup"
+        case .showCard: "Show card"
+        case .removeCard: "Remove card"
         default: "Run a command"
         }
     }
@@ -255,11 +279,19 @@ struct CommandPalette: View {
                     parent = .switchTerminal
                     query = ""
                     selection = "terminal:" + terminals.panel.id.uuidString
+                // These have no picker of their own, so the palette steps into their options.
+                case .command(.openSetup), .command(.showCard), .command(.removeCard):
+                    guard case let .command(command) = entry else { return }
+                    parent = command
+                    query = ""
+                    selection = options(of: command).first?.id
                 case let .command(command): onSelect(command)
                 case let .scope(scope): onSelectGuide(scope)
                 case let .terminal(session): onSelectTerminal(session)
                 case let .project(workspace): onOpenProject(workspace)
                 case let .setup(setup): if let workspace = WorkspaceIdentity(setup: setup) { onOpenProject(workspace) }
+                case let .showCard(card): onShowCard(card.id)
+                case let .removeCard(card): onRemoveCard(card.id)
                 case let .branch(name): onSwitchBranch(name)
                 }
             }
