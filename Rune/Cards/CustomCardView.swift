@@ -122,7 +122,15 @@ struct CustomCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             if let error = model.error { problem(error) }
-            if isFill {
+            if let messages = model.content?.messages, !messages.isEmpty {
+                CardMessageList(messages: messages, startsAtBottom: model.content?.startsAtBottom == true)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            } else if let markdown = model.content?.markdown, !markdown.isEmpty {
+                // The page scrolls itself, and a chat opens at its newest message.
+                MarkdownPreview(text: markdown, isCompact: true,
+                                anchor: model.content?.startsAtBottom == true ? .bottom : .top)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            } else if isFill {
                 ScrollView { rows }
                     .frame(maxHeight: .infinity, alignment: .top)
             } else {
@@ -143,6 +151,13 @@ struct CustomCardView: View {
                 .sidebarSectionLabel()
                 .lineLimit(1)
             Spacer(minLength: 0)
+            ForEach(model.content?.buttons ?? []) { button in
+                Button(button.title) { onAction(button.action) }
+                    .buttonStyle(WorkspaceButtonStyle())
+                    .runeFont(size: 11)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Button {
                 onReload()
                 model.run()
@@ -198,7 +213,7 @@ struct CustomCardView: View {
 
     /// An item is selected while the space holds every value its action sets.
     private func isSelected(_ item: CardItem) -> Bool {
-        guard case let .set(values) = item.action else { return false }
+        guard let values = item.action?.set, !values.isEmpty else { return false }
         return values.allSatisfy { model.variables[$0.key] == $0.value }
     }
 }
@@ -256,6 +271,81 @@ private struct CustomCardRow: View {
         case "purple": .purple
         default: .secondary
         }
+    }
+}
+
+/// A conversation as a plain list: what was said at full strength, and who said it and
+/// when held back, so the eye lands on the messages.
+private struct CardMessageList: View {
+    let messages: [CardMessage]
+    let startsAtBottom: Bool
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                    if index > 0 { Divider().opacity(0.6) }
+                    CardMessageRow(message: message)
+                        .padding(.vertical, message.kind == .activity ? 7 : 11)
+                }
+            }
+            .padding(.horizontal, WorkspaceMetrics.columnInset)
+            .padding(.bottom, 6)
+        }
+        .defaultScrollAnchor(startsAtBottom ? .bottom : .top)
+        .textSelection(.enabled)
+    }
+}
+
+private struct CardMessageRow: View {
+    let message: CardMessage
+
+    var body: some View {
+        switch message.kind {
+        case .activity:
+            // An event, not speech: one quiet line.
+            Text([message.text, message.time].compactMap { $0 }.joined(separator: " · "))
+                .runeFont(size: 11)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .message, .note:
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    if let author = message.author {
+                        Text(author).foregroundStyle(.secondary)
+                    }
+                    if message.kind == .note {
+                        Text("Private note").foregroundStyle(.orange.opacity(0.85))
+                    }
+                    if let time = message.time {
+                        Text(time).foregroundStyle(.tertiary)
+                    }
+                }
+                .runeFont(size: 11)
+                .lineLimit(1)
+                Text(Self.body(message.text))
+                    .runeFont(size: 12)
+                    .foregroundStyle(.primary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // A note is set in from a rule, so it never reads as part of what was sent.
+            .padding(.leading, message.kind == .note ? 10 : 0)
+            .overlay(alignment: .leading) {
+                if message.kind == .note {
+                    Rectangle().fill(Color.orange.opacity(0.5)).frame(width: 2)
+                }
+            }
+        }
+    }
+
+    /// Inline Markdown such as bold and links, with the message's own line breaks kept.
+    private static func body(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible
+        )
+        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
     }
 }
 

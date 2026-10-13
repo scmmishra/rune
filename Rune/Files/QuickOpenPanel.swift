@@ -3,7 +3,7 @@ import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
     case searchProject, reload, openProject, switchBranch, switchTerminal, newTerminal, closeTerminal, hideTerminal,
-         changeGuide, showCard, removeCard, openSetup, newSetup, renameSetup, deleteSetup, saveLayoutToRepository, showWelcome,
+         changeGuide, showCard, removeCard, toggleMainTerminal, openSetup, newSetup, renameSetup, deleteSetup, saveLayoutToRepository, showWelcome,
          checkForUpdates
 
     var id: Self { self }
@@ -14,7 +14,8 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .openProject: "⇧⌘O"
         case .switchBranch: "⇧⌘B"
         case .newTerminal: "⇧⌘T"
-        case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .showCard, .removeCard, .openSetup, .newSetup,
+        case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .showCard, .removeCard,
+             .toggleMainTerminal, .openSetup, .newSetup,
              .renameSetup, .deleteSetup, .saveLayoutToRepository, .showWelcome, .checkForUpdates: nil
         }
     }
@@ -32,6 +33,8 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .hideTerminal: "Hide Secondary Terminal"
         case .showCard: "Show Card…"
         case .removeCard: "Remove Card…"
+        // The palette says which way it goes; see `CommandPalette.title(of:)`.
+        case .toggleMainTerminal: "Hide Main Terminal"
         case .openSetup: "Open Setup…"
         // The palette names the project in this one; see `CommandPalette.title(of:)`.
         case .newSetup: "New Setup…"
@@ -55,6 +58,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .hideTerminal: "rectangle.righthalf.inset.filled"
         case .showCard: "plus.rectangle"
         case .removeCard: "minus.rectangle"
+        case .toggleMainTerminal: "terminal"
         case .openSetup: WorkspaceSetup.symbol
         case .newSetup: "plus.rectangle.on.rectangle"
         case .renameSetup: "pencil"
@@ -77,6 +81,8 @@ struct CommandPalette: View {
     let setups: [WorkspaceSetup]
     /// Whether this window shows a setup, which is what Rename and Delete act on.
     let hasSetup: Bool
+    /// Whether the hub leaves out the main terminal, which one command turns on and off.
+    let hidesMainTerminal: Bool
     /// The cards on screen, and those that could be added: built-in and custom.
     let shownCards: [WorkspaceCardDefinition]
     let hiddenCards: [WorkspaceCardDefinition]
@@ -177,7 +183,11 @@ struct CommandPalette: View {
 
     /// A command's title as the palette shows and searches it.
     private func title(of command: WorkspaceCommand) -> String {
-        command == .newSetup ? "New Setup with \(rootURL.lastPathComponent)…" : command.title
+        switch command {
+        case .newSetup: "New Setup with \(rootURL.lastPathComponent)…"
+        case .toggleMainTerminal: hidesMainTerminal ? "Show Main Terminal" : "Hide Main Terminal"
+        default: command.title
+        }
     }
 
     private func title(of entry: Entry) -> String {

@@ -138,6 +138,15 @@ struct WorkspaceView: View {
                                     // Split panes are cards of their own, and so is the tab row.
                                     .workspacePanel(isVisible: isSplit, fill: TerminalSurface.color)
                                 Color.clear
+                                    .overlay {
+                                        if terminals.isHubEmpty {
+                                            Text("No terminal open. Pick an item in a card, or press ⇧⌘T.")
+                                                .runeFont(size: 12)
+                                                .foregroundStyle(.tertiary)
+                                                .multilineTextAlignment(.center)
+                                                .padding(24)
+                                        }
+                                    }
                             }
                         } else {
                             WorkspacePlaceholder()
@@ -241,6 +250,7 @@ struct WorkspaceView: View {
                                 projects: recentWorkspaces,
                                 setups: setups,
                                 hasSetup: layoutModel.setup != nil,
+                                hidesMainTerminal: terminals.hidesPrimary,
                                 shownCards: layoutModel.layout.cards.compactMap(cardDefinition),
                                 hiddenCards: layoutModel.layout.hidden(among: availableCards),
                                 onShowCard: { id in
@@ -324,10 +334,13 @@ struct WorkspaceView: View {
         .onChange(of: isPalettePresented) { _, isPresented in
             if isPresented { isHelpPresented = false }
         }
+        // The layout says whether the main terminal shows; the terminals act on it.
+        .onChange(of: layoutModel.layout.hidesMainTerminal == true, initial: true) { _, hides in
+            terminals.hidesPrimary = hides
+        }
         .onChange(of: terminals.active.id) {
-            if !isPalettePresented, !isDrawerVisible {
-                terminals.active.terminal.requestFocus()
-            }
+            // A hidden terminal must never take the keyboard: typing would go nowhere visible.
+            if !isPalettePresented, !isDrawerVisible { focusActiveTerminal() }
         }
         .task { await terminals.monitorProcesses() }
         .task { if directoryURL != nil { await projectCommands.load() } }
@@ -457,6 +470,9 @@ struct WorkspaceView: View {
         case .hideTerminal: hideTerminalDrawer()
         // The palette lists these options itself rather than handing them back.
         case .openSetup, .showCard, .removeCard: break
+        case .toggleMainTerminal:
+            layoutModel.update { $0.hidesMainTerminal = !terminals.hidesPrimary }
+            layoutModel.save()
         case .newSetup:
             setupNameDraft = ""
             setupPrompt = .new
@@ -638,7 +654,8 @@ struct WorkspaceView: View {
         }
         // A pane keeps its place in its own tab while another tab is showing, so switching
         // tabs never resizes a terminal.
-        let inPanel = tab.id == terminals.navigation.panelID
+        // The hidden main terminal waits off screen like a tab that is not showing.
+        let inPanel = tab.id == terminals.navigation.panelID && !terminals.isHidden(session)
         return TerminalPlacement(
             frame: frame, isPeek: false,
             isVisible: inPanel && tab.shows(session.id), isInPlace: inPanel,
@@ -728,9 +745,21 @@ struct WorkspaceView: View {
         peekTerminal(session)
     }
 
+    /// Gives the keyboard back to the terminal in use. A hidden terminal must never take
+    /// it: typing would go nowhere visible.
+    private func focusActiveTerminal() {
+        let session = terminals.active
+        if !terminals.isHidden(session) { session.terminal.requestFocus() }
+    }
+
     /// Splits, zoom, and moving between panes, from a shortcut or a pane's header.
     private func performPaneAction(_ action: TerminalPaneAction) {
         guard directoryURL != nil, !isPalettePresented else { return }
+        // With no terminal in the hub there is no pane to act on; a split opens the first.
+        if terminals.isHubEmpty {
+            if case .split = action { addTerminal() }
+            return
+        }
         switch action {
         case let .split(axis):
             // A new surface replays this request when it attaches.
@@ -818,7 +847,7 @@ struct WorkspaceView: View {
         // Also focus an already-visible session, e.g. after using the file tree
         // or a palette. New surfaces replay this request when they attach.
         // Source: libghostty-spm 1.5.2, TerminalViewState.requestFocus().
-        session.terminal.requestFocus()
+        if !terminals.isHidden(session) { session.terminal.requestFocus() }
     }
 
     /// Close this surface: a peek leaves the column, the panel returns to primary.
@@ -830,7 +859,7 @@ struct WorkspaceView: View {
                 isPeekArmed = false
             }
             withAnimation(Self.peekAnimation) { terminals.closePeek(session) }
-            terminals.active.terminal.requestFocus()
+            focusActiveTerminal()
             return
         }
         showTerminal(terminals.primary)
@@ -857,12 +886,13 @@ struct WorkspaceView: View {
 
     private func cycleTerminal(_ direction: Int) {
         guard directoryURL != nil else { return }
-        guard let session = terminals.session(forNavigation: terminals.navigation.neighbor(in: direction)) else { return }
+        guard let session = terminals.cycleTarget(in: direction) else { return }
         showTerminal(session)
     }
 
     private func togglePrimaryTerminal() {
-        guard directoryURL != nil,
+        // ⌘` goes to the main terminal, which a space can leave out.
+        guard directoryURL != nil, !terminals.hidesPrimary,
               let session = terminals.session(forNavigation: terminals.navigation.toggleTarget) else { return }
         showTerminal(session)
     }
@@ -882,7 +912,7 @@ struct WorkspaceView: View {
             try? await Task.sleep(for: Layout.drawerCloseDuration)
             guard !Task.isCancelled else { return }
             openDrawer = nil
-            terminals.active.terminal.requestFocus()
+            focusActiveTerminal()
         }
     }
 
@@ -1083,16 +1113,23 @@ struct WorkspaceView: View {
         WorkspaceCardDefinition.builtIn(for: id) ?? cardCatalog.card(id)?.definition
     }
 
-    /// What clicking a custom card's item does.
+    /// What clicking a custom card's item does. The variables go first, so cards bound to
+    /// them reload while the rest happens.
     private func performCardAction(_ action: CardAction, rootURL: URL) {
-        switch action {
-        case let .open(url): NSWorkspace.shared.open(url)
-        case let .file(path):
-            // The same reading as a link clicked in a terminal: a path, with an optional line.
-            guard case let .file(fileURL, line) = TerminalLink.parse(path, relativeTo: rootURL) else { return }
+        if !action.set.isEmpty { spaceVariables.set(action.set) }
+        if let url = action.open { NSWorkspace.shared.open(url) }
+        // The same reading as a link clicked in a terminal: a path, with an optional line.
+        if let path = action.file, case let .file(fileURL, line) = TerminalLink.parse(path, relativeTo: rootURL) {
             open(fileURL, line: line)
-        case let .set(values): spaceVariables.set(values)
         }
+        if let request = action.thread { showThread(request, rootURL: rootURL) }
+    }
+
+    /// Switches the hub to the thread's tab, opening it if this window has not yet.
+    private func showThread(_ request: AgentThread.Request, rootURL: URL) {
+        showTerminal(terminals.thread(key: request.key, name: request.name) {
+            AgentThread.command(for: request, in: rootURL)
+        })
     }
 
     /// The handle in the gap between a card column and its neighbour toward the hub.

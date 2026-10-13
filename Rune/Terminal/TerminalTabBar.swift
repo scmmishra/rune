@@ -20,7 +20,7 @@ struct TerminalTabBar: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 HStack(spacing: 4) {
-                    ForEach(Array(sessions.tabs.enumerated()), id: \.element.id) { index, tab in
+                    ForEach(Array(sessions.shownTabs.enumerated()), id: \.element.id) { index, tab in
                         // A tab stands for its focused pane: its name, its status, and where
                         // selecting or peeking the tab goes.
                         if let session = sessions.session(tab.focusedID) {

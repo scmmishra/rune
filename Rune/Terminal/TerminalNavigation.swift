@@ -82,10 +82,12 @@ nonisolated struct TerminalNavigation {
         recentIDs.insert(id, at: 0)
     }
 
-    func neighbor(in direction: Int) -> UUID {
-        let index = sessionIDs.firstIndex(of: activeID) ?? 0
+    /// The session before or after the active one, passing over `skipped`.
+    func neighbor(in direction: Int, skipping skipped: UUID? = nil) -> UUID {
+        let ids = sessionIDs.filter { $0 != skipped || $0 == activeID }
+        let index = ids.firstIndex(of: activeID) ?? 0
         let offset = direction < 0 ? -1 : 1
-        return sessionIDs[(index + offset + sessionIDs.count) % sessionIDs.count]
+        return ids[(index + offset + ids.count) % ids.count]
     }
 
     var toggleTarget: UUID {

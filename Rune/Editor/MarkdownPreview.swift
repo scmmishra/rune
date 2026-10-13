@@ -10,6 +10,10 @@ extension URL {
 /// A read-only rendering of a Markdown file, with Mermaid code blocks drawn as diagrams.
 struct MarkdownPreview: View {
     let text: String
+    /// Tighter margins, for a page shown inside a card.
+    var isCompact = false
+    /// Where the page opens: its start, or its end for something read newest-last.
+    var anchor = UnitPoint.top
     @State private var blocks: [MarkdownBlock] = []
 
     var body: some View {
@@ -20,10 +24,11 @@ struct MarkdownPreview: View {
                 }
             }
             .frame(maxWidth: 760, alignment: .leading)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 22)
+            .padding(.horizontal, isCompact ? WorkspaceMetrics.columnInset : 28)
+            .padding(.vertical, isCompact ? 8 : 22)
             .frame(maxWidth: .infinity)
         }
+        .defaultScrollAnchor(anchor)
         .textSelection(.enabled)
         .environment(\.openURL, OpenURLAction { url in
             // Only web and mail links leave Rune; relative links have nowhere to go.

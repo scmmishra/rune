@@ -81,8 +81,11 @@ final class TerminalSession: ObservableObject, Identifiable {
     @Published private(set) var hasExited = false
     @Published var needsCloseConfirmation = false
 
+    /// - Parameter startCommand: Run in the shell before its first prompt, such as an agent
+    ///   resuming a thread. The shell stays when it exits.
     init(name: String, workingDirectory: URL?, detectsAgent: Bool = true,
-         savedCommandID: UUID? = nil, execution: CommandExecution? = nil, id: UUID = UUID()) {
+         savedCommandID: UUID? = nil, execution: CommandExecution? = nil, startCommand: String? = nil,
+         id: UUID = UUID()) {
         self.id = id
         self.defaultName = name
         self.savedCommandID = savedCommandID
@@ -114,7 +117,7 @@ final class TerminalSession: ObservableObject, Identifiable {
         terminal.configuration = TerminalSurfaceOptions(
             backend: .exec,
             workingDirectory: workingDirectory?.path,
-            command: processGuardian?.launchCommand(execution?.launchCommand ?? "\(CommandExecution.quote(ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh")) -l", shellIntegration: execution == nil),
+            command: processGuardian?.launchCommand(execution?.launchCommand ?? Self.shellCommand(running: startCommand), shellIntegration: execution == nil),
             waitAfterCommand: execution == nil ? nil : true
         )
         self.terminal = terminal
@@ -171,6 +174,14 @@ final class TerminalSession: ObservableObject, Identifiable {
                 self.onExit?()
             }
         }
+    }
+
+    /// The login shell, or one that runs `startCommand` first and then becomes the login
+    /// shell. Interactive, so the command sees the same PATH a typed one would.
+    private static func shellCommand(running startCommand: String?) -> String {
+        let shell = CommandExecution.quote(ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh")
+        guard let startCommand else { return "\(shell) -l" }
+        return "\(shell) -l -i -c \(CommandExecution.quote("\(startCommand); exec \(shell) -l"))"
     }
 
     private func requestAttention() {
@@ -232,6 +243,9 @@ final class TerminalSessions: ObservableObject {
     @Published private(set) var navigation: TerminalNavigation
     /// The primary's tab first, then tabs in the order they were opened.
     @Published private(set) var tabs: [TerminalTab]
+    /// Whether the main terminal is kept out of sight. It still runs, since the rest of
+    /// Rune counts on there being one; it has no tab and never takes the hub.
+    @Published var hidesPrimary = false
     private let workingDirectory: URL?
     private var nextNumber = 1
     private var commandObservations: [UUID: AnyCancellable] = [:]
@@ -268,9 +282,20 @@ final class TerminalSessions: ObservableObject {
         session(tabs.first { $0.id == navigationID }?.focusedID ?? navigationID)
     }
 
+    /// The tabs the tab row shows.
+    var shownTabs: [TerminalTab] { hidesPrimary ? tabs.filter { $0.id != primary.id } : tabs }
+    /// Whether a terminal belongs to the hidden main tab.
+    func isHidden(_ session: TerminalSession) -> Bool { hidesPrimary && tab(containing: session)?.id == primary.id }
+    /// Whether the hub has no terminal to show: the main one is hidden and nothing else is open.
+    var isHubEmpty: Bool { hidesPrimary && navigation.panelID == primary.id }
+    /// The next tab when cycling, never the hidden main one.
+    func cycleTarget(in direction: Int) -> TerminalSession? {
+        session(forNavigation: navigation.neighbor(in: direction, skipping: hidesPrimary ? primary.id : nil))
+    }
+
     /// The session ⌘-number and the tab at `index` stand for.
     func tabSession(at index: Int) -> TerminalSession? {
-        tabs.indices.contains(index) ? session(tabs[index].focusedID) : nil
+        shownTabs.indices.contains(index) ? session(shownTabs[index].focusedID) : nil
     }
 
     /// The session a navigation target resolves to, such as the next tab when cycling.
@@ -383,17 +408,32 @@ final class TerminalSessions: ObservableObject {
         observePrimaryExit()
     }
 
+    /// The tab running each agent thread, by the thread's key.
+    private var threadSessions: [String: UUID] = [:]
+
+    /// The tab of the thread for `key`: the one already open in this window, or a new one
+    /// running `command`.
+    func thread(key: String, name: String?, command: () -> String) -> TerminalSession {
+        if let id = threadSessions[key], let session = session(id) { return session }
+        // Asked for only now: building the command records a new thread's ID.
+        let session = add(startCommand: command())
+        session.customName = name
+        threadSessions[key] = session.id
+        return session
+    }
+
     /// Opens a shell in a tab of its own.
-    func add() -> TerminalSession {
-        let session = makeShell()
+    func add(startCommand: String? = nil) -> TerminalSession {
+        let session = makeShell(startCommand: startCommand)
         navigation.add(session.id)
         tabs.append(TerminalTab(id: session.id, paneID: session.id))
         supporting.append(session)
         return session
     }
 
-    private func makeShell() -> TerminalSession {
-        let session = TerminalSession(name: "Terminal \(nextNumber)", workingDirectory: workingDirectory)
+    private func makeShell(startCommand: String? = nil) -> TerminalSession {
+        let session = TerminalSession(name: "Terminal \(nextNumber)", workingDirectory: workingDirectory,
+                                      startCommand: startCommand)
         nextNumber += 1
         session.onExit = { [weak self, weak session] in
             guard let self, let session else { return }
@@ -426,6 +466,7 @@ final class TerminalSessions: ObservableObject {
         session.stop()
         commandObservations.removeValue(forKey: session.id)
         attentionObservations.removeValue(forKey: session.id)
+        threadSessions = threadSessions.filter { $0.value != session.id }
         if let index = tabs.firstIndex(where: { $0.contains(session.id) }) {
             // A tab's last pane takes the tab with it; any other gives its room to a sibling.
             if !tabs[index].close(session.id) {

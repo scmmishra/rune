@@ -15,18 +15,49 @@ nonisolated struct CardItem: Identifiable, Equatable, Sendable {
     var action: CardAction?
 }
 
-/// What happens when an item is clicked.
-nonisolated enum CardAction: Equatable, Sendable {
-    case open(URL)
+/// What happens when an item is clicked. One click can do several of these, such as
+/// setting the conversation and switching to its thread.
+nonisolated struct CardAction: Equatable, Sendable {
+    var open: URL?
     /// A path, with an optional `:line`, relative to the repository.
-    case file(String)
-    case set([String: String])
+    var file: String?
+    var set: [String: String] = [:]
+    var thread: AgentThread.Request?
 }
 
-/// What a source printed.
+/// One entry of a conversation: who said what, and when.
+nonisolated struct CardMessage: Identifiable, Equatable, Sendable {
+    enum Kind: String, Sendable {
+        case message
+        /// Written for the team, not sent to the other side.
+        case note
+        /// Something that happened, such as an assignment, not something said.
+        case activity
+    }
+
+    let id: String
+    var author: String?
+    var time: String?
+    let text: String
+    var kind = Kind.message
+}
+
+/// A button in the card's header, for something that concerns the whole card.
+nonisolated struct CardButton: Identifiable, Equatable, Sendable {
+    let title: String
+    let action: CardAction
+    var id: String { title }
+}
+
+/// What a source printed: a list of items, a conversation's messages, or a page of Markdown.
 nonisolated struct CardContent: Equatable, Sendable {
     var items: [CardItem] = []
-    /// Shown when there are no items.
+    var buttons: [CardButton] = []
+    var messages: [CardMessage]?
+    var markdown: String?
+    /// Whether messages or a Markdown page open at their end, as a chat does.
+    var startsAtBottom = false
+    /// Shown when there is nothing else to show.
     var empty: String?
 }
 
@@ -113,9 +144,42 @@ nonisolated enum CardSourceRunner {
         guard let value = try? JSONValue(json: data), let object = value.object else {
             throw Failure("The source did not print a JSON object.")
         }
-        guard let rows = object["items"]?.array else { throw Failure("The output has no \"items\" list.") }
-        var seen: Set<String> = []
         var content = CardContent(empty: object["empty"]?.string)
+        for button in object["buttons"]?.array ?? [] {
+            guard let title = button["title"]?.string, !title.isEmpty, let action = button["action"] else {
+                throw Failure("A button needs a title and an action.")
+            }
+            guard !content.buttons.contains(where: { $0.title == title }) else { throw Failure("Two buttons are titled \(title).") }
+            content.buttons.append(CardButton(title: title, action: try self.action(from: action, item: title)))
+        }
+        content.startsAtBottom = object["anchor"]?.string == "bottom"
+        if let markdown = object["markdown"]?.string {
+            content.markdown = markdown
+            return content
+        }
+        if let rows = object["messages"]?.array {
+            var seen: Set<String> = []
+            content.messages = try rows.enumerated().map { index, row in
+                guard let id = row["id"].map(\.text), !id.isEmpty else { throw Failure("Message \(index + 1) has no id.") }
+                guard seen.insert(id).inserted else { throw Failure("Two messages share the id \(id).") }
+                guard let text = row["text"]?.string else { throw Failure("Message \(id) has no text.") }
+                var message = CardMessage(id: id, text: text)
+                message.author = row["author"]?.string
+                message.time = row["time"].map(\.text).flatMap { $0.isEmpty ? nil : $0 }
+                if let kind = row["kind"]?.string {
+                    guard let known = CardMessage.Kind(rawValue: kind) else {
+                        throw Failure("Message \(id) has the kind \(kind). Use message, note or activity.")
+                    }
+                    message.kind = known
+                }
+                return message
+            }
+            return content
+        }
+        guard let rows = object["items"]?.array else {
+            throw Failure("The output has no \"items\", \"messages\" or \"markdown\".")
+        }
+        var seen: Set<String> = []
         for (index, row) in rows.enumerated() {
             // Numbers are accepted as IDs and titles; sources print them unquoted often enough.
             guard let id = row["id"].map(\.text), !id.isEmpty else { throw Failure("Item \(index + 1) has no id.") }
@@ -133,21 +197,35 @@ nonisolated enum CardSourceRunner {
     }
 
     private static func action(from value: JSONValue, item: String) throws -> CardAction {
+        var action = CardAction()
         if let text = value["open"]?.string {
             // Only web links: an item must not be able to launch an arbitrary app or file.
             guard let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
                 throw Failure("Item \(item) opens \(text), which is not a web link.")
             }
-            return .open(url)
+            action.open = url
         }
-        if let path = value["file"]?.string, !path.isEmpty { return .file(path) }
+        if let path = value["file"]?.string, !path.isEmpty { action.file = path }
         if let values = value["set"]?.object, !values.isEmpty {
             guard values.keys.allSatisfy(SpaceVariables.isValidName) else {
                 throw Failure("Item \(item) sets a variable whose name is not letters, digits and underscores.")
             }
-            return .set(values.mapValues(\.text))
+            action.set = values.mapValues(\.text)
         }
-        throw Failure("Item \(item) has an action Rune does not know. Use open, file or set.")
+        if let thread = value["thread"] {
+            guard let key = thread["key"].map(\.text), !key.isEmpty else {
+                throw Failure("Item \(item) has a thread without a key.")
+            }
+            if let effort = thread["effort"]?.string, !AgentThread.Request.efforts.contains(effort) {
+                throw Failure("Item \(item) asks for the effort \(effort). Use \(AgentThread.Request.efforts.joined(separator: ", ")).")
+            }
+            action.thread = AgentThread.Request(key: key, name: thread["name"]?.string, prompt: thread["prompt"]?.string,
+                                                model: thread["model"]?.string, effort: thread["effort"]?.string)
+        }
+        guard action != CardAction() else {
+            throw Failure("Item \(item) has an action Rune does not know. Use open, file, set or thread.")
+        }
+        return action
     }
 }
 

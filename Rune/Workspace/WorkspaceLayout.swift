@@ -19,6 +19,9 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
     var leading: [WorkspaceColumn]
     /// Card columns right of the hub, left to right.
     var trailing: [WorkspaceColumn]
+    /// Whether the hub leaves out the main terminal, for a space whose terminals are all
+    /// opened by its cards. Optional so layouts saved before it existed still read.
+    var hidesMainTerminal: Bool?
 
     static let standard = WorkspaceLayout(
         leading: [WorkspaceColumn(width: WorkspaceColumn.defaultWidth, cards: [.commands, .files])],
@@ -119,7 +122,7 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
                 return column.cards.isEmpty ? nil : column
             }
         }
-        return WorkspaceLayout(leading: clean(leading), trailing: clean(trailing))
+        return WorkspaceLayout(leading: clean(leading), trailing: clean(trailing), hidesMainTerminal: hidesMainTerminal)
     }
 }
 
@@ -141,8 +144,9 @@ nonisolated struct WorkspaceArrangement: Equatable, Sendable {
 }
 
 nonisolated extension WorkspaceLayout {
-    /// The most of the window one card column may take.
-    private static let maxColumnShare: CGFloat = 0.28
+    /// The most of the window one card column may take. Enough for a column that holds
+    /// something to read, such as a chat; the hub's minimum is what protects the hub.
+    private static let maxColumnShare: CGFloat = 0.4
     /// The hub's guaranteed width, and its share of a window too narrow for that.
     private static let hubMinWidth: CGFloat = 480
     private static let hubMinShare: CGFloat = 0.40
@@ -287,11 +291,11 @@ nonisolated enum WorkspaceLayoutStore {
 
     /// `~/.rune/spaces/<folder>-<hash>.json`: the folder name to recognise it by, and a hash
     /// of the full path to keep two checkouts of one name apart.
-    static func homeFile(for root: URL) -> URL {
+    static func homeFile(for root: URL, in folder: String = "spaces") -> URL {
         let path = root.resolvingSymlinksInPath().standardizedFileURL.path
         let hash = SHA256.hash(data: Data(path.utf8)).prefix(4).map { String(format: "%02x", $0) }.joined()
         return FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: ".rune/spaces/\(root.lastPathComponent)-\(hash).json")
+            .appending(path: ".rune/\(folder)/\(root.lastPathComponent)-\(hash).json")
     }
 
     static func isSavedInRepository(_ root: URL) -> Bool {
