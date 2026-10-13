@@ -29,3 +29,25 @@ This is the target model. The app does not implement all of it yet. Build this f
 - **Branch switch.** Terminals stay. Rune can offer to switch the agent thread, with a setting for ask, do nothing, or automatic.
 
 Not designed yet: user-defined card types, finding agent threads per branch, a more reachable Change Brief, and PR review mode. PR review mode is a hub tab with a diff viewer in the Change Brief style. The user selects code and asks about it in one continuous thread, in a fresh session of the agent they chose.
+
+## Glossary
+
+Use one name for one thing, in the interface, the code, and when talking about Rune. Older code still uses some of the retired words. Use these names in new code, and rename old code only as a separate change.
+
+- **Space.** A repo and its branch, shown in one window. Not "workspace".
+- **Setup.** A named space. A repo's default space has no setup.
+- **Layout.** Where the columns and cards sit in a space.
+- **Hub.** The focus column. Not "terminal panel".
+- **Tab.** One page of the hub.
+- **Pane.** One region of a tab. A **terminal pane** runs a shell or agent. A **view pane** shows a view, such as an open chat.
+- **Column.** A stack of cards beside the hub. Not "sidebar".
+- **Card.** One unit in a column. A **built-in card** ships with Rune. A **custom card** is defined by the user. Not "panel", "group", or "section".
+- **Drawer.** A quick look that slides over the hub.
+- **Source.** The script that produces the content of a custom card or a view pane. "Command" is reserved for the Commands card's saved commands.
+- **Item.** One row a source returns.
+- **Action.** What happens when an item is clicked.
+- **Variable.** A named value on the space, such as `conversation`. Not "context", which means an agent's context window.
+- **Binding.** A source or pane that reads a variable and reloads when it changes.
+- **Session.** One terminal process.
+- **Thread.** One agent conversation, which can be resumed.
+- **Thread key.** The variable value a thread belongs to, such as a conversation ID or a branch.
