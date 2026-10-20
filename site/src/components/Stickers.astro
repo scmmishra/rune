@@ -163,7 +163,7 @@
     });
     // Takes every sticker off this page, and out of storage.
     clear.addEventListener("click", () => {
-      for (const sticker of layer.querySelectorAll(".sticker, .peel")) sticker.remove();
+      for (const sticker of layer.querySelectorAll(".sticker, .peel, .residue")) sticker.remove();
       stuck = [];
       save(stuck);
       showCount();
@@ -214,10 +214,18 @@
     flap.style.cssText = `width: ${width}px; height: ${height}px; border-radius: ${style.borderRadius}`;
     shadow.append(flap);
     holder.append(face, shadow);
-    sticker.replaceWith(holder);
+    // The glue the sticker leaves behind: under the holder, so the peel uncovers it, and
+    // still there after the sticker has gone, until it fades a moment later.
+    const residue = document.createElement("div");
+    residue.className = "residue";
+    residue.style.cssText = `${holder.style.cssText}; border-radius: ${style.borderRadius}`;
+    sticker.replaceWith(residue, holder);
     // Nodes made here need the component's scope attribute for its styles to reach them.
     const scope = sticker.getAttributeNames().find(name => name.startsWith("data-astro-cid"));
-    if (scope) for (const node of [holder, shadow, flap]) node.setAttribute(scope, "");
+    if (scope) for (const node of [holder, shadow, flap, residue]) node.setAttribute(scope, "");
+    residue
+      .animate([{ opacity: 1 }, { opacity: 1, offset: 0.35 }, { opacity: 0 }], { duration: 1600, easing: "ease-in" })
+      .finished.then(() => residue.remove());
 
     const total = width + height;
     const duration = 620;
@@ -504,6 +512,20 @@
   .peel {
     position: absolute;
     pointer-events: none;
+  }
+
+  /*
+   * Adhesive left on the page: a faint film the sticker's shape, a little tacky at the
+   * edge, with a few uneven patches where the glue held on harder.
+   */
+  .residue {
+    position: absolute;
+    pointer-events: none;
+    background:
+      radial-gradient(40% 35% at 30% 40%, color-mix(in srgb, var(--ink) 5%, transparent), transparent),
+      radial-gradient(30% 40% at 70% 65%, color-mix(in srgb, var(--ink) 4%, transparent), transparent),
+      color-mix(in srgb, var(--ink) 4%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 7%, transparent);
   }
 
   .flap-shadow {
