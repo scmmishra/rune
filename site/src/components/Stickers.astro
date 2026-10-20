@@ -1,0 +1,646 @@
+---
+/**
+ * An easter egg: clicking an empty spot slaps a sticker onto the page, and the page
+ * shakes on impact. Clicking a sticker peels it off. Stickers are cloned from the
+ * templates below, so they keep this component's scoped styles. Each page keeps its own
+ * stickers in localStorage, so they survive a reload.
+ */
+---
+
+<div class="stickers" aria-hidden="true">
+  <template data-sticker data-name="Shell">
+    <span class="sticker shell">&gt;_</span>
+  </template>
+  <template data-sticker data-name="Keys">
+    <span class="sticker keys"><kbd>⌘</kbd><kbd>D</kbd></span>
+  </template>
+  <template data-sticker data-name="Waiting">
+    <span class="sticker waiting"><i></i>waiting for you</span>
+  </template>
+  <template data-sticker data-name="Diff">
+    <span class="sticker diff"><b>+42</b><i>−7</i></span>
+  </template>
+  <template data-sticker data-name="Floppy">
+    <span class="sticker floppy">
+      <svg viewBox="0 0 48 48">
+        <!-- Flat fills only: a gradient needs an id, and every cloned sticker would repeat it. -->
+        <path d="M4 2h34l8 8v34a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" fill="#2a2f33" />
+        <path d="M4 2h34l8 8v34a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" fill="none" stroke="rgb(255 255 255 / 0.12)" />
+        <rect x="12" y="2" width="22" height="15" rx="1" fill="#c3c8cb" />
+        <rect x="12" y="2" width="22" height="7" rx="1" fill="#d9dde0" />
+        <rect x="26" y="4.5" width="5" height="10" rx="0.6" fill="#2a2f33" />
+        <rect x="7" y="24" width="34" height="19" rx="1.5" fill="#ece6cf" />
+        <path d="M10 30.5h28M10 35h28M10 39.5h20" stroke="#cbc19c" stroke-width="0.7" />
+        <text x="11" y="29" font-size="5" font-family="ui-monospace, monospace" fill="#2b7a50">rune</text>
+        <rect x="4.5" y="40.5" width="3" height="3" rx="0.5" fill="#15181a" />
+      </svg>
+    </span>
+  </template>
+  <template data-sticker data-name="Wordmark">
+    <span class="sticker mark">rune</span>
+  </template>
+</div>
+
+{import.meta.env.DEV && (
+  <>
+    <button type="button" class="catalog-open" aria-label="Sticker catalog" title="Sticker catalog">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h10l4 4v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2Z" /><path d="M15 4v4h4" /></svg>
+    </button>
+    <dialog class="catalog" aria-label="Sticker catalog">
+      <header>
+        <h2>Stickers</h2>
+        <button type="button" class="catalog-close" aria-label="Close">×</button>
+      </header>
+      <ul class="catalog-grid"></ul>
+      <footer>
+        <span class="catalog-count"></span>
+        <button type="button" class="catalog-clear">Clear this page</button>
+      </footer>
+    </dialog>
+  </>
+)}
+
+<script>
+  const layer = document.querySelector<HTMLElement>(".stickers")!;
+  const templates = [...layer.querySelectorAll<HTMLTemplateElement>("template[data-sticker]")];
+  const limit = 40;
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  let last = -1;
+
+  /**
+   * One stuck sticker. `x` is its distance from the middle of the page and `y` from the
+   * top, in pixels. The content is centred, so measuring from the middle keeps a sticker
+   * beside the same content when the window changes width.
+   */
+  type Stuck = { id: string; kind: string; x: number; y: number; tilt: number };
+  // A stored sticker names its design, so adding or removing a design never swaps another.
+  const byName = new Map(templates.map(template => [template.dataset.name ?? "", template]));
+  const storageKey = `rune-site-stickers:${location.pathname}`;
+
+  // Storage can be missing or blocked, as in some private windows. Stickers then last one visit.
+  function load(): Stuck[] {
+    try {
+      const value = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
+      // A sticker whose design is gone is dropped.
+      return Array.isArray(value) ? value.filter(item => byName.has(item?.kind)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function save(items: Stuck[]) {
+    try {
+      if (items.length) localStorage.setItem(storageKey, JSON.stringify(items));
+      else localStorage.removeItem(storageKey);
+    } catch {}
+  }
+
+  let stuck = load();
+
+  function place(item: Stuck): HTMLElement {
+    const sticker = byName.get(item.kind)!.content.firstElementChild!.cloneNode(true) as HTMLElement;
+    sticker.dataset.id = item.id;
+    sticker.style.left = `calc(50% + ${item.x}px)`;
+    sticker.style.top = `${item.y}px`;
+    sticker.style.setProperty("--tilt", `${item.tilt}deg`);
+    layer.append(sticker);
+    return sticker;
+  }
+
+  for (const item of stuck) place(item);
+
+  /*
+   * The holo sheen. Each sticker gets --hx and --hy, from -1 to 1: where the pointer is
+   * relative to the sticker, scaled to the window. Its ::after slides a rainbow by that much.
+   * Pointer moves are batched into one update per frame.
+   */
+  let pointer: { x: number; y: number } | null = null;
+  let queued = false;
+  function shine() {
+    queued = false;
+    if (!pointer) return;
+    const width = innerWidth;
+    const height = innerHeight;
+    for (const sticker of document.querySelectorAll<HTMLElement>(".sticker")) {
+      const box = sticker.getBoundingClientRect();
+      const hx = Math.max(-1, Math.min(1, (pointer.x - (box.left + box.width / 2)) / (width / 2)));
+      const hy = Math.max(-1, Math.min(1, (pointer.y - (box.top + box.height / 2)) / (height / 2)));
+      sticker.style.setProperty("--hx", hx.toFixed(3));
+      sticker.style.setProperty("--hy", hy.toFixed(3));
+    }
+  }
+  document.addEventListener("pointermove", event => {
+    pointer = { x: event.clientX, y: event.clientY };
+    if (!queued) {
+      queued = true;
+      requestAnimationFrame(shine);
+    }
+  }, { passive: true });
+
+  // The dev-only catalog fills itself from the same templates the page drops.
+  const catalog = document.querySelector<HTMLDialogElement>("dialog.catalog");
+  if (catalog) {
+    const grid = catalog.querySelector(".catalog-grid")!;
+    for (const template of templates) {
+      const entry = document.createElement("li");
+      const sticker = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      const label = document.createElement("span");
+      label.className = "catalog-name";
+      label.textContent = template.dataset.name ?? "";
+      entry.append(sticker, label);
+      for (const node of [entry, label]) for (const name of sticker.getAttributeNames()) if (name.startsWith("data-astro-cid")) node.setAttribute(name, "");
+      grid.append(entry);
+    }
+    const count = catalog.querySelector<HTMLElement>(".catalog-count")!;
+    const clear = catalog.querySelector<HTMLButtonElement>(".catalog-clear")!;
+    function showCount() {
+      count.textContent = stuck.length === 1 ? "1 sticker on this page" : `${stuck.length} stickers on this page`;
+      clear.disabled = stuck.length === 0;
+    }
+    document.querySelector(".catalog-open")?.addEventListener("click", () => {
+      showCount();
+      catalog.showModal();
+    });
+    // Takes every sticker off this page, and out of storage.
+    clear.addEventListener("click", () => {
+      for (const sticker of layer.querySelectorAll(".sticker, .peel")) sticker.remove();
+      stuck = [];
+      save(stuck);
+      showCount();
+    });
+    catalog.querySelector(".catalog-close")?.addEventListener("click", () => catalog.close());
+    // A click on the backdrop lands on the dialog itself.
+    catalog.addEventListener("click", event => {
+      if (event.target === catalog) catalog.close();
+    });
+  }
+
+  /**
+   * Peels a sticker off from its bottom-right corner. A fold line x + y = c sweeps across
+   * the sticker, c falling from w + h to 0. The part past the line is cut from the face
+   * and drawn as a flap: the sticker's backing, reflected across the line, so it lies
+   * folded back over what is still stuck down. Reflection across x + y = c maps (x, y)
+   * to (c - y, c - x), which is matrix(0, -1, -1, 0, c, c).
+   */
+  function peel(sticker: HTMLElement) {
+    if (sticker.dataset.peeling) return;
+    sticker.dataset.peeling = "true";
+    stuck = stuck.filter(item => item.id !== sticker.dataset.id);
+    save(stuck);
+    if (reduceMotion.matches) {
+      sticker.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200 }).finished.then(() => sticker.remove());
+      return;
+    }
+
+    const width = sticker.offsetWidth;
+    const height = sticker.offsetHeight;
+    const style = getComputedStyle(sticker);
+    // The flap shows the sticker's back. A sticker with no fill of its own, such as one
+    // whose color sits on its parts, gets a plain paper back.
+    const fill = style.backgroundColor;
+    const isClear = fill === "transparent" || /rgba\(.*,\s*0\)$/.test(fill);
+    const backing = isClear ? "#e6e6e6" : `color-mix(in srgb, ${fill} 55%, #9a9a9a)`;
+
+    // A holder in the sticker's place, so the face and the flap turn with its tilt.
+    const holder = document.createElement("div");
+    holder.className = "peel";
+    holder.style.cssText = `left: ${sticker.style.left}; top: ${sticker.style.top}; width: ${width}px; height: ${height}px; transform: translate(-50%, -50%) rotate(${style.getPropertyValue("--tilt").trim() || "0deg"})`;
+    const face = sticker.cloneNode(true) as HTMLElement;
+    face.style.cssText = "left: 0; top: 0; transform: none; pointer-events: none";
+    const shadow = document.createElement("div");
+    shadow.className = "flap-shadow";
+    const flap = document.createElement("div");
+    flap.className = "flap";
+    flap.style.cssText = `width: ${width}px; height: ${height}px; border-radius: ${style.borderRadius}`;
+    shadow.append(flap);
+    holder.append(face, shadow);
+    sticker.replaceWith(holder);
+    // Nodes made here need the component's scope attribute for its styles to reach them.
+    const scope = sticker.getAttributeNames().find(name => name.startsWith("data-astro-cid"));
+    if (scope) for (const node of [holder, shadow, flap]) node.setAttribute(scope, "");
+
+    const total = width + height;
+    const duration = 620;
+    const start = performance.now();
+    const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
+
+    // The float starts while the peel is still running, so the two overlap:
+    // the peel takes 620ms, and the float begins at 45% of it and runs 520ms.
+    let floating = false;
+    function float() {
+      floating = true;
+      const options = { duration: 520, easing: "cubic-bezier(0.4, 0, 0.7, 0.4)", fill: "forwards" as const };
+      shadow.animate(
+        [
+          { transform: "translate(0, 0) rotate(0deg)" },
+          { transform: "translate(-22px, -40px) rotate(-16deg)" },
+        ],
+        options,
+      );
+      holder.animate([{ opacity: 1 }, { opacity: 0 }], options).finished.then(() => holder.remove());
+    }
+
+    function frame(now: number) {
+      const t = Math.min(1, (now - start) / duration);
+      if (!floating && t >= 0.45) float();
+      const c = total * (1 - ease(t));
+      const fold = c / total;
+      // The face keeps everything with x + y < c: the region from the top-left corner to the line.
+      face.style.clipPath = `polygon(0 0, ${c}px 0, 0 ${c}px)`;
+      flap.style.clipPath = `polygon(${c}px 0, ${width + height}px 0, ${width + height}px ${width + height}px, 0 ${width + height}px, 0 ${c}px)`;
+      flap.style.transform = `matrix(0, -1, -1, 0, ${c}, ${c})`;
+      // Dark where the flap bends, a highlight along the curl, and the backing beyond.
+      flap.style.background = `linear-gradient(135deg, rgb(0 0 0 / 0) ${fold * 100}%, rgb(0 0 0 / 0.28) ${fold * 100}%, rgb(255 255 255 / 0.3) ${fold * 100 + 9}%, rgb(0 0 0 / 0.06) ${fold * 100 + 40}%, rgb(0 0 0 / 0) 100%), ${backing}`;
+      if (t < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  document.addEventListener("click", event => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    // The catalog keeps its clicks: its stickers are for looking at.
+    if (event.target instanceof Element && event.target.closest("dialog, .catalog-open")) return;
+    const clicked = event.target instanceof Element ? event.target.closest<HTMLElement>(".sticker") : null;
+    if (clicked) {
+      peel(clicked);
+      return;
+    }
+    // Links, controls, keys and the home page's stones keep their own clicks.
+    if (event.target instanceof Element && event.target.closest("a, button, input, textarea, select, kbd, label, [data-key], .sticker")) return;
+    // A click that ends a text selection is for the text.
+    if (String(getSelection() ?? "").length > 0) return;
+
+    // Never the same sticker twice in a row.
+    let index = Math.floor(Math.random() * templates.length);
+    if (index === last) index = (index + 1) % templates.length;
+    last = index;
+
+    const tilt = Math.round(Math.random() * 36 - 18);
+    const item: Stuck = {
+      id: crypto.randomUUID(),
+      kind: templates[index].dataset.name ?? "",
+      x: Math.round(event.pageX - document.documentElement.clientWidth / 2),
+      y: Math.round(event.pageY),
+      tilt,
+    };
+    const sticker = place(item);
+    stuck.push(item);
+    // Past the limit, the oldest sticker comes off.
+    while (stuck.length > limit) {
+      const oldest = stuck.shift()!;
+      layer.querySelector(`.sticker[data-id="${oldest.id}"]`)?.remove();
+    }
+    save(stuck);
+
+    if (reduceMotion.matches) return;
+    // The slap: the sticker comes down from above the page, then the page jolts.
+    const drop = sticker.animate(
+      [
+        { transform: `translate(-50%, -50%) rotate(${tilt - 8}deg) scale(2.4)`, opacity: 0 },
+        { transform: `translate(-50%, -50%) rotate(${tilt}deg) scale(0.92)`, opacity: 1, offset: 0.75 },
+        { transform: `translate(-50%, -50%) rotate(${tilt}deg) scale(1)`, opacity: 1 },
+      ],
+      { duration: 240, easing: "cubic-bezier(0.55, 0, 0.9, 0.6)" },
+    );
+    drop.finished.then(() => {
+      document.body.animate(
+        [
+          { transform: "translate(0, 0)" },
+          { transform: "translate(-7px, 5px) rotate(-0.4deg)" },
+          { transform: "translate(6px, -4px) rotate(0.35deg)" },
+          { transform: "translate(-4px, 2px)" },
+          { transform: "translate(2px, -1px)" },
+          { transform: "translate(0, 0)" },
+        ],
+        { duration: 300, easing: "ease-out" },
+      );
+    }).catch(() => {});
+  });
+</script>
+
+<style>
+  /* As wide as the page, so a sticker's left can be measured from the middle. */
+  .stickers {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 0;
+    z-index: 50;
+  }
+
+  /* A sticker: its own color to the edge, a thin rim, a soft shadow, and a slight sheen. */
+  .sticker {
+    position: absolute;
+    transform: translate(-50%, -50%) rotate(var(--tilt));
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.12),
+      0 1px 1px rgb(0 0 0 / 0.12),
+      0 6px 14px -4px rgb(0 0 0 / 0.3);
+    background-image: linear-gradient(135deg, rgb(255 255 255 / 0.28), rgb(255 255 255 / 0) 45%);
+    user-select: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  /* The dev-only catalog. */
+  .catalog-open {
+    position: fixed;
+    left: 1rem;
+    bottom: 1rem;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: 0;
+    border-radius: 999px;
+    background: #111;
+    color: #eee;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+  }
+
+  .catalog-open svg {
+    width: 1.1rem;
+    height: 1.1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linejoin: round;
+  }
+
+  .catalog {
+    width: min(34rem, calc(100vw - 2rem));
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: 0 30px 60px -20px rgb(0 0 0 / 0.4);
+  }
+
+  .catalog::backdrop {
+    background: rgb(0 0 0 / 0.35);
+  }
+
+  .catalog header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.9rem 1rem 0.9rem 1.25rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .catalog h2 {
+    margin: 0;
+    font: 600 1rem/1 var(--display);
+  }
+
+  .catalog-close {
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 1.25rem;
+    cursor: pointer;
+  }
+
+  .catalog-close:hover {
+    background: var(--stone);
+    color: var(--ink);
+  }
+
+  .catalog-grid {
+    list-style: none;
+    margin: 0;
+    padding: 1.5rem 1.25rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+    gap: 1.75rem 1rem;
+  }
+
+  .catalog footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1rem 0.75rem 1.25rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .catalog-count {
+    font: 400 0.75rem/1 var(--mono);
+    color: var(--muted);
+  }
+
+  .catalog-clear {
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--ground);
+    color: var(--ink);
+    font: 500 0.8125rem/1 var(--body);
+    cursor: pointer;
+  }
+
+  .catalog-clear:hover:not(:disabled) {
+    background: var(--stone);
+  }
+
+  .catalog-clear:disabled {
+    color: var(--muted);
+    cursor: default;
+  }
+
+  .catalog-grid li {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  /* In the catalog, a sticker sits in the flow, straight, and can't be peeled. */
+  .catalog-grid .sticker {
+    position: relative;
+    transform: none;
+    cursor: default;
+  }
+
+  .catalog-name {
+    font: 400 0.75rem/1 var(--mono);
+    color: var(--muted);
+  }
+
+  /* A faint silvery sheen with a hint of color, which follows the pointer. */
+  .sticker::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(
+      115deg,
+      transparent 28%,
+      rgb(232 236 242 / 0.6) 40%,
+      rgb(240 226 236 / 0.6) 46%,
+      rgb(255 255 255 / 0.75) 50%,
+      rgb(222 238 236 / 0.6) 54%,
+      rgb(228 232 246 / 0.6) 60%,
+      transparent 72%
+    );
+    background-size: 300% 300%;
+    /* At most 2% from either end of its range: further out, the gradient's edge would show. */
+    background-position: calc(50% + var(--hx, 0) * 48%) calc(50% + var(--hy, 0) * 48%);
+    background-repeat: no-repeat;
+    mix-blend-mode: soft-light;
+    opacity: 0.35;
+  }
+
+  /* While peeling: the face and the flap sit in a holder that takes the sticker's place. */
+  .peel {
+    position: absolute;
+    pointer-events: none;
+  }
+
+  .flap-shadow {
+    position: absolute;
+    inset: 0;
+    filter: drop-shadow(-2px 3px 3px rgb(0 0 0 / 0.3));
+  }
+
+  .flap {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
+  }
+
+  .shell {
+    padding: 0.5rem 0.7rem;
+    border-radius: 12px;
+    background-color: #1d2420;
+    color: #5fd38d;
+    font: 600 1.25rem/1 var(--mono);
+  }
+
+  .keys {
+    padding: 0.4rem;
+    border-radius: 12px;
+    background-color: #191c1a;
+  }
+
+  /*
+   * A keycap lit from above, like the tiles in Rune's tab row: a soft glare across the top
+   * half, a bright line where the top edge catches the light, and a thin rim.
+   */
+  .keys kbd {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 7px;
+    background: linear-gradient(#363d38, #272d29);
+    box-shadow:
+      0 2px 0 #0b0d0c,
+      inset 0 1px 0 rgb(255 255 255 / 0.16),
+      inset 0 0 0 0.5px rgb(255 255 255 / 0.1);
+    color: #5fd38d;
+    font: 500 0.9rem/1 var(--mono);
+    overflow: hidden;
+  }
+
+  .keys kbd::after {
+    content: "";
+    position: absolute;
+    inset: 1px 1px 50% 1px;
+    border-radius: 6px 6px 3px 3px;
+    background: linear-gradient(rgb(255 255 255 / 0.13), rgb(255 255 255 / 0));
+    pointer-events: none;
+  }
+
+  /*
+   * A diff count on a dark sticker: each number on a chip tinted in its own color, and a
+   * faint gloss across the top.
+   */
+  .diff {
+    gap: 0.3rem;
+    padding: 0.35rem;
+    border-radius: 11px;
+    background-color: #191c1a;
+    background-image: linear-gradient(rgb(255 255 255 / 0.1), rgb(255 255 255 / 0) 55%);
+  }
+
+  .diff b,
+  .diff i {
+    padding: 0.3rem 0.5rem 0.35rem;
+    border-radius: 7px;
+    font: 700 1.125rem/1 "Timeless Variable", var(--display);
+    font-variation-settings: "wght" 700;
+    font-style: normal;
+    letter-spacing: -0.02em;
+  }
+
+  .diff b {
+    background: rgb(95 211 141 / 0.16);
+    color: #5fd38d;
+  }
+
+  .diff i {
+    background: rgb(240 113 107 / 0.16);
+    color: #f0716b;
+  }
+
+  /*
+   * A 3.5-inch floppy disk, drawn in SVG. Its shape is not a rectangle, so it casts its
+   * shadow with a filter, and the holo sheen is clipped to the disk's outline.
+   */
+  .floppy {
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 3px;
+    background-image: none;
+    box-shadow: none;
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.15)) drop-shadow(0 6px 8px rgb(0 0 0 / 0.25));
+  }
+
+  .floppy svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .floppy::after {
+    clip-path: polygon(4% 4%, 79% 4%, 96% 21%, 96% 96%, 4% 96%);
+  }
+
+  .waiting {
+    padding: 0.45rem 0.8rem 0.45rem 0.6rem;
+    border-radius: 999px;
+    background-color: #191c1a;
+    color: #f2f6f3;
+    font: 500 0.85rem/1 var(--body);
+  }
+
+  .waiting i {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    background: #5fd38d;
+    box-shadow: 0 0 0 3px rgb(95 211 141 / 0.25);
+  }
+
+  .mark {
+    padding: 0.35rem 0.85rem 0.45rem;
+    border-radius: 999px;
+    background-color: #2b7a50;
+    color: #fff;
+    font: 800 1.5rem/1 "Timeless Variable", var(--display);
+    font-variation-settings: "wght" 800;
+    letter-spacing: -0.04em;
+  }
+</style>

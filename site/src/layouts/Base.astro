@@ -3,6 +3,7 @@ import "@fontsource/geist-mono/400.css";
 import "@fontsource/geist-mono/500.css";
 import "../styles/global.css";
 import { REPO } from "../lib/site";
+import Stickers from "../components/Stickers.astro";
 
 interface Props {
   title: string;
@@ -49,6 +50,7 @@ const { title, description, current } = Astro.props;
         <a href={REPO}>Source</a>
       </nav>
     </footer>
+    <Stickers />
   </body>
 </html>
 
