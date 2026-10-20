@@ -4,7 +4,13 @@ An agent that runs in a Rune terminal can act on the window around it. It does t
 
 ## Setup
 
-Register the server once, at user scope. It offers no tools when the agent runs outside Rune, so it is safe to leave on everywhere.
+Rune does not register the server on its own. Run "Connect Agents to Rune" from the command palette, or use the "Let agents use Rune" step of the welcome window. Either one registers the running Rune's binary with each agent CLI found on the login shell's PATH, at user scope. It replaces any server named `rune` that is already there.
+
+The welcome step reads each CLI's config file to show its state: not installed, not connected, connected, or connected to another copy of Rune, such as Rune Dev.
+
+The server offers no tools when the agent runs outside Rune, so it can stay registered everywhere. Agent sessions that were already running load it only after a restart.
+
+The same registration by hand:
 
 ```sh
 claude mcp add -s user rune -- /Applications/Rune.app/Contents/MacOS/Rune --rune-mcp

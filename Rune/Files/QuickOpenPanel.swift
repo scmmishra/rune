@@ -4,7 +4,7 @@ import SwiftUI
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
     case searchProject, reload, openProject, switchBranch, switchTerminal, newTerminal, closeTerminal, hideTerminal,
          changeGuide, showCard, removeCard, toggleMainTerminal, openSetup, newSetup, renameSetup, deleteSetup, saveLayoutToRepository, showWelcome,
-         checkForUpdates
+         connectAgents, checkForUpdates
 
     var id: Self { self }
 
@@ -16,7 +16,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .newTerminal: "⇧⌘T"
         case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .showCard, .removeCard,
              .toggleMainTerminal, .openSetup, .newSetup,
-             .renameSetup, .deleteSetup, .saveLayoutToRepository, .showWelcome, .checkForUpdates: nil
+             .renameSetup, .deleteSetup, .saveLayoutToRepository, .showWelcome, .connectAgents, .checkForUpdates: nil
         }
     }
 
@@ -42,6 +42,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .deleteSetup: "Delete Setup…"
         case .saveLayoutToRepository: "Save Workspace Layout to Repository"
         case .showWelcome: "Show Welcome…"
+        case .connectAgents: "Connect Agents to Rune"
         case .checkForUpdates: "Check for Updates…"
         }
     }
@@ -65,6 +66,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .deleteSetup: "trash"
         case .saveLayoutToRepository: "square.and.arrow.down"
         case .showWelcome: "hand.wave"
+        case .connectAgents: "point.3.connected.trianglepath.dotted"
         case .checkForUpdates: "arrow.down.circle"
         }
     }

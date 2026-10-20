@@ -500,6 +500,7 @@ struct WorkspaceView: View {
         case .closeTerminal: terminals.panel.needsCloseConfirmation = true
         case .showWelcome: openWindow(id: "onboarding")
         case .checkForUpdates: updater.controller.updater.checkForUpdates()
+        case .connectAgents: Task { await connectAgents() }
         case .openProject: presentProjects()
         // The palette lists terminals itself rather than handing this back.
         case .switchTerminal: break
@@ -1139,6 +1140,27 @@ struct WorkspaceView: View {
         showTerminal(terminals.thread(key: request.key, name: request.name) {
             AgentThread.command(for: request, in: rootURL)
         })
+    }
+
+    /// Registers this Rune's MCP server with every agent CLI found, then says what happened.
+    private func connectAgents() async {
+        let model = AgentConnectionModel()
+        await model.refresh()
+        await model.connect()
+        let alert = NSAlert()
+        alert.messageText = model.errors.isEmpty ? "Agents connected to Rune" : "Some agents were not connected"
+        let lines = AgentConnection.Client.allCases.map { client in
+            let state = switch model.statuses[client] {
+            case .connected: "connected"
+            case .missing: "not installed"
+            case .connectedElsewhere: "connected to another copy of Rune"
+            default: "not connected"
+            }
+            return "\(client.name): \(state)."
+        }
+        let note = "Agents started from now on can use Rune's tools. Running sessions need a restart."
+        alert.informativeText = (lines + model.errors + ["", note]).joined(separator: "\n")
+        alert.runModal()
     }
 
     /// A tool call from an agent in one of this window's terminals, through `Rune --rune-mcp`.

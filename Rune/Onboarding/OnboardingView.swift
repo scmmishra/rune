@@ -6,8 +6,9 @@ enum OnboardingPreferenceKey {
 }
 
 /// First-launch welcome: shows what Rune does for agent work, teaches shortcuts by pressing
-/// them (terminal navigation in a live sketch), offers the `rune` command, and ends by
-/// opening a project. It never spotlights the real UI or asks for system permissions.
+/// them (terminal navigation in a live sketch), offers the `rune` command and the agent
+/// connection, and ends by opening a project. It never spotlights the real UI or asks for
+/// system permissions.
 struct OnboardingView: View {
     /// Replays come from Help, where a workspace is already open, so a project is optional.
     let isReplay: Bool
@@ -16,7 +17,7 @@ struct OnboardingView: View {
     let onClose: () -> Void
 
     private enum Step: Int, CaseIterable {
-        case welcome, agents, shortcuts, terminals, commandLine, project
+        case welcome, agents, shortcuts, terminals, commandLine, agentTools, project
     }
 
     @State private var step = Step.welcome
@@ -35,6 +36,7 @@ struct OnboardingView: View {
                 case .shortcuts: OnboardingShortcutsStep(pressed: pressed)
                 case .terminals: OnboardingTerminalsStep(demo: terminalDemo)
                 case .commandLine: OnboardingCommandLineStep()
+                case .agentTools: OnboardingAgentToolsStep()
                 case .project: OnboardingProjectStep(recents: recents, onOpen: onOpen, onSkip: isReplay ? nil : onClose)
                 }
             }
