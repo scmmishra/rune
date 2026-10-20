@@ -1,0 +1,10 @@
+---
+import Doc from "../../layouts/Doc.astro";
+import { docs } from "../../lib/docs";
+
+export function getStaticPaths() {
+  return docs.filter(doc => doc.slug).map(doc => ({ params: { slug: doc.slug } }));
+}
+---
+
+<Doc slug={Astro.params.slug} />

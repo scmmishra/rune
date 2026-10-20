@@ -1,0 +1,115 @@
+---
+import "@fontsource/geist-mono/400.css";
+import "@fontsource/geist-mono/500.css";
+import "../styles/global.css";
+import { REPO } from "../lib/site";
+
+interface Props {
+  title: string;
+  description: string;
+  /** The header link for the current page. */
+  current?: "docs" | "changelog";
+}
+
+const { title, description, current } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={new URL("/icon.png", Astro.site)} />
+    <link rel="icon" href="/favicon.png" />
+  </head>
+  <body>
+    <header class="wrap site-header">
+      <a class="home" href="/" aria-label="Rune home">
+        <img src="/icon.png" alt="" width="28" height="28" />
+        <span>Rune</span>
+      </a>
+      <nav aria-label="Site">
+        <a href="/docs" aria-current={current === "docs" ? "page" : undefined}>Docs</a>
+        <a href="/changelog" aria-current={current === "changelog" ? "page" : undefined}>Changelog</a>
+        <a href={REPO}>GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="wrap site-footer">
+      <span>Rune is open source and made by <a href="https://shivam.dev">Shivam Mishra</a>.</span>
+      <nav aria-label="Footer">
+        <a href="/docs">Docs</a>
+        <a href="/changelog">Changelog</a>
+        <a href={REPO}>Source</a>
+      </nav>
+    </footer>
+  </body>
+</html>
+
+<style>
+  .site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-top: 1.5rem;
+    padding-bottom: 1.5rem;
+  }
+
+  .home {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    text-decoration: none;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 1.25rem;
+  }
+
+  .home img {
+    display: block;
+  }
+
+  nav {
+    display: flex;
+    gap: 1.25rem;
+    font-size: 0.9375rem;
+  }
+
+  nav a {
+    color: var(--muted);
+    text-decoration: none;
+  }
+
+  nav a:hover,
+  nav a[aria-current="page"] {
+    color: var(--ink);
+  }
+
+  .site-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.75rem 1.5rem;
+    margin-top: 6rem;
+    padding-top: 1.5rem;
+    padding-bottom: 3rem;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.875rem;
+  }
+
+  .site-footer a {
+    color: var(--muted);
+  }
+
+  .site-footer a:hover {
+    color: var(--ink);
+  }
+</style>

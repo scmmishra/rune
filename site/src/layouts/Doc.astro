@@ -1,0 +1,84 @@
+---
+import Base from "./Base.astro";
+import { docs } from "../lib/docs";
+
+interface Props {
+  slug: string;
+}
+
+const { slug } = Astro.props;
+const doc = docs.find(item => item.slug === slug)!;
+---
+
+<Base title={`${doc.title} · Rune`} description={`Rune documentation: ${doc.title}.`} current="docs">
+  <div class="wrap layout">
+    <nav aria-label="Docs">
+      {docs.map(item => (
+        <a href={item.slug ? `/docs/${item.slug}` : "/docs"} aria-current={item.slug === slug ? "page" : undefined}>
+          {item.slug ? item.title : "Overview"}
+        </a>
+      ))}
+    </nav>
+    <article>
+      <h1>{doc.title}</h1>
+      <div class="prose" set:html={doc.html} />
+    </article>
+  </div>
+</Base>
+
+<style>
+  .layout {
+    max-width: calc(58rem + var(--gutter) * 2);
+    display: grid;
+    grid-template-columns: 10rem minmax(0, 1fr);
+    gap: 3rem;
+    margin-top: clamp(2rem, 6vw, 4rem);
+  }
+
+  nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    font-size: 0.9375rem;
+    position: sticky;
+    top: 1.5rem;
+    align-self: start;
+  }
+
+  nav a {
+    color: var(--muted);
+    text-decoration: none;
+  }
+
+  nav a:hover,
+  nav a[aria-current="page"] {
+    color: var(--ink);
+  }
+
+  nav a[aria-current="page"] {
+    font-weight: 600;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-size: clamp(2.25rem, 6vw, 3rem);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    margin: 0 0 1.5rem;
+  }
+
+  @media (max-width: 720px) {
+    .layout {
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+
+    nav {
+      position: static;
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+    }
+  }
+</style>

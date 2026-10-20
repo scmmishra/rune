@@ -1,0 +1,41 @@
+---
+/**
+ * One key of a shortcut. Modifier symbols are drawn, not typed: fonts draw ⇧ and ↩ at
+ * different sizes and weights, and many fall back to another font for them.
+ */
+interface Props {
+  symbol: string;
+  class?: string;
+}
+
+const icons: Record<string, { label: string; paths: string[] }> = {
+  "⇧": { label: "Shift", paths: ["M12 4.5 19.5 12H15v7.5H9V12H4.5Z"] },
+  "⌘": { label: "Command", paths: ["M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"] },
+  "↩": { label: "Return", paths: ["M19.5 5v6a4 4 0 0 1-4 4H5", "m9.5 10.5-4.5 4.5 4.5 4.5"] },
+};
+
+const { symbol, class: className } = Astro.props;
+const icon = icons[symbol];
+---
+
+{icon ? (
+  <kbd class={className} aria-label={icon.label}>
+    <svg viewBox="0 0 24 24" aria-hidden="true" class="keycap-icon">
+      {icon.paths.map(d => <path d={d} />)}
+    </svg>
+  </kbd>
+) : (
+  <kbd class={className}>{symbol}</kbd>
+)}
+
+<style>
+  .keycap-icon {
+    width: 1em;
+    height: 1em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+</style>

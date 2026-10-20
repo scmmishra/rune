@@ -28,3 +28,8 @@ watchexec \
   --on-busy-update restart \
   -- mise run dev
 """
+
+[tasks.site]
+description = "Run the website at http://localhost:3939"
+dir = "site"
+run = "pnpm install && pnpm astro dev --port 3939"

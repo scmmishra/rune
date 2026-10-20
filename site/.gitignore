@@ -1,0 +1,6 @@
+node_modules
+dist
+.astro
+.vercel
+# Timeless is licensed for web embedding but may not sit in a public repository (license section 6).
+public/fonts/

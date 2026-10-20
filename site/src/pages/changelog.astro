@@ -1,0 +1,68 @@
+---
+import Base from "../layouts/Base.astro";
+import { releases } from "../lib/releases";
+import { REPO } from "../lib/site";
+---
+
+<Base title="Changelog · Rune" description="Every Rune release and what changed in it." current="changelog">
+  <div class="wrap">
+    <h1>Changelog</h1>
+    <p class="note">
+      These notes come from the <a href={`${REPO}/releases`}>GitHub releases</a>. An installed Rune updates itself to the newest one.
+    </p>
+    {releases.map(release => (
+      <section id={release.version} class="release">
+        <h2>
+          <a href={release.url}>{release.version}</a>
+          <time datetime={release.isoDate}>{release.date}</time>
+        </h2>
+        <div class="prose" set:html={release.html} />
+      </section>
+    ))}
+  </div>
+</Base>
+
+<style>
+  h1 {
+    font-family: var(--display);
+    font-size: clamp(2.25rem, 6vw, 3.25rem);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    margin: clamp(2rem, 6vw, 4rem) 0 0.75rem;
+  }
+
+  .note {
+    color: var(--muted);
+    margin: 0 0 2rem;
+  }
+
+  .release {
+    border-top: 1px solid var(--line);
+    padding-top: 1.25rem;
+    margin-top: 2.5rem;
+  }
+
+  .release h2 {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    margin: 0 0 1rem;
+    font-family: var(--mono);
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  .release h2 a {
+    text-decoration: none;
+  }
+
+  time {
+    color: var(--muted);
+    font-size: 0.8125rem;
+  }
+
+  .release :global(h2) {
+    font-size: 1.125rem;
+  }
+</style>
