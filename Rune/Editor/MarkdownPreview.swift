@@ -322,7 +322,12 @@ private struct MarkdownDiagram: View {
                     MarkdownCodeBlock(code: source)
                 }
             } else {
-                QuietProgressView(isActive: true).frame(height: 60).frame(maxWidth: .infinity)
+                // A real shape, not the progress view alone: that view draws nothing for its
+                // first 250ms, and SwiftUI never starts the task below on a view with nothing in it.
+                Color.clear
+                    .frame(height: 60)
+                    .frame(maxWidth: .infinity)
+                    .overlay { QuietProgressView(isActive: true) }
             }
         }
         .task(id: "\(colorScheme):\(source)") {
