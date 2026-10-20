@@ -56,15 +56,16 @@
 }
 
 :root {
-  --ground: #ededed;
-  --surface: #f7f7f7;
-  --ink: #191c1a;
-  --muted: #5d635e;
-  --line: #d6d6d6;
-  --stone: #dddddd;
-  --stone-edge: #bababa;
-  --accent: #2b7a50;
-  --accent-ink: #f4fbf6;
+  /* Dark only: Rune lives in a terminal, and the site matches it. */
+  --ground: #141414;
+  --surface: #1c1c1c;
+  --ink: #e5e8e3;
+  --muted: #979e98;
+  --line: #2c2c2c;
+  --stone: #272727;
+  --stone-edge: #0d0d0d;
+  --accent: #5fd38d;
+  --accent-ink: #0f1a13;
 
   --display: "Timeless Grotesk", ui-sans-serif, system-ui, sans-serif;
   --body: "Timeless Sans", ui-sans-serif, system-ui, sans-serif;
@@ -72,22 +73,7 @@
 
   --measure: 44rem;
   --gutter: clamp(1rem, 4vw, 2.5rem);
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ground: #141414;
-    --surface: #1c1c1c;
-    --ink: #e5e8e3;
-    --muted: #979e98;
-    --line: #2c2c2c;
-    --stone: #272727;
-    --stone-edge: #0d0d0d;
-    --accent: #5fd38d;
-    --accent-ink: #0f1a13;
-    color-scheme: dark;
-  }
+  color-scheme: dark;
 }
 
 *,
