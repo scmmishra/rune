@@ -56,13 +56,13 @@
 }
 
 :root {
-  --ground: #ecedea;
-  --surface: #f7f7f5;
+  --ground: #ededed;
+  --surface: #f7f7f7;
   --ink: #191c1a;
   --muted: #5d635e;
-  --line: #d4d7d1;
-  --stone: #dcded8;
-  --stone-edge: #b9bdb5;
+  --line: #d6d6d6;
+  --stone: #dddddd;
+  --stone-edge: #bababa;
   --accent: #2b7a50;
   --accent-ink: #f4fbf6;
 
@@ -77,13 +77,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ground: #131614;
-    --surface: #1a1e1b;
+    --ground: #141414;
+    --surface: #1c1c1c;
     --ink: #e5e8e3;
     --muted: #979e98;
-    --line: #2a2f2b;
-    --stone: #252a26;
-    --stone-edge: #0c0e0d;
+    --line: #2c2c2c;
+    --stone: #272727;
+    --stone-edge: #0d0d0d;
     --accent: #5fd38d;
     --accent-ink: #0f1a13;
     color-scheme: dark;
