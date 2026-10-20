@@ -14,6 +14,9 @@ struct MarkdownPreview: View {
     var isCompact = false
     /// Where the page opens: its start, or its end for something read newest-last.
     var anchor = UnitPoint.top
+    /// Where a link that is not a web or mail link goes, such as `Sources/App.swift:42`.
+    /// Without it, such links do nothing.
+    var onOpenPath: ((String) -> Void)?
     @State private var blocks: [MarkdownBlock] = []
 
     var body: some View {
@@ -31,8 +34,12 @@ struct MarkdownPreview: View {
         .defaultScrollAnchor(anchor)
         .textSelection(.enabled)
         .environment(\.openURL, OpenURLAction { url in
-            // Only web and mail links leave Rune; relative links have nowhere to go.
-            guard ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") else { return .discarded }
+            // Only web and mail links leave Rune. Other links are paths, if the page can open them.
+            guard ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") else {
+                guard let onOpenPath else { return .discarded }
+                onOpenPath(url.isFileURL ? url.path : (url.absoluteString.removingPercentEncoding ?? url.absoluteString))
+                return .handled
+            }
             return .systemAction
         })
         .task(id: text) {

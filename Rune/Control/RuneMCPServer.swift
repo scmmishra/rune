@@ -59,7 +59,9 @@ nonisolated enum RuneMCPServer {
     private static let instructions = """
     You are running in a terminal pane of Rune, a Mac app that shows a repository in one window. \
     The window has a hub of terminal tabs and split panes, and columns of cards beside it. \
-    Use these tools to show the user what you are talking about: open a file at a line, or open a diff. \
+    Use these tools to show the user what you are talking about: open a file at a line, open a diff, or show a plan as Markdown. \
+    Read other terminals in the window to see what a dev server or a test run printed. \
+    Call rune_notify when you finish a long task or need an answer. \
     Use rune_open_terminal to run something long-lived, such as a dev server or a test watcher, in a pane beside yours. \
     The tools act only on the window that contains your terminal.
     """
@@ -84,6 +86,20 @@ nonisolated enum RuneMCPServer {
                 "placement": ["type": "string", "enum": ["right", "down", "tab"],
                               "description": "Split your pane to the right (default) or down, or open a new tab."],
              ]),
+        tool("rune_read_terminal", "Read the last lines of a terminal in your window, scrollback included. Use it to see a dev server's errors or a test run's output. Name the pane by the id or name that rune_space lists. Saved commands count as panes.",
+             properties: [
+                "pane": ["type": "string", "description": "The pane's id or name, from rune_space."],
+                "lines": ["type": "integer", "description": "How many lines from the end. Defaults to 200."],
+             ], required: ["pane"]),
+        tool("rune_notify", "Tell the user something needs them, such as a finished task or a question. Your tab shows that it is waiting. If the Rune window is focused, Rune shows the message in the window. If not, it sends a macOS notification. If your pane has the keyboard, nothing is shown.",
+             properties: [
+                "message": ["type": "string", "description": "One short sentence."],
+             ], required: ["message"]),
+        tool("rune_open_markdown", "Show Markdown in Rune's preview drawer, such as a plan or a summary. Mermaid code blocks render as diagrams. Links to repository paths, such as `src/app.ts:42`, open that file at that line. A second call replaces the page.",
+             properties: [
+                "title": ["type": "string", "description": "Title shown above the page."],
+                "markdown": ["type": "string", "description": "The Markdown to show."],
+             ], required: ["markdown"]),
         tool("rune_set_variable", "Set a variable on the space. Cards bound to the variable reload with the new value.",
              properties: [
                 "name": ["type": "string", "description": "Variable name: letters, digits and underscores."],

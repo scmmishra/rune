@@ -184,7 +184,9 @@ final class TerminalSession: ObservableObject, Identifiable {
         return "\(shell) -l -i -c \(CommandExecution.quote("\(startCommand); exec \(shell) -l"))"
     }
 
-    private func requestAttention() {
+    /// Marks the session as waiting, unless it has the keyboard. Also called for an agent's
+    /// `rune_notify`.
+    func requestAttention() {
         guard !terminal.isFocused else { return }
         needsAttention = true
         attentionCount &+= 1

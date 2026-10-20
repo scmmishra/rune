@@ -33,13 +33,26 @@ A card's source runs as a child of Rune, not of a terminal. It cannot use the so
 
 | Tool | What it does |
 |---|---|
-| `rune_space` | Returns the repository, branch, setup name, variables, and the tabs with their panes. The caller's pane has `"yours": true`. |
+| `rune_space` | Returns the repository, branch, setup name, variables, the tabs with their panes, and the saved commands that are running. Each pane has an id, a name, its foreground process, and its directory. The caller's pane has `"yours": true`. |
 | `rune_open_file` | Opens a file in the preview drawer, at an optional line. A relative path resolves against the repository root. |
 | `rune_open_diff` | Opens the diff drawer for a file with an uncommitted change. It shows the unstaged diff unless `staged` is true or the file has only a staged change. |
 | `rune_open_terminal` | Opens a shell in the repository root and runs an optional command in it. `placement` is `right` (default) or `down` to split the caller's pane, or `tab` for a new tab. The caller's pane keeps the focus. The shell stays after the command ends. |
 | `rune_set_variable` | Sets a space variable. Cards bound to it reload. |
+| `rune_read_terminal` | Returns the last lines of any terminal in the window, scrollback included. `pane` is an id or a name from `rune_space`. `lines` defaults to 200, at most 5,000. Soft-wrapped rows come back as one line. |
+| `rune_notify` | Marks the caller's tab as waiting and tells the user. If the window is focused, a toast shows over the hub for four seconds. If not, Rune sends a macOS notification. If the caller's pane has the keyboard, nothing is shown. Clicking either one selects the caller's tab. |
+| `rune_open_markdown` | Shows Markdown in the preview drawer under a title. Mermaid blocks render as diagrams. A link to a path, such as `src/app.ts:42`, opens that file at that line. A second call replaces the page. |
 
 There is no tool to edit files. An agent edits files with its own tools, so its permission prompts and its transcript cover every edit.
+
+## Reading terminals
+
+`rune_read_terminal` reads every terminal in the caller's window, not only the panes the agent opened. A terminal can show secrets, such as a token printed by a command. The agent's prompt before the tool call is the check.
+
+libghostty-spm 1.5.2 has no public way to read a terminal's text. Rune reads the surface handle from the package's `TerminalSurface` by reflection. The package is pinned to that exact version, and an update has to check this still works.
+
+## Notifications
+
+macOS asks for notification permission the first time `rune_notify` sends one. If the user declines, the tab still shows that it is waiting.
 
 ## Permissions
 

@@ -71,6 +71,9 @@ struct WorkspaceView: View {
     @State private var isCommandHeld = false
     /// This window's part in the control socket that agents in its terminals reach.
     @State private var controlTarget: RuneControlTarget?
+    /// What an agent's `rune_notify` shows while this window is focused.
+    @State private var agentToast: AgentToast?
+    @State private var window = WindowReference()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openWindow) private var openWindow
     @ObservedObject private var updater = AppUpdater.shared
@@ -218,6 +221,10 @@ struct WorkspaceView: View {
                     .allowsHitTesting(isDrawerVisible)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .zIndex(1)
+                    if let agentToast {
+                        toast(agentToast, hubX: arrangement.hubX, hubWidth: arrangement.hubWidth, top: paneTop)
+                            .zIndex(1.2)
+                    }
                 }
 
                 if isPalettePresented, let directoryURL {
@@ -308,13 +315,13 @@ struct WorkspaceView: View {
             .coordinateSpace(.named(Self.workspaceSpace))
         }
         .background(WorkspaceChrome.color)
-        .background { WindowFullScreenObserver(isFullScreen: $isWindowFullScreen) }
-        .onAppear { terminals.onOpenLink = openTerminalLink }
+        .background {
+            WindowFullScreenObserver(isFullScreen: $isWindowFullScreen)
+            WindowReader(reference: window)
+        }
         .onAppear {
-            guard directoryURL != nil, controlTarget == nil else { return }
-            let target = RuneControlTarget(terminals: terminals, handle: handleControl)
-            RuneControlServer.shared.register(target)
-            controlTarget = target
+            terminals.onOpenLink = openTerminalLink
+            registerControl()
         }
         .background {
             WorkspaceShortcutMonitor(
@@ -353,22 +360,7 @@ struct WorkspaceView: View {
         .task { await terminals.monitorProcesses() }
         .task { if directoryURL != nil { await projectCommands.load() } }
         .onAppear { cardCatalog.reload() }
-        .onChange(of: terminals.supporting.map(\.id)) {
-            if case let .terminal(id) = openDrawer,
-               !terminals.supporting.contains(where: { $0.id == id }) {
-                if terminals.navigation.activeID == terminals.primary.id {
-                    // A parked session exiting must not take focus from a
-                    // palette, editor, or the primary terminal being used.
-                    drawerCleanupTask?.cancel()
-                    withAnimation(.snappy(duration: 0.22)) {
-                        openDrawer = nil
-                        isDrawerVisible = false
-                    }
-                } else {
-                    showTerminal(terminals.active)
-                }
-            }
-        }
+        .onChange(of: terminals.supporting.map(\.id)) { closeExitedDrawerTerminal() }
         .environmentObject(repository)
         .navigationTitle(windowTitle)
         .alert(setupPromptText.title, isPresented: isSetupPromptPresented) {
@@ -629,6 +621,10 @@ struct WorkspaceView: View {
             EmptyView()
         case let .commit(commit):
             GitCommitDrawer(rootURL: rootURL, commit: commit, onClose: closeDrawer)
+        case let .markdown(title, text):
+            MarkdownDrawer(title: title, text: text, onOpenPath: { path in
+                if case let .file(fileURL, line) = TerminalLink.parse(path, relativeTo: rootURL) { open(fileURL, line: line) }
+            }, onClose: closeDrawer)
         }
     }
 
@@ -1163,6 +1159,87 @@ struct WorkspaceView: View {
         alert.runModal()
     }
 
+    private func closeExitedDrawerTerminal() {
+        guard case let .terminal(id) = openDrawer,
+              !terminals.supporting.contains(where: { $0.id == id }) else { return }
+        if terminals.navigation.activeID == terminals.primary.id {
+            // A parked session exiting must not take focus from a
+            // palette, editor, or the primary terminal being used.
+            drawerCleanupTask?.cancel()
+            withAnimation(.snappy(duration: 0.22)) {
+                openDrawer = nil
+                isDrawerVisible = false
+            }
+        } else {
+            showTerminal(terminals.active)
+        }
+    }
+
+    /// Lets agents in this window's terminals reach it through `Rune --rune-mcp`.
+    private func registerControl() {
+        guard directoryURL != nil, controlTarget == nil else { return }
+        let target = RuneControlTarget(terminals: terminals, handle: handleControl, reveal: revealTerminal)
+        RuneControlServer.shared.register(target)
+        controlTarget = target
+    }
+
+    /// A clicked notification: this window comes forward with the session's tab selected.
+    private func revealTerminal(_ session: TerminalSession) {
+        NSApp.activate()
+        window.window?.makeKeyAndOrderFront(nil)
+        showTerminal(session)
+    }
+
+    /// Centred over the hub, just under the tab row. It closes itself after four seconds.
+    private func toast(_ toast: AgentToast, hubX: CGFloat, hubWidth: CGFloat, top: CGFloat) -> some View {
+        let view = AgentToastView(toast: toast, onSelect: { selectToast(toast) }, onDismiss: { dismissToast(toast) })
+        return view
+            .padding(.horizontal, 16)
+            .frame(width: hubWidth)
+            .offset(x: hubX, y: top + 10)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .task(id: toast.id) {
+                try? await Task.sleep(for: .seconds(4))
+                dismissToast(toast)
+            }
+    }
+
+    private func selectToast(_ toast: AgentToast) {
+        dismissToast(toast)
+        if let session = terminals.session(toast.sessionID) { showTerminal(session) }
+    }
+
+    private func dismissToast(_ toast: AgentToast) {
+        guard agentToast?.id == toast.id else { return }
+        withAnimation(.snappy(duration: 0.2)) { agentToast = nil }
+    }
+
+    /// `rune_notify`: the tab waits for a visit, and the user hears about it unless the
+    /// agent's pane already has the keyboard.
+    private func notify(_ message: String, from caller: TerminalSession) -> RuneControlReply {
+        let title = caller.name
+        let isWindowFocused = NSApp.isActive && window.window?.isKeyWindow == true
+        if isWindowFocused, caller.terminal.isFocused {
+            return RuneControlReply(text: "The user is looking at your pane. Nothing was shown.")
+        }
+        caller.requestAttention()
+        if isWindowFocused {
+            withAnimation(.snappy(duration: 0.2)) {
+                agentToast = AgentToast(sessionID: caller.id, title: title, message: message)
+            }
+            return RuneControlReply(text: "Showed the message in the Rune window.")
+        }
+        AgentNotifications.shared.post(title: title, message: message, sessionID: caller.id)
+        return RuneControlReply(text: "Sent a macOS notification.")
+    }
+
+    /// The session a tool names by ID or by name, among the window's terminals.
+    private func session(named reference: String) -> TerminalSession? {
+        if let id = UUID(uuidString: reference), let session = terminals.session(id) { return session }
+        let matches = terminals.all.filter { $0.name.caseInsensitiveCompare(reference) == .orderedSame }
+        return matches.count == 1 ? matches[0] : nil
+    }
+
     /// A tool call from an agent in one of this window's terminals, through `Rune --rune-mcp`.
     private func handleControl(_ tool: String, _ arguments: [String: JSONValue],
                                caller: TerminalSession) -> RuneControlReply {
@@ -1206,6 +1283,32 @@ struct WorkspaceView: View {
             let session = terminals.open(beside: caller, axis: axis, startCommand: command)
             if let name = arguments["name"]?.string, !name.isEmpty { session.customName = name }
             return RuneControlReply(text: axis == nil ? "Opened a new tab." : "Opened a pane beside yours.")
+        case "rune_read_terminal":
+            guard let reference = arguments["pane"]?.string, let session = session(named: reference) else {
+                return .failure("Name a pane by the id or the name that rune_space lists.")
+            }
+            let lines = arguments["lines"]?.number.map { min(5_000, max(1, Int($0))) } ?? 200
+            guard let text = session.recentText(lines: lines) else {
+                return .failure("\(session.name) has not started yet.")
+            }
+            return RuneControlReply(text: text.isEmpty ? "(\(session.name) is empty.)" : text)
+        case "rune_notify":
+            guard let message = arguments["message"]?.string, !message.isEmpty else {
+                return .failure("Give a message.")
+            }
+            return notify(message, from: caller)
+        case "rune_open_markdown":
+            guard let text = arguments["markdown"]?.string, !text.isEmpty else {
+                return .failure("Give the Markdown to show.")
+            }
+            let title = arguments["title"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? "Notes"
+            dismissPalettes()
+            drawerCleanupTask?.cancel()
+            withAnimation(.snappy(duration: 0.22)) {
+                openDrawer = .markdown(title: title, text: text)
+                isDrawerVisible = true
+            }
+            return RuneControlReply(text: "Showed \"\(title)\" in the preview drawer.")
         case "rune_set_variable":
             guard let name = arguments["name"]?.string, SpaceVariables.isValidName(name) else {
                 return .failure("A variable name uses only letters, digits and underscores.")
@@ -1217,21 +1320,37 @@ struct WorkspaceView: View {
         }
     }
 
+    /// One terminal as `rune_space` lists it. The id is what `rune_read_terminal` takes.
+    private func paneDescription(_ session: TerminalSession, caller: TerminalSession) -> [String: Any] {
+        var pane: [String: Any] = ["id": session.id.uuidString, "name": session.name]
+        if let process = session.foreground, !process.isIdle { pane["process"] = process.name }
+        if let directory = session.currentDirectory { pane["directory"] = directory.path }
+        if session.id == caller.id { pane["yours"] = true }
+        return pane
+    }
+
     /// What `rune_space` tells an agent, as JSON.
     private func spaceDescription(rootURL: URL, caller: TerminalSession) -> String {
         let tabs: [[String: Any]] = terminals.tabs.filter { !terminals.hidesPrimary || $0.id != terminals.primary.id }.map { tab in
-            let panes: [[String: Any]] = tab.paneIDs.compactMap { terminals.session($0) }.map { session in
-                var pane: [String: Any] = ["name": session.name, "focused": session.id == tab.focusedID]
-                if session.id == caller.id { pane["yours"] = true }
+            let panes = tab.paneIDs.compactMap { terminals.session($0) }.map { session in
+                var pane = paneDescription(session, caller: caller)
+                pane["focused"] = session.id == tab.focusedID
                 return pane
             }
             return ["panes": panes, "shown": tab.id == terminals.panelTab.id]
+        }
+        // Saved commands run in terminals of their own, outside the tabs.
+        let commands = terminals.supporting.filter { $0.savedCommandID != nil }.map { session in
+            var command = paneDescription(session, caller: caller)
+            command["status"] = session.commandStatus
+            return command
         }
         var space: [String: Any] = [
             "repository": rootURL.path,
             "branch": repository.snapshot.branch,
             "variables": spaceVariables.values,
             "tabs": tabs,
+            "commands": commands,
         ]
         if let setup = layoutModel.setup?.name { space["setup"] = setup }
         let data = (try? JSONSerialization.data(withJSONObject: space, options: [.prettyPrinted, .sortedKeys])) ?? Data()
@@ -1279,6 +1398,25 @@ private enum WorkspaceDrawer {
     case searchMatch(ProjectSearchMatch)
     case diff(GitChange, GitChange.Area)
     case commit(GitCommit)
+    case markdown(title: String, text: String)
+}
+
+/// The window a view is in, kept without observing so reading it never redraws.
+@MainActor
+private final class WindowReference {
+    weak var window: NSWindow?
+}
+
+private struct WindowReader: NSViewRepresentable {
+    let reference: WindowReference
+
+    func makeNSView(context: Context) -> WindowTrackingView {
+        let view = WindowTrackingView()
+        view.onWindowChange = { [reference] window in reference.window = window }
+        return view
+    }
+
+    func updateNSView(_ view: WindowTrackingView, context: Context) {}
 }
 
 private struct WorkspacePlaceholder: View {

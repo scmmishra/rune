@@ -86,11 +86,15 @@ struct RuneControlReply: Sendable {
 final class RuneControlTarget {
     let terminals: TerminalSessions
     let handle: (_ tool: String, _ arguments: [String: JSONValue], _ caller: TerminalSession) -> RuneControlReply
+    /// Brings the window forward with the session's tab selected, as a clicked notification asks.
+    let reveal: (TerminalSession) -> Void
 
     init(terminals: TerminalSessions,
-         handle: @escaping (_ tool: String, _ arguments: [String: JSONValue], _ caller: TerminalSession) -> RuneControlReply) {
+         handle: @escaping (_ tool: String, _ arguments: [String: JSONValue], _ caller: TerminalSession) -> RuneControlReply,
+         reveal: @escaping (TerminalSession) -> Void) {
         self.terminals = terminals
         self.handle = handle
+        self.reveal = reveal
     }
 
     /// The terminal whose process tree contains the caller, if it is one of this window's.
@@ -189,6 +193,17 @@ final class RuneControlServer {
             RuneControl.writeAll(data, to: connection)
             close(connection)
         }
+    }
+
+    /// Shows the session in whichever window holds it. Returns false if none does any more.
+    func reveal(_ sessionID: UUID) -> Bool {
+        for target in targets.values {
+            if let session = target.terminals.session(sessionID) {
+                target.reveal(session)
+                return true
+            }
+        }
+        return false
     }
 
     private func handle(tool: String, arguments: [String: JSONValue], ancestry: Set<pid_t>) -> RuneControlReply {
