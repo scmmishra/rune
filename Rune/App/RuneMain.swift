@@ -16,6 +16,7 @@ enum RuneMain {
         // stops saving its transcript, and the session cannot be resumed.
         agentSessionMarkers.forEach { unsetenv($0) }
         if TerminalProcessGuardian.runIfRequested() { return }
+        if RuneMCPServer.runIfRequested() { return }
         RuneApp.main()
     }
 }

@@ -69,6 +69,8 @@ struct WorkspaceView: View {
     /// terminals while one of them is carried across.
     @State private var draggedCard: WorkspaceCardID?
     @State private var isCommandHeld = false
+    /// This window's part in the control socket that agents in its terminals reach.
+    @State private var controlTarget: RuneControlTarget?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openWindow) private var openWindow
     @ObservedObject private var updater = AppUpdater.shared
@@ -308,6 +310,12 @@ struct WorkspaceView: View {
         .background(WorkspaceChrome.color)
         .background { WindowFullScreenObserver(isFullScreen: $isWindowFullScreen) }
         .onAppear { terminals.onOpenLink = openTerminalLink }
+        .onAppear {
+            guard directoryURL != nil, controlTarget == nil else { return }
+            let target = RuneControlTarget(terminals: terminals, handle: handleControl)
+            RuneControlServer.shared.register(target)
+            controlTarget = target
+        }
         .background {
             WorkspaceShortcutMonitor(
                 onQuickOpen: presentQuickOpen,
@@ -382,6 +390,7 @@ struct WorkspaceView: View {
         }
         .onAppear { if directoryURL != nil { repository.start() } }
         .onDisappear {
+            if let controlTarget { RuneControlServer.shared.unregister(controlTarget) }
             repository.stop()
             guide.cancel()
             drawerCleanupTask?.cancel()
@@ -1130,6 +1139,81 @@ struct WorkspaceView: View {
         showTerminal(terminals.thread(key: request.key, name: request.name) {
             AgentThread.command(for: request, in: rootURL)
         })
+    }
+
+    /// A tool call from an agent in one of this window's terminals, through `Rune --rune-mcp`.
+    private func handleControl(_ tool: String, _ arguments: [String: JSONValue],
+                               caller: TerminalSession) -> RuneControlReply {
+        guard let rootURL = directoryURL else { return .failure("This window has no repository.") }
+        func fileURL() -> URL? {
+            guard let path = arguments["path"]?.string, !path.isEmpty else { return nil }
+            return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, relativeTo: rootURL).standardizedFileURL
+        }
+        switch tool {
+        case "rune_space":
+            return RuneControlReply(text: spaceDescription(rootURL: rootURL, caller: caller))
+        case "rune_open_file":
+            guard let url = fileURL() else { return .failure("Give the path of a file.") }
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+                return .failure("No file at \(url.path).")
+            }
+            let line = arguments["line"]?.number.map { max(1, Int($0)) }
+            open(url, line: line)
+            return RuneControlReply(text: "Opened \(url.path) in the preview drawer.")
+        case "rune_open_diff":
+            guard let url = fileURL() else { return .failure("Give the path of a changed file.") }
+            let path = url.path.hasPrefix(rootURL.standardizedFileURL.path + "/")
+                ? String(url.path.dropFirst(rootURL.standardizedFileURL.path.count + 1)) : url.path
+            guard let change = repository.snapshot.changes.first(where: { $0.path == path }) else {
+                return .failure("\(path) has no uncommitted change.")
+            }
+            let wantsStaged = arguments["staged"]?.bool == true
+            let area: GitChange.Area = wantsStaged || change.unstagedState == nil ? .staged : .unstaged
+            if wantsStaged, change.stagedState == nil { return .failure("\(path) has no staged change.") }
+            let selection = GitDiffSelection(change: change, area: area)
+            showDiff(selection, among: [selection])
+            return RuneControlReply(text: "Opened the \(area == .staged ? "staged" : "unstaged") diff of \(path).")
+        case "rune_open_terminal":
+            let command = arguments["command"]?.string.flatMap { $0.isEmpty ? nil : $0 }
+            let axis: TerminalSplitAxis? = switch arguments["placement"]?.string {
+            case "tab": nil
+            case "down": .rows
+            default: .columns
+            }
+            let session = terminals.open(beside: caller, axis: axis, startCommand: command)
+            if let name = arguments["name"]?.string, !name.isEmpty { session.customName = name }
+            return RuneControlReply(text: axis == nil ? "Opened a new tab." : "Opened a pane beside yours.")
+        case "rune_set_variable":
+            guard let name = arguments["name"]?.string, SpaceVariables.isValidName(name) else {
+                return .failure("A variable name uses only letters, digits and underscores.")
+            }
+            spaceVariables.set([name: arguments["value"]?.text ?? ""])
+            return RuneControlReply(text: "Set \(name).")
+        default:
+            return .failure("Rune has no tool named \(tool).")
+        }
+    }
+
+    /// What `rune_space` tells an agent, as JSON.
+    private func spaceDescription(rootURL: URL, caller: TerminalSession) -> String {
+        let tabs: [[String: Any]] = terminals.tabs.filter { !terminals.hidesPrimary || $0.id != terminals.primary.id }.map { tab in
+            let panes: [[String: Any]] = tab.paneIDs.compactMap { terminals.session($0) }.map { session in
+                var pane: [String: Any] = ["name": session.name, "focused": session.id == tab.focusedID]
+                if session.id == caller.id { pane["yours"] = true }
+                return pane
+            }
+            return ["panes": panes, "shown": tab.id == terminals.panelTab.id]
+        }
+        var space: [String: Any] = [
+            "repository": rootURL.path,
+            "branch": repository.snapshot.branch,
+            "variables": spaceVariables.values,
+            "tabs": tabs,
+        ]
+        if let setup = layoutModel.setup?.name { space["setup"] = setup }
+        let data = (try? JSONSerialization.data(withJSONObject: space, options: [.prettyPrinted, .sortedKeys])) ?? Data()
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// The handle in the gap between a card column and its neighbour toward the hub.

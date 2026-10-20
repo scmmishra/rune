@@ -422,6 +422,20 @@ final class TerminalSessions: ObservableObject {
         return session
     }
 
+    /// Opens a shell beside `session` for an agent in it: a split of its pane, or a tab of
+    /// its own when `axis` is nil. `session` keeps the focus, so the agent's user keeps typing.
+    func open(beside session: TerminalSession, axis: TerminalSplitAxis?, startCommand: String?) -> TerminalSession {
+        guard let axis, let index = tabs.firstIndex(where: { $0.contains(session.id) }) else {
+            return add(startCommand: startCommand)
+        }
+        let added = makeShell(startCommand: startCommand)
+        supporting.append(added)
+        tabs[index].focus(session.id)
+        tabs[index].split(axis, adding: added.id)
+        tabs[index].focus(session.id)
+        return added
+    }
+
     /// Opens a shell in a tab of its own.
     func add(startCommand: String? = nil) -> TerminalSession {
         let session = makeShell(startCommand: startCommand)
