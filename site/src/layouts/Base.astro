@@ -3,7 +3,6 @@ import "@fontsource/geist-mono/400.css";
 import "@fontsource/geist-mono/500.css";
 import "../styles/global.css";
 import { REPO } from "../lib/site";
-import Stickers from "../components/Stickers.astro";
 import FloatingDownload from "../components/FloatingDownload.astro";
 
 interface Props {
@@ -52,7 +51,6 @@ const { title, description, current } = Astro.props;
       </nav>
     </footer>
     <FloatingDownload />
-    <Stickers />
   </body>
 </html>
 
