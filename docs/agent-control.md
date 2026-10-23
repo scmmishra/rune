@@ -41,6 +41,11 @@ A card's source runs as a child of Rune, not of a terminal. It cannot use the so
 | `rune_read_terminal` | Returns the last lines of any terminal in the window, scrollback included. `pane` is an id or a name from `rune_space`. `lines` defaults to 200, at most 5,000. Soft-wrapped rows come back as one line. |
 | `rune_notify` | Marks the caller's tab as waiting and tells the user. If the window is focused, a toast shows over the hub for four seconds. If not, Rune sends a macOS notification. If the caller's pane has the keyboard, nothing is shown. Clicking either one selects the caller's tab. |
 | `rune_open_markdown` | Shows Markdown in the preview drawer under a title. Mermaid blocks render as diagrams. A link to a path, such as `src/app.ts:42`, opens that file at that line. A second call replaces the page. |
+| `rune_send_to_terminal` | Types a command into a pane and presses Return. The pane must be at a shell prompt. |
+| `rune_interrupt_terminal` | Sends Ctrl-C to a pane. The pane stays open. |
+| `rune_close_terminal` | Closes a pane and stops its processes. The main terminal cannot be closed. |
+| `rune_wait_for_output` | Waits until a pane prints some text, for up to 50 seconds (30 by default). Only output printed after the call counts. Returns the last 30 lines either way. Saved commands count as panes. |
+| `rune_focus_terminal` | Shows a pane and gives it the keyboard. It does not bring the window forward. |
 | `rune_list_commands` | Returns every saved command of the Commands card: its id, name, shell command, folder, group, auto-start, and status. A command that has run lists its pane. A running command lists the TCP ports its process tree listens on. |
 | `rune_save_command` | Adds a saved command, or updates the one with the same name. Fields left out keep their value. `new_name` renames it. An empty `group` removes it from its group. An update does not restart a running command. |
 | `rune_delete_command` | Deletes a saved command. A running command is stopped first. |
@@ -55,6 +60,14 @@ There is no tool to edit files. An agent edits files with its own tools, so its 
 `rune_read_terminal` reads every terminal in the caller's window, not only the panes the agent opened. A terminal can show secrets, such as a token printed by a command. The agent's prompt before the tool call is the check.
 
 libghostty-spm 1.5.2 has no public way to read a terminal's text. Rune reads the surface handle from the package's `TerminalSurface` by reflection. The package is pinned to that exact version, and an update has to check this still works.
+
+## Acting on panes
+
+`rune_send_to_terminal`, `rune_interrupt_terminal` and `rune_close_terminal` refuse three kinds of pane: the caller's own pane, a pane where Rune detects an agent, and a saved command. An agent has its own shell tool for its pane. Typing into another agent's pane would act as the user in that session. Saved commands have their own tools.
+
+`rune_send_to_terminal` sends the command as a paste and then presses Return. A newline inside the command does not run a line early. Rune samples each shell's foreground process once a second, so a pane opened less than a second ago cannot take a command yet.
+
+`rune_wait_for_output` counts matches in the last 2,000 lines when it starts, and succeeds when the count goes up. Codex stops waiting for an MCP tool after 60 seconds by default, so the wait ends at 50.
 
 ## Saved commands
 

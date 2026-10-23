@@ -1315,6 +1315,9 @@ struct WorkspaceView: View {
             }
             spaceVariables.set([name: arguments["value"]?.text ?? ""])
             return RuneControlReply(text: "Set \(name).")
+        case _ where PaneTools.names.contains(tool):
+            return await PaneTools.handle(tool, arguments, caller: caller, terminals: terminals,
+                                          find: { session(named: $0) }, show: showTerminal)
         case _ where SavedCommandTools.names.contains(tool):
             return await SavedCommandTools.handle(tool, arguments, model: projectCommands)
         default:

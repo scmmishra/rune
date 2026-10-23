@@ -101,6 +101,26 @@ nonisolated enum RuneMCPServer {
                 "title": ["type": "string", "description": "Title shown above the page."],
                 "markdown": ["type": "string", "description": "The Markdown to show."],
              ], required: ["markdown"]),
+        tool("rune_send_to_terminal", "Type a command into a terminal pane and press Return. The pane must be at a shell prompt. It cannot be your own pane, a pane where another agent runs, or a saved command. Use it to rerun a command in a pane you opened.",
+             properties: [
+                "pane": ["type": "string", "description": "The pane's id or name, from rune_space."],
+                "command": ["type": "string", "description": "The command to run."],
+             ], required: ["pane", "command"]),
+        tool("rune_interrupt_terminal", "Send Ctrl-C to a terminal pane, to stop what runs there but keep the pane open. It cannot be your own pane, a pane where another agent runs, or a saved command.",
+             properties: ["pane": ["type": "string", "description": "The pane's id or name, from rune_space."]],
+             required: ["pane"]),
+        tool("rune_close_terminal", "Close a terminal pane and stop its processes. Use it for panes you opened and no longer need. It cannot be your own pane, the main terminal, a pane where another agent runs, or a saved command.",
+             properties: ["pane": ["type": "string", "description": "The pane's id or name, from rune_space."]],
+             required: ["pane"]),
+        tool("rune_wait_for_output", "Wait until a terminal prints some text, such as a server's ready line or a test summary. Only output printed after the call counts. Returns the last lines of the terminal when the text appears or the time runs out.",
+             properties: [
+                "pane": ["type": "string", "description": "The pane's id or name, from rune_space or rune_list_commands."],
+                "text": ["type": "string", "description": "Text to wait for. The match is exact and case-sensitive."],
+                "timeout": ["type": "number", "description": "Seconds to wait. Defaults to 30, at most 50."],
+             ], required: ["pane", "text"]),
+        tool("rune_focus_terminal", "Show a terminal pane and give it the keyboard, so the user can answer a prompt there. It takes the keyboard from the user, so use it only when the user has to act in that pane.",
+             properties: ["pane": ["type": "string", "description": "The pane's id or name, from rune_space."]],
+             required: ["pane"]),
         tool("rune_list_commands", "List the saved commands of the Commands card: dev servers, watchers and other processes the user runs for this repository. Each shows its shell command, folder, group, auto-start, and status. A running command also shows its pane, for rune_read_terminal, and the TCP ports it listens on.",
              properties: [:]),
         tool("rune_save_command", "Add a saved command to the Commands card, or update the one with this name. Fields you leave out keep their value. A command with auto-start runs each time the repository opens in Rune. Updating a running command does not restart it.",
@@ -161,7 +181,8 @@ nonisolated enum RuneMCPServer {
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { return nil }
         defer { close(descriptor) }
-        var timeout = timeval(tv_sec: 10, tv_usec: 0)
+        // rune_wait_for_output holds the reply for up to 50 seconds.
+        var timeout = timeval(tv_sec: 70, tv_usec: 0)
         setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         let connected = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
