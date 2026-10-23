@@ -145,6 +145,23 @@ final class ProjectCommands: ObservableObject {
         return await persist(commands + selected)
     }
 
+    /// Saves one command in place of the saved command with the same ID, or adds it at the end.
+    func upsert(_ command: ProjectCommand) async -> Bool {
+        var updated = commands
+        let previousGroup = updated.first { $0.id == command.id }?.group
+        if let index = updated.firstIndex(where: { $0.id == command.id }) {
+            updated[index] = command
+        } else {
+            updated.append(command)
+        }
+        // A group of one is just a command, as in `delete`.
+        if let previousGroup, previousGroup != command.group, updated.filter({ $0.group == previousGroup }).count == 1,
+           let index = updated.firstIndex(where: { $0.group == previousGroup }) {
+            updated[index].group = nil
+        }
+        return await persist(updated)
+    }
+
     func delete(_ command: ProjectCommand) async {
         guard session(for: command)?.isCommandRunning != true, !busyIDs.contains(command.id) else { return }
         var remaining = commands.filter { $0.id != command.id }

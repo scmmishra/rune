@@ -41,6 +41,12 @@ A card's source runs as a child of Rune, not of a terminal. It cannot use the so
 | `rune_read_terminal` | Returns the last lines of any terminal in the window, scrollback included. `pane` is an id or a name from `rune_space`. `lines` defaults to 200, at most 5,000. Soft-wrapped rows come back as one line. |
 | `rune_notify` | Marks the caller's tab as waiting and tells the user. If the window is focused, a toast shows over the hub for four seconds. If not, Rune sends a macOS notification. If the caller's pane has the keyboard, nothing is shown. Clicking either one selects the caller's tab. |
 | `rune_open_markdown` | Shows Markdown in the preview drawer under a title. Mermaid blocks render as diagrams. A link to a path, such as `src/app.ts:42`, opens that file at that line. A second call replaces the page. |
+| `rune_list_commands` | Returns every saved command of the Commands card: its id, name, shell command, folder, group, auto-start, and status. A command that has run lists its pane. A running command lists the TCP ports its process tree listens on. |
+| `rune_save_command` | Adds a saved command, or updates the one with the same name. Fields left out keep their value. `new_name` renames it. An empty `group` removes it from its group. An update does not restart a running command. |
+| `rune_delete_command` | Deletes a saved command. A running command is stopped first. |
+| `rune_run_command` | Runs a saved command and returns its pane id for `rune_read_terminal`. |
+| `rune_stop_command` | Stops a running saved command and its processes. |
+| `rune_restart_command` | Stops a saved command if it runs, then runs it again. |
 
 There is no tool to edit files. An agent edits files with its own tools, so its permission prompts and its transcript cover every edit.
 
@@ -50,10 +56,16 @@ There is no tool to edit files. An agent edits files with its own tools, so its 
 
 libghostty-spm 1.5.2 has no public way to read a terminal's text. Rune reads the surface handle from the package's `TerminalSurface` by reflection. The package is pinned to that exact version, and an update has to check this still works.
 
+## Saved commands
+
+The command tools change the same store as the Commands card, so the card shows each change at once. They name a command by its id or its name, without regard to case. If two commands in different groups share a name, `group` picks one.
+
+A saved command with `auto_start` runs each time the repository opens in Rune. An agent can set it. The port list comes from the same process tree scan as the terminal header. A process that detaches from the tree, such as a daemon, is not counted.
+
 ## Notifications
 
 macOS asks for notification permission the first time `rune_notify` sends one. If the user declines, the tab still shows that it is waiting.
 
 ## Permissions
 
-A command run by `rune_open_terminal` runs outside the agent's sandbox. The agent's own prompt before an MCP tool call is the only check. If the user allows the tool without asking, the agent can run any command in a new pane.
+A command run by `rune_open_terminal` or `rune_run_command` runs outside the agent's sandbox. A command saved with `rune_save_command` can run later without any agent, when it has auto-start. The agent's own prompt before an MCP tool call is the only check. If the user allows these tools without asking, the agent can run any command.

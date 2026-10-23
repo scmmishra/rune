@@ -85,12 +85,12 @@ struct RuneControlReply: Sendable {
 @MainActor
 final class RuneControlTarget {
     let terminals: TerminalSessions
-    let handle: (_ tool: String, _ arguments: [String: JSONValue], _ caller: TerminalSession) -> RuneControlReply
+    let handle: (_ tool: String, _ arguments: [String: JSONValue], _ caller: TerminalSession) async -> RuneControlReply
     /// Brings the window forward with the session's tab selected, as a clicked notification asks.
     let reveal: (TerminalSession) -> Void
 
     init(terminals: TerminalSessions,
-         handle: @escaping (_ tool: String, _ arguments: [String: JSONValue], _ caller: TerminalSession) -> RuneControlReply,
+         handle: @escaping (_ tool: String, _ arguments: [String: JSONValue], _ caller: TerminalSession) async -> RuneControlReply,
          reveal: @escaping (TerminalSession) -> Void) {
         self.terminals = terminals
         self.handle = handle
@@ -186,7 +186,7 @@ final class RuneControlServer {
         // Read the ancestry now: the caller may exit before the main thread gets to it.
         let ancestry = Set(RuneControl.ancestry(of: peer))
         Task { @MainActor in
-            let reply = RuneControlServer.shared.handle(tool: tool, arguments: arguments, ancestry: ancestry)
+            let reply = await RuneControlServer.shared.handle(tool: tool, arguments: arguments, ancestry: ancestry)
             let object: [String: Any] = ["text": reply.text, "isError": reply.isError]
             var data = (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
             data.append(UInt8(ascii: "\n"))
@@ -206,9 +206,9 @@ final class RuneControlServer {
         return false
     }
 
-    private func handle(tool: String, arguments: [String: JSONValue], ancestry: Set<pid_t>) -> RuneControlReply {
+    private func handle(tool: String, arguments: [String: JSONValue], ancestry: Set<pid_t>) async -> RuneControlReply {
         for target in targets.values {
-            if let caller = target.caller(in: ancestry) { return target.handle(tool, arguments, caller) }
+            if let caller = target.caller(in: ancestry) { return await target.handle(tool, arguments, caller) }
         }
         return .failure("This process does not run in a Rune terminal.")
     }

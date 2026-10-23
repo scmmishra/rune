@@ -1242,7 +1242,7 @@ struct WorkspaceView: View {
 
     /// A tool call from an agent in one of this window's terminals, through `Rune --rune-mcp`.
     private func handleControl(_ tool: String, _ arguments: [String: JSONValue],
-                               caller: TerminalSession) -> RuneControlReply {
+                               caller: TerminalSession) async -> RuneControlReply {
         guard let rootURL = directoryURL else { return .failure("This window has no repository.") }
         func fileURL() -> URL? {
             guard let path = arguments["path"]?.string, !path.isEmpty else { return nil }
@@ -1315,6 +1315,8 @@ struct WorkspaceView: View {
             }
             spaceVariables.set([name: arguments["value"]?.text ?? ""])
             return RuneControlReply(text: "Set \(name).")
+        case _ where SavedCommandTools.names.contains(tool):
+            return await SavedCommandTools.handle(tool, arguments, model: projectCommands)
         default:
             return .failure("Rune has no tool named \(tool).")
         }

@@ -63,6 +63,7 @@ nonisolated enum RuneMCPServer {
     Read other terminals in the window to see what a dev server or a test run printed. \
     Call rune_notify when you finish a long task or need an answer. \
     Use rune_open_terminal to run something long-lived, such as a dev server or a test watcher, in a pane beside yours. \
+    The user keeps the processes they run often, such as dev servers, as saved commands. Use the rune_*_command tools to list, change, run and stop them. \
     The tools act only on the window that contains your terminal.
     """
 
@@ -100,11 +101,35 @@ nonisolated enum RuneMCPServer {
                 "title": ["type": "string", "description": "Title shown above the page."],
                 "markdown": ["type": "string", "description": "The Markdown to show."],
              ], required: ["markdown"]),
+        tool("rune_list_commands", "List the saved commands of the Commands card: dev servers, watchers and other processes the user runs for this repository. Each shows its shell command, folder, group, auto-start, and status. A running command also shows its pane, for rune_read_terminal, and the TCP ports it listens on.",
+             properties: [:]),
+        tool("rune_save_command", "Add a saved command to the Commands card, or update the one with this name. Fields you leave out keep their value. A command with auto-start runs each time the repository opens in Rune. Updating a running command does not restart it.",
+             properties: [
+                "name": ["type": "string", "description": "Name of the command to add or update."],
+                "command": ["type": "string", "description": "Shell command to run. Required for a new command."],
+                "new_name": ["type": "string", "description": "A new name, to rename the command."],
+                "directory": ["type": "string", "description": "Folder to run in, relative to the repository root. Defaults to the root."],
+                "group": ["type": "string", "description": "Group to show the command in. An empty string removes it from its group."],
+                "auto_start": ["type": "boolean", "description": "Run the command each time the repository opens in Rune."],
+             ], required: ["name"]),
+        tool("rune_delete_command", "Delete a saved command from the Commands card. A running command is stopped first.",
+             properties: commandReference, required: ["name"]),
+        tool("rune_run_command", "Run a saved command. Read its output with rune_read_terminal and the pane id this returns.",
+             properties: commandReference, required: ["name"]),
+        tool("rune_stop_command", "Stop a running saved command and the processes it started.",
+             properties: commandReference, required: ["name"]),
+        tool("rune_restart_command", "Stop a saved command if it runs, then run it again. Use it after you change the command or its config.",
+             properties: commandReference, required: ["name"]),
         tool("rune_set_variable", "Set a variable on the space. Cards bound to the variable reload with the new value.",
              properties: [
                 "name": ["type": "string", "description": "Variable name: letters, digits and underscores."],
                 "value": ["type": "string"],
              ], required: ["name", "value"]),
+    ] }
+
+    private static var commandReference: [String: Any] { [
+        "name": ["type": "string", "description": "The saved command's name or id, from rune_list_commands."],
+        "group": ["type": "string", "description": "The command's group, if two commands share the name."],
     ] }
 
     private static func tool(_ name: String, _ description: String, properties: [String: Any],
