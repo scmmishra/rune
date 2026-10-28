@@ -45,7 +45,7 @@ struct TerminalResourceLabel: View {
                 ForEach(reading.ports.prefix(2), id: \.self) { port in
                     Button(":\(port)") { open(port) }
                         .buttonStyle(.plain)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(ThemeColor.accent)
                         .help("Open http://localhost:\(port)")
                         .accessibilityLabel("Open port \(port) in the browser")
                 }
@@ -58,7 +58,7 @@ struct TerminalResourceLabel: View {
                     .help("Memory used by this terminal's processes")
                 if let cpu = reading.cpuPercent {
                     Text("\(cpu)%")
-                        .foregroundStyle(cpu >= 80 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(cpu >= 80 ? AnyShapeStyle(ThemeColor.orange) : AnyShapeStyle(.secondary))
                         .help("CPU used by this terminal's processes")
                 }
             }

@@ -76,6 +76,7 @@ struct WorkspaceView: View {
     @State private var window = WindowReference()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.runeTheme) private var runeTheme
     @ObservedObject private var updater = AppUpdater.shared
 
     private var selectedDiff: GitDiffSelection? {
@@ -141,7 +142,7 @@ struct WorkspaceView: View {
                                                onAdd: addTerminal, onClose: removeTab)
                                     .disabled(isPalettePresented)
                                     // Split panes are cards of their own, and so is the tab row.
-                                    .workspacePanel(isVisible: isSplit, fill: TerminalSurface.color)
+                                    .workspacePanel(isVisible: isSplit)
                                 Color.clear
                                     .overlay {
                                         if terminals.isHubEmpty {
@@ -157,7 +158,7 @@ struct WorkspaceView: View {
                             WorkspacePlaceholder()
                         }
                     }
-                    .workspacePanel(isVisible: directoryURL != nil && !isSplit, fill: TerminalSurface.color)
+                    .workspacePanel(isVisible: directoryURL != nil && !isSplit)
                     .frame(width: arrangement.hubWidth, height: contentHeight)
                     .offset(x: arrangement.hubX, y: headerTop)
                 }
@@ -314,7 +315,7 @@ struct WorkspaceView: View {
             .clipped()
             .coordinateSpace(.named(Self.workspaceSpace))
         }
-        .background(WorkspaceChrome.color)
+        .background(runeTheme.chrome)
         .background {
             WindowFullScreenObserver(isFullScreen: $isWindowFullScreen)
             WindowReader(reference: window)
@@ -470,7 +471,7 @@ struct WorkspaceView: View {
             cardCatalog.reload()
         case .hideTerminal: hideTerminalDrawer()
         // The palette lists these options itself rather than handing them back.
-        case .openSetup, .showCard, .removeCard: break
+        case .openSetup, .showCard, .removeCard, .changeTheme: break
         case .toggleMainTerminal:
             layoutModel.update { $0.hidesMainTerminal = !terminals.hidesPrimary }
             layoutModel.save()

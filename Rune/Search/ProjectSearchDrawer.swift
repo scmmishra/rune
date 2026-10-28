@@ -128,7 +128,7 @@ struct ProjectSearchDrawer: View {
             .frame(minHeight: max(25, typography.size(relativeTo: 25)))
             .background {
                 if model.selection == match.id {
-                    RoundedRectangle(cornerRadius: 5).fill(Color.accentColor.opacity(0.20))
+                    RoundedRectangle(cornerRadius: 5).fill(ThemeColor.accent.opacity(0.20))
                 } else if hoveredMatch == match.id {
                     RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05))
                 }

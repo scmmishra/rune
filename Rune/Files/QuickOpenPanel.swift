@@ -3,8 +3,8 @@ import SwiftUI
 
 enum WorkspaceCommand: String, CaseIterable, Identifiable {
     case searchProject, reload, openProject, switchBranch, switchTerminal, newTerminal, closeTerminal, hideTerminal,
-         changeGuide, showCard, removeCard, toggleMainTerminal, openSetup, newSetup, renameSetup, deleteSetup, saveLayoutToRepository, showWelcome,
-         connectAgents, checkForUpdates
+         changeGuide, showCard, removeCard, toggleMainTerminal, openSetup, newSetup, renameSetup, deleteSetup, saveLayoutToRepository, changeTheme,
+         showWelcome, connectAgents, checkForUpdates
 
     var id: Self { self }
 
@@ -16,7 +16,8 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .newTerminal: "⇧⌘T"
         case .reload, .switchTerminal, .closeTerminal, .hideTerminal, .changeGuide, .showCard, .removeCard,
              .toggleMainTerminal, .openSetup, .newSetup,
-             .renameSetup, .deleteSetup, .saveLayoutToRepository, .showWelcome, .connectAgents, .checkForUpdates: nil
+             .renameSetup, .deleteSetup, .saveLayoutToRepository, .changeTheme, .showWelcome, .connectAgents,
+             .checkForUpdates: nil
         }
     }
 
@@ -41,6 +42,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .renameSetup: "Rename Setup…"
         case .deleteSetup: "Delete Setup…"
         case .saveLayoutToRepository: "Save Workspace Layout to Repository"
+        case .changeTheme: "Change Theme…"
         case .showWelcome: "Show Welcome…"
         case .connectAgents: "Connect Agents to Rune"
         case .checkForUpdates: "Check for Updates…"
@@ -65,6 +67,7 @@ enum WorkspaceCommand: String, CaseIterable, Identifiable {
         case .renameSetup: "pencil"
         case .deleteSetup: "trash"
         case .saveLayoutToRepository: "square.and.arrow.down"
+        case .changeTheme: "paintpalette"
         case .showWelcome: "hand.wave"
         case .connectAgents: "point.3.connected.trianglepath.dotted"
         case .checkForUpdates: "arrow.down.circle"
@@ -106,6 +109,10 @@ struct CommandPalette: View {
     @State private var guideBranches: GitGuideBranches?
     @State private var query = ""
     @State private var selection: Entry.ID? = "command:searchProject"
+    @ObservedObject private var appearance = ThemeAppearance.shared
+    /// The theme before the selection landed on a theme to preview. Closing the palette
+    /// without picking one puts it back.
+    @State private var themeBeforePreview: ThemeVariant?
 
     private enum Entry: Identifiable {
         case command(WorkspaceCommand)
@@ -116,6 +123,7 @@ struct CommandPalette: View {
         case showCard(WorkspaceCardDefinition)
         case removeCard(WorkspaceCardDefinition)
         case branch(String)
+        case theme(ThemeVariant)
 
         var id: String {
             switch self {
@@ -127,6 +135,7 @@ struct CommandPalette: View {
             case let .showCard(card): "showCard:" + card.id.rawValue
             case let .removeCard(card): "removeCard:" + card.id.rawValue
             case let .branch(name): "branch:" + name
+            case let .theme(variant): "theme:" + variant.id
             }
         }
 
@@ -141,6 +150,7 @@ struct CommandPalette: View {
             case .showCard: .showCard
             case .removeCard: .removeCard
             case .branch: .switchBranch
+            case .theme: .changeTheme
             }
         }
 
@@ -153,6 +163,7 @@ struct CommandPalette: View {
             case let .setup(setup): setup.name
             case let .showCard(card), let .removeCard(card): card.title
             case let .branch(name): name
+            case let .theme(variant): variant.name
             }
         }
 
@@ -165,6 +176,7 @@ struct CommandPalette: View {
             case .setup: WorkspaceSetup.symbol
             case .showCard: "plus.rectangle"
             case .removeCard: "minus.rectangle"
+            case .theme: "paintpalette"
             }
         }
     }
@@ -206,6 +218,7 @@ struct CommandPalette: View {
         case .showCard: hiddenCards.map(Entry.showCard)
         case .removeCard: shownCards.map(Entry.removeCard)
         case .switchBranch: branches.map(Entry.branch)
+        case .changeTheme: ThemeVariant.all.map(Entry.theme)
         default: []
         }
     }
@@ -272,6 +285,7 @@ struct CommandPalette: View {
         case .openSetup: "Open setup"
         case .showCard: "Show card"
         case .removeCard: "Remove card"
+        case .changeTheme: "Change theme"
         default: "Run a command"
         }
     }
@@ -292,6 +306,10 @@ struct CommandPalette: View {
                     parent = .switchTerminal
                     query = ""
                     selection = "terminal:" + terminals.panel.id.uuidString
+                case .command(.changeTheme):
+                    parent = .changeTheme
+                    query = ""
+                    selection = "theme:" + appearance.variant.id
                 // These have no picker of their own, so the palette steps into their options.
                 case .command(.openSetup), .command(.showCard), .command(.removeCard):
                     guard case let .command(command) = entry else { return }
@@ -306,6 +324,10 @@ struct CommandPalette: View {
                 case let .showCard(card): onShowCard(card.id)
                 case let .removeCard(card): onRemoveCard(card.id)
                 case let .branch(name): onSwitchBranch(name)
+                case let .theme(variant):
+                    themeBeforePreview = nil
+                    appearance.select(variant)
+                    onClose()
                 }
             }
         ) { entry in
@@ -335,6 +357,9 @@ struct CommandPalette: View {
                         .truncationMode(.middle)
                 }
                 Spacer(minLength: 0)
+                if case let .theme(variant) = entry, variant == (themeBeforePreview ?? appearance.variant) {
+                    Image(systemName: "checkmark").foregroundStyle(.secondary)
+                }
                 if case let .branch(name) = entry, name == currentBranch {
                     Image(systemName: "checkmark").foregroundStyle(.secondary)
                 }
@@ -360,11 +385,29 @@ struct CommandPalette: View {
             }.value
         }
         .onChange(of: query) { selection = matches.first?.id }
+        .onChange(of: selection) { previewTheme() }
+        .onDisappear {
+            if let themeBeforePreview { appearance.select(themeBeforePreview) }
+        }
         .onChange(of: branches) { if !query.isEmpty { selection = matches.first?.id } }
         .onChange(of: canSwitchBranch) { selection = matches.first?.id }
         .onChange(of: canHideTerminal) { selection = matches.first?.id }
         .onChange(of: terminals.supporting.map(\.id)) {
             if !matches.contains(where: { $0.id == selection }) { selection = matches.first?.id }
+        }
+    }
+}
+
+extension CommandPalette {
+    /// Shows the selected theme across Rune while the selection rests on it, so the arrow
+    /// keys preview each one. Moving off the themes puts the saved one back.
+    private func previewTheme() {
+        if case let .theme(variant)? = matches.first(where: { $0.id == selection }) {
+            if themeBeforePreview == nil { themeBeforePreview = appearance.variant }
+            appearance.select(variant)
+        } else if let themeBeforePreview {
+            appearance.select(themeBeforePreview)
+            self.themeBeforePreview = nil
         }
     }
 }
@@ -522,7 +565,7 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
                                     .background {
                                         if selection == item.id {
                                             RoundedRectangle(cornerRadius: 5)
-                                                .fill(Color.accentColor.opacity(0.20))
+                                                .fill(ThemeColor.accent.opacity(0.20))
                                         } else if hoveredItem == item.id {
                                             RoundedRectangle(cornerRadius: 5)
                                                 .fill(Color.primary.opacity(0.05))
@@ -567,7 +610,7 @@ struct SearchPalette<Item: Identifiable, Row: View>: View {
                 Divider()
                 Text(error)
                     .runeFont(size: 11)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(ThemeColor.red)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)

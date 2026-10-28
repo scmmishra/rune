@@ -230,7 +230,7 @@ private struct FileTreeContents: View {
 
             Text(name)
                 .runeFont(size: 12)
-                .foregroundStyle(status?.color ?? Color.primary)
+                .foregroundStyle(status.map { AnyShapeStyle($0.color) } ?? AnyShapeStyle(.primary))
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -260,7 +260,7 @@ private struct FileTreeContents: View {
         .background {
             if selectedURL == url {
                 RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius)
-                    .fill(Color.accentColor.opacity(hasKeyboardFocus ? 0.20 : 0.10))
+                    .fill(ThemeColor.accent.opacity(hasKeyboardFocus ? 0.20 : 0.10))
             } else if hoveredURL == url {
                 RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius)
                     .fill(Color.primary.opacity(0.04))
@@ -552,7 +552,7 @@ nonisolated private enum FileTreeStatus: Equatable, Sendable {
     case modified
     case untracked
 
-    var color: Color {
+    var color: ThemeColor {
         switch self {
         case .modified:
             .yellow

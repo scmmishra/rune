@@ -133,7 +133,7 @@ struct GitSidebarView: View {
             if let errorMessage = model.errorMessage {
                 Text(errorMessage)
                     .runeFont(size: 10)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(ThemeColor.red)
                     .lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -216,15 +216,15 @@ struct GitSidebarView: View {
                     .frame(maxWidth: .infinity)
             }
             .runeFont(size: 11, weight: .medium)
-            .foregroundStyle(isCommitReady ? Color.accentColor : Color.secondary)
+            .foregroundStyle(isCommitReady ? ThemeColor.accent : ThemeColor.secondary)
             .padding(.vertical, 5)
             .background {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isCommitReady ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.055))
+                    .fill(isCommitReady ? AnyShapeStyle(ThemeColor.accent.opacity(0.16)) : AnyShapeStyle(Color.primary.opacity(0.055)))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(Color.accentColor.opacity(isCommitReady ? 0.35 : 0), lineWidth: 1)
+                    .stroke(ThemeColor.accent.opacity(isCommitReady ? 0.35 : 0), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
@@ -413,11 +413,11 @@ private struct GitSidebarHeader: View, Equatable {
                 HStack(spacing: 7) {
                     if additions > 0 {
                         Text("+\(additions)")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(ThemeColor.green)
                     }
                     if deletions > 0 {
                         Text("−\(deletions)")
-                            .foregroundStyle(.red)
+                            .foregroundStyle(ThemeColor.red)
                     }
 
                     Spacer(minLength: 4)
@@ -567,9 +567,9 @@ private struct GitCommitRow: View {
                         .truncationMode(.middle)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
-                        .foregroundStyle(ref.isHead ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(ref.isHead ? AnyShapeStyle(ThemeColor.accent) : AnyShapeStyle(.secondary))
                         .background(
-                            (ref.isHead ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.07)),
+                            (ref.isHead ? AnyShapeStyle(ThemeColor.accent.opacity(0.16)) : AnyShapeStyle(Color.primary.opacity(0.07))),
                             in: RoundedRectangle(cornerRadius: 3, style: .continuous)
                         )
                 }
@@ -865,7 +865,7 @@ private struct GitChangesList: View, Equatable {
             )
             .background {
                 if selectedDiff?.change.path == change.path && selectedDiff?.area == area {
-                    RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius).fill(Color.accentColor.opacity(0.16))
+                    RoundedRectangle(cornerRadius: WorkspaceMetrics.rowRadius).fill(ThemeColor.accent.opacity(0.16))
                 }
             }
             .contextMenu {
@@ -980,11 +980,11 @@ private struct GitChangeRow: View {
                         HStack(spacing: 4) {
                             if let additions = diff.additions, additions > 0 {
                                 Text("+\(additions)")
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(ThemeColor.green)
                             }
                             if let deletions = diff.deletions, deletions > 0 {
                                 Text("−\(deletions)")
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(ThemeColor.red)
                             }
                         }
                         .runeFont(size: 9)
@@ -999,7 +999,7 @@ private struct GitChangeRow: View {
             Button(action: onToggle) {
                 Image(systemName: area == .staged ? "checkmark.square.fill" : "square")
                     .font(.system(size: 11))
-                    .foregroundStyle(area == .staged ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(area == .staged ? ThemeColor.accent : ThemeColor.secondary)
             }
             .buttonStyle(WorkspaceButtonStyle())
             .disabled(isDisabled)
@@ -1014,7 +1014,7 @@ private struct GitChangeRow: View {
 }
 
 private extension GitFileState {
-    var color: Color {
+    var color: ThemeColor {
         switch self {
         case .added, .untracked:
             .green

@@ -157,8 +157,8 @@ private struct TerminalTabItem: View {
         .overlay {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .stroke(
-                    isPeeked ? Color.accentColor.opacity(isFocused ? 0.85 : 0.45)
-                             : Color.primary.opacity(isSelected ? 0.08 : 0),
+                    isPeeked ? AnyShapeStyle(ThemeColor.accent.opacity(isFocused ? 0.85 : 0.45))
+                             : AnyShapeStyle(Color.primary.opacity(isSelected ? 0.08 : 0)),
                     lineWidth: isPeeked ? 1.5 : 1
                 )
         }

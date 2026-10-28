@@ -35,6 +35,7 @@ struct TerminalDrawer: View {
     @State private var isConfirmingClose = false
     @FocusState private var isNameFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.runeTheme) private var runeTheme
 
     static let controlsAnimation = Animation.snappy(duration: 0.16)
 
@@ -194,7 +195,7 @@ struct TerminalDrawer: View {
         // The shadow belongs to a static shape behind the content. Put on the
         // content, it would be recomputed from the terminal's pixels every frame.
         .background {
-            shape.fill(TerminalSurface.color)
+            shape.fill(runeTheme.surface)
                 .shadow(color: .black.opacity(shadow.opacity), radius: shadow.radius, y: shadow.y)
         }
         .overlay { shape.strokeBorder(Color.primary.opacity(borderOpacity), lineWidth: 1) }

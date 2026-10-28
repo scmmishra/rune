@@ -84,7 +84,7 @@ struct CommandEditor: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let error = model.error {
-                Text(error).foregroundStyle(.red).runeFont(size: 11)
+                Text(error).foregroundStyle(ThemeColor.red).runeFont(size: 11)
             }
             if let validation {
                 Text(validation).runeFont(size: 11).foregroundStyle(.secondary)
@@ -204,7 +204,7 @@ struct ProjectCommandImporter: View {
                             .disabled(existingNames.contains(command.name))
                         }
                         ForEach(Array(source.warnings.enumerated()), id: \.offset) { _, warning in
-                            Text(warning).runeFont(size: 11).foregroundStyle(.orange)
+                            Text(warning).runeFont(size: 11).foregroundStyle(ThemeColor.orange)
                         }
                         if source.commands.isEmpty { Text("No commands found.").foregroundStyle(.secondary) }
                     }
@@ -220,7 +220,7 @@ struct ProjectCommandImporter: View {
             }
             Text("Selected commands are saved locally. Importing does not start them or change project files.")
                 .runeFont(size: 11).foregroundStyle(.secondary)
-            if let error = model.error { Text(error).runeFont(size: 11).foregroundStyle(.red) }
+            if let error = model.error { Text(error).runeFont(size: 11).foregroundStyle(ThemeColor.red) }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)

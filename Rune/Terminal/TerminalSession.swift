@@ -101,14 +101,7 @@ final class TerminalSession: ObservableObject, Identifiable {
             hasExited = true
         }
         let terminal = TerminalViewState(
-            theme: TerminalTheme(
-                light: TerminalConfiguration(startingFrom: .alabaster) { builder in
-                    builder.withBackground(TerminalSurface.lightHex)
-                },
-                dark: TerminalConfiguration(startingFrom: .afterglow) { builder in
-                    builder.withBackground(TerminalSurface.darkHex)
-                }
-            ),
+            theme: RuneTheme.current.terminalTheme,
             terminalConfiguration: TerminalConfiguration { builder in
                 builder.withWindowPaddingX(12)
                 builder.withWindowPaddingY(10)

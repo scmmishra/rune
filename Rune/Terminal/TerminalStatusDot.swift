@@ -32,7 +32,7 @@ struct TerminalStatusDot: View {
             .accessibilityLabel(status)
     }
 
-    private var color: Color {
+    private var color: ThemeColor {
         // Attention outranks the process state: the point is that you have not seen it yet.
         if session.needsAttention { return .orange }
         if session.savedCommandID != nil {

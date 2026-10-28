@@ -183,7 +183,7 @@ struct CustomCardView: View {
     private func problem(_ message: String) -> some View {
         Label(message, systemImage: "exclamationmark.triangle")
             .runeFont(size: 11)
-            .foregroundStyle(.orange)
+            .foregroundStyle(ThemeColor.orange)
             .lineLimit(3)
             .padding(.horizontal, WorkspaceMetrics.columnInset)
             .padding(.bottom, 8)
@@ -261,7 +261,7 @@ private struct CustomCardRow: View {
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
-    private static func tint(_ name: String?) -> Color {
+    private static func tint(_ name: String?) -> ThemeColor {
         switch name?.lowercased() {
         case "green": .green
         case "orange": .orange
@@ -334,7 +334,7 @@ private struct CardMessageRow: View {
             .padding(.leading, message.kind == .note ? 10 : 0)
             .overlay(alignment: .leading) {
                 if message.kind == .note {
-                    Rectangle().fill(Color.orange.opacity(0.5)).frame(width: 2)
+                    Rectangle().fill(ThemeColor.orange.opacity(0.5)).frame(width: 2)
                 }
             }
         }

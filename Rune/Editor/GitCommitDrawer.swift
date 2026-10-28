@@ -79,9 +79,9 @@ struct GitCommitDrawer: View {
 
                             HStack(spacing: 6) {
                                 Text("+\(file.additions)")
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(ThemeColor.green)
                                 Text("−\(file.deletions)")
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(ThemeColor.red)
                             }
                             .runeFont(size: 10, weight: .medium)
                         }

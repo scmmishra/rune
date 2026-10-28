@@ -88,7 +88,7 @@ struct ProjectCommandsView: View {
                 .disabled(!model.isLoaded || model.isSaving)
             }
             if let error = model.error, editing == nil, !isImporting {
-                Text(error).runeFont(size: 11).foregroundStyle(.red).padding(.horizontal, 8)
+                Text(error).runeFont(size: 11).foregroundStyle(ThemeColor.red).padding(.horizontal, 8)
                 if !model.isLoaded {
                     HStack {
                         Button("Retry") { Task { await model.load() } }
@@ -255,7 +255,7 @@ private struct GroupStatusDot: View {
             dot(.green, status: "All running")
         } else if running > 0 {
             Circle()
-                .strokeBorder(Color.green, lineWidth: 1.2)
+                .strokeBorder(ThemeColor.green, lineWidth: 1.2)
                 .frame(width: 6, height: 6)
                 .help("\(running) of \(sessions.count) running")
                 .accessibilityLabel("\(running) of \(sessions.count) running")

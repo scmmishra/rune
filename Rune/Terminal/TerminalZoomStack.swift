@@ -12,6 +12,7 @@ struct TerminalZoomStack: View {
     static let peek: CGFloat = 6
     /// How much narrower each card is, per side, than the one in front of it.
     private static let inset: CGFloat = 10
+    @Environment(\.runeTheme) private var runeTheme
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -36,7 +37,7 @@ struct TerminalZoomStack: View {
         let y: CGFloat = area.minY + Self.peek * CGFloat(depth - level)
         // Cards further back sit in more shade.
         let shade: Double = 0.08 * Double(level)
-        return shape.fill(TerminalSurface.color)
+        return shape.fill(runeTheme.surface)
             .overlay { shape.fill(Color.black.opacity(shade)) }
             .overlay { shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1) }
             .frame(width: width, height: height)

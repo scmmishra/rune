@@ -13,6 +13,7 @@ struct TerminalPane: View {
     /// Fades the grid slightly while this terminal isn't taking keystrokes.
     var dimsWhenUnfocused = false
     @Environment(\.runeTypography) private var typography
+    @Environment(\.runeTheme) private var runeTheme
     @Environment(\.controlActiveState) private var controlActiveState
 
     /// Only while the window is key: a terminal read from another app stays at full contrast.
@@ -23,7 +24,7 @@ struct TerminalPane: View {
     var body: some View {
         TerminalSurfaceView(context: terminal)
             .overlay {
-                TerminalSurface.color
+                runeTheme.surface
                     .opacity(isDimmed ? 0.3 : 0)
                     .allowsHitTesting(false)
                     // Focus hands off through a nil first responder; the delay keeps
@@ -33,7 +34,7 @@ struct TerminalPane: View {
                     .accessibilityHidden(true)
             }
             .overlay {
-                if let launchError { Text(launchError).runeFont(size: 12).foregroundStyle(.red).padding(24) }
+                if let launchError { Text(launchError).runeFont(size: 12).foregroundStyle(ThemeColor.red).padding(24) }
             }
             .onChange(of: isVisible) {
                 terminal.isSurfaceVisible = isVisible
@@ -48,6 +49,8 @@ struct TerminalPane: View {
             .onAppear {
                 (terminal.attachedPlatformView as? RuneTerminalView)?.onActivate = onActivate
                 applyTypography()
+                // A terminal off screen missed any theme change made meanwhile.
+                terminal.setTheme(runeTheme.terminalTheme)
                 terminal.isSurfaceVisible = isVisible
                 // Request focus once, not on subsequent updates that could interrupt a palette.
                 // Ghostty's imperative focus API avoids SwiftUI FocusState resets
@@ -62,6 +65,9 @@ struct TerminalPane: View {
             }
             .onChange(of: typography) {
                 applyTypography()
+            }
+            .onChange(of: runeTheme) {
+                terminal.setTheme(runeTheme.terminalTheme)
             }
     }
 

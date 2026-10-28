@@ -7,6 +7,7 @@ struct SettingsView: View {
     private var fontFamily = RuneTypography.defaultFamily
     @AppStorage(TypographyPreferenceKey.fontSize)
     private var fontSize = RuneTypography.defaultSize
+    @ObservedObject private var appearance = ThemeAppearance.shared
     @AppStorage(GuideAgent.preferenceKey)
     private var guideAgent = GuideAgent.defaultPreference
     @State private var fontSizeInput = ""
@@ -28,6 +29,16 @@ struct SettingsView: View {
                     .onSubmit(commitFontSize)
 
                 Text("Font size must be between 8 and 24. Unavailable fonts use the system monospaced font.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Section("Theme") {
+                Picker("Theme", selection: Binding(get: { appearance.variant }, set: appearance.select)) {
+                    ForEach(ThemeVariant.all) { variant in
+                        Text(variant.name).tag(variant)
+                    }
+                }
+                Text("When the system appearance changes, Rune switches to the theme's other version, such as Catppuccin Latte to Catppuccin Mocha.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

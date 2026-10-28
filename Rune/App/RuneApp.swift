@@ -12,6 +12,7 @@ struct RuneApp: App {
         WindowGroup("Rune", id: "workspace", for: WorkspaceIdentity.self) { $workspace in
             WorkspaceWindow(workspace: $workspace)
                 .runeTypographyPreferences()
+                .runeThemePreference()
         }
         .defaultSize(width: 1_200, height: 760)
         .windowStyle(.hiddenTitleBar)

@@ -1,23 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// The recessed surface behind the workspace's cards.
-enum WorkspaceChrome {
-    static let color = Color(nsColor: NSColor(name: nil) { appearance in
-        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        return NSColor(white: isDark ? 0.065 : 0.885, alpha: 1)
-    })
-
-}
-
 /// The one card surface in the workspace: the terminal panel and every sidebar section.
 /// Sharing fill, radius and border is what makes the columns read as one set.
 private struct WorkspacePanel: ViewModifier {
     let isVisible: Bool
     let radius: CGFloat
-    let fill: Color
     let isRaised: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.runeTheme) private var runeTheme
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -27,7 +18,7 @@ private struct WorkspacePanel: ViewModifier {
             // content, it would be recomputed from the terminal's pixels every frame.
             .background {
                 if isVisible {
-                    shape.fill(fill)
+                    shape.fill(runeTheme.surface)
                         .shadow(color: .black.opacity(isRaised ? (colorScheme == .dark ? 0.45 : 0.10) : 0), radius: 10, y: 2)
                 }
             }
@@ -39,14 +30,13 @@ private struct WorkspacePanel: ViewModifier {
 
 extension View {
     /// The terminal panel: the same card, lifted slightly as the workspace's focus.
-    func workspacePanel(isVisible: Bool = true, fill: Color) -> some View {
-        modifier(WorkspacePanel(isVisible: isVisible, radius: WorkspaceMetrics.panelRadius, fill: fill, isRaised: true))
+    func workspacePanel(isVisible: Bool = true) -> some View {
+        modifier(WorkspacePanel(isVisible: isVisible, radius: WorkspaceMetrics.panelRadius, isRaised: true))
     }
 
     /// A section card in a sidebar column.
     func workspaceGroup() -> some View {
-        modifier(WorkspacePanel(isVisible: true, radius: WorkspaceMetrics.groupRadius,
-                                fill: TerminalSurface.color, isRaised: false))
+        modifier(WorkspacePanel(isVisible: true, radius: WorkspaceMetrics.groupRadius, isRaised: false))
     }
 
     /// A section label on the chrome, shared by every sidebar section.

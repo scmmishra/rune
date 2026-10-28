@@ -209,7 +209,7 @@ struct ChangeGuideDrawer: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(9)
                 .contentShape(Rectangle())
-                .background(model.selectedSection == index ? Color.accentColor.opacity(0.12) : .clear,
+                .background(ThemeColor.accent.opacity(model.selectedSection == index ? 0.12 : 0),
                             in: RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
@@ -275,7 +275,7 @@ struct ChangeGuideDrawer: View {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(reference.patch.components(separatedBy: "\n").prefix(16).enumerated()), id: \.offset) { _, line in
                         Text(line.isEmpty ? " " : line)
-                            .foregroundStyle(line.hasPrefix("+") ? Color.green : line.hasPrefix("-") ? Color.red : Color.secondary)
+                            .foregroundStyle(line.hasPrefix("+") ? ThemeColor.green : line.hasPrefix("-") ? ThemeColor.red : ThemeColor.secondary)
                     }
                 }
                 .font(.system(size: 11, design: .monospaced))

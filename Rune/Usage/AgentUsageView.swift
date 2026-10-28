@@ -151,7 +151,7 @@ private extension TerminalAgent {
 private extension AgentUsage.Window {
     var percentText: String { "\(Int(usedPercent.rounded()))%" }
 
-    var tint: Color {
+    var tint: ThemeColor {
         if usedPercent >= 90 { return .red }
         if usedPercent >= 70 { return .orange }
         return .secondary
