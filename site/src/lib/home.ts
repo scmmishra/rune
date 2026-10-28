@@ -28,6 +28,7 @@ export const more = [
   { name: "Agent threads", text: "A card item can open a Claude Code session tied to a key, such as a ticket ID. Clicking it again resumes the same session, even after a relaunch." },
   { name: "Agent tools", text: "An MCP server inside Rune gives Claude Code and Codex tools for the window they run in. Connect them from the command palette.", href: "/docs/agent-control" },
   { name: "Commands that stop", text: "Procfile entries and mise tasks run in terminals of their own. Rune stops them when it quits." },
+  { name: "Themes", text: "Rune has 10 themes, such as Catppuccin, Gruvbox, and Tokyo Night. A theme colors the terminal and the whole window. In the command palette, the arrow keys preview each one." },
   { name: "The rune command", text: "Type rune in any shell to open the current folder in Rune." },
 ];
 
