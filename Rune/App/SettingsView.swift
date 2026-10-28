@@ -33,7 +33,9 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Section("Theme") {
-                Picker("Theme", selection: Binding(get: { appearance.variant }, set: appearance.select)) {
+                // A closure, not `appearance.select`: Swift 6.3.3 crashes in IR generation on
+                // the thunk it makes for a main-actor method passed as the setter.
+                Picker("Theme", selection: Binding(get: { appearance.variant }, set: { appearance.select($0) })) {
                     ForEach(ThemeVariant.all) { variant in
                         Text(variant.name).tag(variant)
                     }
