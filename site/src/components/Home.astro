@@ -32,7 +32,10 @@ const letters = [
     </h1>
     <p class="lede">{lede}</p>
     <div class="download">
-      <a class="button" href={DOWNLOAD}>Download for Mac</a>
+      <a class="button" href={DOWNLOAD}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v10M7.5 11l4.5 4.5 4.5-4.5M6 19.5h12" /></svg>
+        Download for Mac
+      </a>
       <p class="meta">
         <a href="/changelog">{latest?.version ?? "Latest"}</a>
         <span aria-hidden="true">·</span>
@@ -90,7 +93,9 @@ const letters = [
 
 <script>
   import { lightKeys } from "../lib/keys";
+  import { spotlight } from "../lib/spotlight";
   lightKeys();
+  spotlight(".download .button");
 </script>
 
 <style>
@@ -176,23 +181,31 @@ const letters = [
     margin-top: 2rem;
   }
 
+  /* The border and a faint tint light up on the side facing the pointer. */
   .button {
-    display: inline-block;
-    background: var(--ink);
-    color: var(--ground);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.7rem 1.2rem 0.7rem 1rem;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    color: var(--ink);
     text-decoration: none;
     font-weight: 600;
-    padding: 0.7rem 1.2rem;
-    border-radius: 10px;
-    transition: transform 0.12s ease;
+    background:
+      radial-gradient(10rem circle at var(--x, 50%) var(--y, -50%), color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%) padding-box,
+      linear-gradient(var(--surface), var(--surface)) padding-box,
+      radial-gradient(9rem circle at var(--x, 50%) var(--y, -50%), var(--accent), var(--line) 80%) border-box;
   }
 
-  .button:hover {
-    transform: translateY(-1px);
-  }
-
-  .button:active {
-    transform: translateY(1px);
+  .button svg {
+    width: 1.05rem;
+    height: 1.05rem;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .meta {

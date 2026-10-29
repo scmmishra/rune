@@ -4,12 +4,15 @@ import { DOWNLOAD } from "../lib/site";
 ---
 
 <a class="float" href={DOWNLOAD}>
-  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14" /></svg>
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v10M7.5 11l4.5 4.5 4.5-4.5M6 19.5h12" /></svg>
   Download for Mac
   <span>{latest?.version}</span>
 </a>
 
 <script>
+  import { spotlight } from "../lib/spotlight";
+  spotlight(".float");
+
   // Shown on every page. A page with its own download button, such as the home page,
   // hides it while that button is on screen, so the same link never shows twice.
   const float = document.querySelector<HTMLElement>(".float");
@@ -34,8 +37,13 @@ import { DOWNLOAD } from "../lib/site";
     gap: 0.5rem;
     padding: 0.65rem 1.1rem 0.65rem 0.9rem;
     border-radius: 999px;
-    background: var(--ink);
-    color: var(--ground);
+    border: 1px solid transparent;
+    color: var(--ink);
+    /* The home page's button: the side facing the pointer lights up. */
+    background:
+      radial-gradient(10rem circle at var(--x, 50%) var(--y, -50%), color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%) padding-box,
+      linear-gradient(var(--surface), var(--surface)) padding-box,
+      radial-gradient(9rem circle at var(--x, 50%) var(--y, -50%), var(--accent), var(--line) 80%) border-box;
     text-decoration: none;
     font-weight: 600;
     font-size: 0.9375rem;
@@ -67,7 +75,7 @@ import { DOWNLOAD } from "../lib/site";
     width: 1rem;
     height: 1rem;
     fill: none;
-    stroke: currentColor;
+    stroke: var(--accent);
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
