@@ -5,9 +5,10 @@ nonisolated enum TerminalAgent: String, CaseIterable {
     case codex = "Codex"
     case openCode = "OpenCode"
     case pi = "Pi"
+    case clue = "Clue"
 
     private static let titlePattern = try! NSRegularExpression(
-        pattern: #"(?<![\p{L}\p{N}_./\\-])(claude(?: code)?|codex|opencode|pi)(?![\p{L}\p{N}_./\\-])"#,
+        pattern: #"(?<![\p{L}\p{N}_./\\-])(claude(?: code)?|codex|opencode|pi|clue)(?![\p{L}\p{N}_./\\-])"#,
         options: [.caseInsensitive]
     )
 
@@ -22,6 +23,7 @@ nonisolated enum TerminalAgent: String, CaseIterable {
             case "codex": return .codex
             case "opencode": return .openCode
             case "pi": return .pi
+            case "clue": return .clue
             default: return nil
             }
         })

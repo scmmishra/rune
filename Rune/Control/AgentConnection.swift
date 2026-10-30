@@ -6,13 +6,14 @@ nonisolated enum AgentConnection {
     static let serverName = "rune"
 
     enum Client: String, CaseIterable, Identifiable, Sendable {
-        case claude, codex
+        case claude, codex, clue
         var id: Self { self }
 
         var name: String {
             switch self {
             case .claude: "Claude Code"
             case .codex: "Codex"
+            case .clue: "Clue"
             }
         }
 
@@ -21,7 +22,8 @@ nonisolated enum AgentConnection {
             return switch self {
             // Remove first: `add` refuses a name that is already taken.
             case .claude: [["mcp", "remove", "-s", "user", serverName], ["mcp", "add", "-s", "user", serverName] + add]
-            case .codex: [["mcp", "remove", serverName], ["mcp", "add", serverName] + add]
+            // Clue's default scope is the user's profile, and it starts those servers without an approval.
+            case .codex, .clue: [["mcp", "remove", serverName], ["mcp", "add", serverName] + add]
             }
         }
     }
@@ -89,6 +91,11 @@ nonisolated enum AgentConnection {
                 return value.count >= 2 ? String(value.dropFirst().dropLast()) : nil
             }
             return nil
+        case .clue:
+            let directory = environment["CLUE_HOME"].map { URL(fileURLWithPath: $0) } ?? home.appending(path: ".clue")
+            guard let data = try? Data(contentsOf: directory.appending(path: "mcp.json")),
+                  let config = try? JSONValue(json: data) else { return nil }
+            return config["mcpServers"]?[serverName]?["command"]?.string
         }
     }
 

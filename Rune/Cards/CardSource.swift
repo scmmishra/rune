@@ -219,7 +219,11 @@ nonisolated enum CardSourceRunner {
             if let effort = thread["effort"]?.string, !AgentThread.Request.efforts.contains(effort) {
                 throw Failure("Item \(item) asks for the effort \(effort). Use \(AgentThread.Request.efforts.joined(separator: ", ")).")
             }
-            action.thread = AgentThread.Request(key: key, name: thread["name"]?.string, prompt: thread["prompt"]?.string,
+            let agent = thread["agent"]?.string
+            guard let agent = agent.map(AgentThread.Agent.init(rawValue:)) ?? .claude else {
+                throw Failure("Item \(item) asks for the agent \(thread["agent"]?.string ?? ""). Use \(AgentThread.Agent.allCases.map(\.rawValue).joined(separator: ", ")).")
+            }
+            action.thread = AgentThread.Request(key: key, agent: agent, name: thread["name"]?.string, prompt: thread["prompt"]?.string,
                                                 model: thread["model"]?.string, effort: thread["effort"]?.string)
         }
         guard action != CardAction() else {
