@@ -34,6 +34,7 @@ nonisolated enum TerminalAgent: String, CaseIterable {
         switch self {
         case .claude: "agent-claude"
         case .codex: "agent-codex"
+        case .clue: "agent-clue"
         default: nil
         }
     }

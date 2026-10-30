@@ -63,6 +63,7 @@ nonisolated struct TerminalProcessTile: Equatable, Sendable {
     /// Tile background and mark color for each asset.
     private static let colorsByAsset: [String: (background: UInt32, foreground: UInt32)] = [
         "agent-claude": (0xD97757, 0xFFFFFF),
+        "agent-clue": (0x0E0F12, 0xE6E7EA),
         "agent-codex": (0xF7F7F7, 0x1A1A1A),
         "process-bun": (0xFBF0DF, 0x3B2A20),
         "process-deno": (0x1B1B1B, 0xFFFFFF),
