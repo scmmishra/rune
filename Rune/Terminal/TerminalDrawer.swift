@@ -211,10 +211,10 @@ struct TerminalDrawer: View {
             if !isVisible { finishRenaming() }
         }
         .onChange(of: session.needsCloseConfirmation) {
-            if session.needsCloseConfirmation {
-                isConfirmingClose = true
-                session.needsCloseConfirmation = false
-            }
+            guard session.needsCloseConfirmation else { return }
+            session.needsCloseConfirmation = false
+            // Every close request lands here, so an idle shell skips the question here once.
+            if session.closesWithoutConfirmation { onTerminate() } else { isConfirmingClose = true }
         }
         .alert("Close \(session.name)?", isPresented: $isConfirmingClose) {
             Button("Cancel", role: .cancel) {}

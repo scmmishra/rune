@@ -81,6 +81,10 @@ final class TerminalSession: ObservableObject, Identifiable {
     @Published private(set) var hasExited = false
     @Published var needsCloseConfirmation = false
 
+    /// A shell at its prompt, or one that has exited, has nothing to lose, so closing it
+    /// needs no confirmation. Before the first process sample this is false, to be safe.
+    var closesWithoutConfirmation: Bool { hasExited || foreground?.isIdle == true }
+
     /// - Parameter startCommand: Run in the shell before its first prompt, such as an agent
     ///   resuming a thread. The shell stays when it exits.
     init(name: String, workingDirectory: URL?, detectsAgent: Bool = true,

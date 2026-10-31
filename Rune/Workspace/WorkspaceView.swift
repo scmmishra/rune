@@ -489,7 +489,7 @@ struct WorkspaceView: View {
                 NSAlert(error: error).runModal()
             }
         case .newTerminal: addTerminal()
-        // The tab bar owns the confirmation, so ask there rather than ending processes here.
+        // The pane owns the confirmation, so ask there rather than ending processes here.
         case .closeTerminal: terminals.panel.needsCloseConfirmation = true
         case .showWelcome: openWindow(id: "onboarding")
         case .checkForUpdates: updater.controller.updater.checkForUpdates()
@@ -786,7 +786,7 @@ struct WorkspaceView: View {
         let session = terminals.active
         if terminals.isPeeked(session) {
             closeTerminalSurface(session)
-        } else if session.foreground?.isIdle == true || session.hasExited {
+        } else if session.closesWithoutConfirmation {
             Task { await terminals.terminate(session) }
         } else {
             session.needsCloseConfirmation = true

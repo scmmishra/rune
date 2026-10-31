@@ -38,7 +38,10 @@ struct TerminalTabBar: View {
                                 isFocused: tab.id == sessions.navigation.activeID,
                                 onSelect: { onSelect(session) },
                                 onPeek: { onPeek(session) },
-                                onClose: { onClose(session) }
+                                onClose: { onClose(session) },
+                                closesWithoutConfirmation: {
+                                    tab.paneIDs.compactMap { sessions.session($0) }.allSatisfy(\.closesWithoutConfirmation)
+                                }
                             )
                             .id(tab.id)
                         }
@@ -85,6 +88,8 @@ private struct TerminalTabItem: View {
     let onSelect: () -> Void
     let onPeek: () -> Void
     let onClose: () -> Void
+    /// Asked when the close is clicked, so it reflects what the panes run at that moment.
+    let closesWithoutConfirmation: () -> Bool
     @State private var isHovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isConfirmingClose = false
@@ -135,7 +140,7 @@ private struct TerminalTabItem: View {
             }
         }
         .overlay(alignment: .trailing) {
-            Button { isConfirmingClose = true } label: {
+            Button(action: requestClose) {
                 Image(systemName: "xmark")
                     .runeFont(size: 9, weight: .medium)
                     .frame(width: 16, height: 16)
@@ -175,7 +180,7 @@ private struct TerminalTabItem: View {
                     isRenaming = true
                 }
             }
-            Button(isSplit ? "Close Tab…" : "Close Terminal…", role: .destructive) { isConfirmingClose = true }
+            Button(isSplit ? "Close Tab…" : "Close Terminal…", role: .destructive, action: requestClose)
                 .disabled(session.isStopping)
         }
         .alert(isSplit ? "Close this tab?" : "Close \(title)?", isPresented: $isConfirmingClose) {
@@ -196,5 +201,9 @@ private struct TerminalTabItem: View {
                 if !name.isEmpty { session.customName = name }
             }
         }
+    }
+
+    private func requestClose() {
+        if closesWithoutConfirmation() { onClose() } else { isConfirmingClose = true }
     }
 }
