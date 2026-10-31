@@ -722,6 +722,14 @@ struct WorkspaceView: View {
         .accessibilityHidden(!placement.isVisible)
         .disabled(isPalettePresented)
         .zIndex(zIndex)
+        // A pane made by a split grows out of its own centre while its sibling narrows to
+        // make room. The view is window-sized, so the anchor is the pane's centre in it.
+        // Scaling is visual only: the terminal starts at its final grid size.
+        // Insertions outside an animated transaction, such as a new tab, just appear.
+        .transition(.scale(scale: 0.6, anchor: UnitPoint(
+            x: size.width > 0 ? frame.midX / size.width : 0.5,
+            y: size.height > 0 ? frame.midY / size.height : 0.5
+        )).combined(with: .opacity))
     }
 
     /// The frame of one peek in the column beside the panel.
@@ -735,6 +743,7 @@ struct WorkspaceView: View {
 
     private static let peekAnimation = Animation.snappy(duration: 0.16)
     private static let zoomAnimation = Animation.snappy(duration: 0.18)
+    private static let splitAnimation = Animation.smooth(duration: 0.3)
 
     private func peekTerminal(_ session: TerminalSession) {
         dismissPalettes()
@@ -770,7 +779,7 @@ struct WorkspaceView: View {
         switch action {
         case let .split(axis):
             // A new surface replays this request when it attaches.
-            terminals.split(axis).terminal.requestFocus()
+            withAnimation(Self.splitAnimation) { terminals.split(axis) }.terminal.requestFocus()
         case .zoom: withAnimation(Self.zoomAnimation) { terminals.toggleZoom() }
         // Nothing moves but the headers' controls, which slide as they do on hover.
         case let .focus(dx, dy): withAnimation(TerminalDrawer.controlsAnimation) { terminals.focusPane(dx: dx, dy: dy) }
@@ -1281,7 +1290,9 @@ struct WorkspaceView: View {
             case "down": .rows
             default: .columns
             }
-            let session = terminals.open(beside: caller, axis: axis, startCommand: command)
+            let session = withAnimation(axis == nil ? nil : Self.splitAnimation) {
+                terminals.open(beside: caller, axis: axis, startCommand: command)
+            }
             if let name = arguments["name"]?.string, !name.isEmpty { session.customName = name }
             return RuneControlReply(text: axis == nil ? "Opened a new tab." : "Opened a pane beside yours.")
         case "rune_read_terminal":
