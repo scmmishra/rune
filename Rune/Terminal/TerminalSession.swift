@@ -350,7 +350,7 @@ final class TerminalSessions: ObservableObject {
     func toggleZoom() { updatePanelTab { $0.toggleZoom() } }
     func resizePane(dx: Int, dy: Int) { updatePanelTab { $0.resize(dx: dx, dy: dy) } }
     func equalizePanes() { updatePanelTab { $0.equalize() } }
-    func setRatio(_ ratio: CGFloat, ofSplit splitID: UUID) { updatePanelTab { $0.setRatio(ratio, ofSplit: splitID) } }
+    func setRatio(_ ratio: CGFloat, of dividerID: TerminalSplitDivider.ID) { updatePanelTab { $0.setRatio(ratio, of: dividerID) } }
 
     /// Moves the focus to the pane beside the focused one, if there is one that way.
     func focusPane(dx: Int, dy: Int) {

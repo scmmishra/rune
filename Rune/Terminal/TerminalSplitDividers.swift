@@ -4,7 +4,7 @@ import SwiftUI
 /// The gaps between split panes. Drag one to resize its two sides; double-click to halve them.
 struct TerminalSplitDividers: View {
     let dividers: [TerminalSplitDivider]
-    let onResize: (UUID, CGFloat) -> Void
+    let onResize: (TerminalSplitDivider.ID, CGFloat) -> Void
 
     var body: some View {
         // Laid out in the workspace's own coordinates, like the panes the gaps sit between.

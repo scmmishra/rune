@@ -18,22 +18,40 @@ nonisolated enum TerminalPaneAction: Equatable, Sendable {
     case close
 }
 
-/// The gap between two panes, which drags to resize them.
+/// The gap between two neighbouring nodes of a split, which drags to resize them.
 nonisolated struct TerminalSplitDivider: Identifiable, Equatable, Sendable {
-    let id: UUID
+    struct ID: Hashable, Sendable {
+        let splitID: UUID
+        /// The divider follows the split's child at this index.
+        let index: Int
+    }
+
+    let id: ID
     let axis: TerminalSplitAxis
+    /// The first neighbour's share of the room the two neighbours share.
     let ratio: CGFloat
     let frame: CGRect
-    /// The length the two sides share, so a drag distance converts to a ratio.
+    /// The length the two neighbours share, so a drag distance converts to a ratio.
     let extent: CGFloat
 }
 
-/// A pane, or two nodes sharing a rectangle.
-nonisolated indirect enum TerminalSplitNode: Equatable, Sendable {
-    case pane(UUID)
-    /// `ratio` is the first node's share of the room.
-    case split(id: UUID, axis: TerminalSplitAxis, ratio: CGFloat, first: TerminalSplitNode, second: TerminalSplitNode)
+/// One node of a split, with its part of the split's length.
+nonisolated struct TerminalSplitChild: Equatable, Sendable {
+    var node: TerminalSplitNode
+    /// The shares of a split's children add up to 1.
+    var share: CGFloat
+}
 
+/// A pane, or nodes side by side or stacked, sharing a rectangle.
+///
+/// A split never holds a split on its own axis. The panes of one row are siblings of one
+/// split, so a row of three is 1:1:1 rather than one half and two quarters, and a divider
+/// resizes only the two panes beside it.
+nonisolated enum TerminalSplitNode: Equatable, Sendable {
+    case pane(UUID)
+    case split(id: UUID, axis: TerminalSplitAxis, children: [TerminalSplitChild])
+
+    /// Two neighbours each keep at least this part of the room they share.
     static let ratioRange: ClosedRange<CGFloat> = 0.1...0.9
     private static let resizeStep: CGFloat = 0.05
 
@@ -41,85 +59,119 @@ nonisolated indirect enum TerminalSplitNode: Equatable, Sendable {
     var paneIDs: [UUID] {
         switch self {
         case let .pane(id): [id]
-        case let .split(_, _, _, first, second): first.paneIDs + second.paneIDs
+        case let .split(_, _, children): children.flatMap(\.node.paneIDs)
         }
     }
 
     func contains(_ paneID: UUID) -> Bool {
         switch self {
         case let .pane(id): id == paneID
-        case let .split(_, _, _, first, second): first.contains(paneID) || second.contains(paneID)
+        case let .split(_, _, children): children.contains { $0.node.contains(paneID) }
         }
     }
 
-    /// Puts a new pane after `paneID`, sharing its room equally.
+    /// Puts a new pane after `paneID`. Along the axis of the split that holds the pane, the
+    /// new pane joins that row or column with an equal share, and the others shrink in
+    /// proportion, so sizes set by hand keep their relation. Across it, the pane's own room
+    /// is halved.
     func splitting(_ paneID: UUID, axis: TerminalSplitAxis, adding newID: UUID) -> TerminalSplitNode {
         switch self {
         case let .pane(id):
             guard id == paneID else { return self }
-            return .split(id: UUID(), axis: axis, ratio: 0.5, first: self, second: .pane(newID))
-        case let .split(id, splitAxis, ratio, first, second):
-            return .split(id: id, axis: splitAxis, ratio: ratio,
-                          first: first.splitting(paneID, axis: axis, adding: newID),
-                          second: second.splitting(paneID, axis: axis, adding: newID))
+            return .split(id: UUID(), axis: axis, children: [
+                TerminalSplitChild(node: self, share: 0.5),
+                TerminalSplitChild(node: .pane(newID), share: 0.5),
+            ])
+        case let .split(id, splitAxis, children):
+            if splitAxis == axis, let index = children.firstIndex(where: { $0.node == .pane(paneID) }) {
+                let count = CGFloat(children.count)
+                var resized = children.map { TerminalSplitChild(node: $0.node, share: $0.share * count / (count + 1)) }
+                resized.insert(TerminalSplitChild(node: .pane(newID), share: 1 / (count + 1)), at: index + 1)
+                return .split(id: id, axis: splitAxis, children: resized)
+            }
+            return .split(id: id, axis: splitAxis, children: children.map {
+                TerminalSplitChild(node: $0.node.splitting(paneID, axis: axis, adding: newID), share: $0.share)
+            })
         }
     }
 
-    /// Removes a pane; its sibling takes the room they shared. Nil when nothing is left.
+    /// Removes a pane. The rest of its row or column take back its room in proportion, and
+    /// a split left with one node becomes that node. Nil when nothing is left.
     func removing(_ paneID: UUID) -> TerminalSplitNode? {
         switch self {
         case let .pane(id):
             return id == paneID ? nil : self
-        case let .split(id, axis, ratio, first, second):
-            guard let first = first.removing(paneID) else { return second }
-            guard let second = second.removing(paneID) else { return first }
-            return .split(id: id, axis: axis, ratio: ratio, first: first, second: second)
+        case let .split(id, axis, children):
+            guard contains(paneID) else { return self }
+            var remaining: [TerminalSplitChild] = []
+            for child in children {
+                guard let node = child.node.removing(paneID) else { continue }
+                // A nested split that collapsed to one on this split's axis joins its siblings
+                // here, so a row never holds a row.
+                if case let .split(_, nestedAxis, nested) = node, nestedAxis == axis {
+                    remaining += nested.map { TerminalSplitChild(node: $0.node, share: $0.share * child.share) }
+                } else {
+                    remaining.append(TerminalSplitChild(node: node, share: child.share))
+                }
+            }
+            if remaining.count <= 1 { return remaining.first?.node }
+            let total = remaining.reduce(0) { $0 + $1.share }
+            return .split(id: id, axis: axis, children: remaining.map {
+                TerminalSplitChild(node: $0.node, share: $0.share / total)
+            })
         }
     }
 
-    func settingRatio(_ newRatio: CGFloat, ofSplit splitID: UUID) -> TerminalSplitNode {
-        guard case let .split(id, axis, ratio, first, second) = self else { return self }
-        if id == splitID {
-            return .split(id: id, axis: axis, ratio: newRatio.clamped(to: Self.ratioRange), first: first, second: second)
+    /// Sets the first neighbour's share of the room the divider's two neighbours share.
+    func settingRatio(_ ratio: CGFloat, of dividerID: TerminalSplitDivider.ID) -> TerminalSplitNode {
+        guard case let .split(id, axis, children) = self else { return self }
+        guard id == dividerID.splitID else {
+            return .split(id: id, axis: axis, children: children.map {
+                TerminalSplitChild(node: $0.node.settingRatio(ratio, of: dividerID), share: $0.share)
+            })
         }
-        return .split(id: id, axis: axis, ratio: ratio,
-                      first: first.settingRatio(newRatio, ofSplit: splitID),
-                      second: second.settingRatio(newRatio, ofSplit: splitID))
+        let index = dividerID.index
+        guard children.indices.contains(index + 1) else { return self }
+        var resized = children
+        let pair = children[index].share + children[index + 1].share
+        let clamped = ratio.clamped(to: Self.ratioRange)
+        resized[index].share = pair * clamped
+        resized[index + 1].share = pair * (1 - clamped)
+        return .split(id: id, axis: axis, children: resized)
     }
 
-    /// Moves the nearest divider around `paneID` on `axis` one step. Nil when the pane has
-    /// no divider on that axis.
+    /// Moves the nearest divider beside `paneID` on `axis` one step: the one after it, or the
+    /// one before it at the end of a row. Nil when the pane has no divider on that axis.
     func resizing(_ paneID: UUID, axis: TerminalSplitAxis, direction: Int) -> TerminalSplitNode? {
-        guard case let .split(id, splitAxis, ratio, first, second) = self else { return nil }
-        let inFirst = first.contains(paneID)
-        guard inFirst || second.contains(paneID) else { return nil }
+        guard case let .split(id, splitAxis, children) = self,
+              let index = children.firstIndex(where: { $0.node.contains(paneID) }) else { return nil }
         // Deeper splits are nearer the pane, so they get the first chance.
-        if let inner = (inFirst ? first : second).resizing(paneID, axis: axis, direction: direction) {
-            return .split(id: id, axis: splitAxis, ratio: ratio,
-                          first: inFirst ? inner : first, second: inFirst ? second : inner)
+        if let inner = children[index].node.resizing(paneID, axis: axis, direction: direction) {
+            var updated = children
+            updated[index].node = inner
+            return .split(id: id, axis: splitAxis, children: updated)
         }
         guard splitAxis == axis else { return nil }
-        let moved = (ratio + CGFloat(direction) * Self.resizeStep).clamped(to: Self.ratioRange)
-        return .split(id: id, axis: splitAxis, ratio: moved, first: first, second: second)
+        let dividerIndex = min(index, children.count - 2)
+        let pair = children[dividerIndex].share + children[dividerIndex + 1].share
+        let ratio = children[dividerIndex].share / pair + CGFloat(direction) * Self.resizeStep
+        return settingRatio(ratio, of: TerminalSplitDivider.ID(splitID: id, index: dividerIndex))
     }
 
     /// Gives every pane on a line the same share.
     func equalized() -> TerminalSplitNode { equalizedCounting().node }
 
     private func equalizedCounting() -> (node: TerminalSplitNode, columns: Int, rows: Int) {
-        guard case let .split(id, axis, _, first, second) = self else { return (self, 1, 1) }
-        let a = first.equalizedCounting()
-        let b = second.equalizedCounting()
-        switch axis {
-        case .columns:
-            let ratio = CGFloat(a.columns) / CGFloat(a.columns + b.columns)
-            return (.split(id: id, axis: axis, ratio: ratio, first: a.node, second: b.node),
-                    a.columns + b.columns, max(a.rows, b.rows))
-        case .rows:
-            let ratio = CGFloat(a.rows) / CGFloat(a.rows + b.rows)
-            return (.split(id: id, axis: axis, ratio: ratio, first: a.node, second: b.node),
-                    max(a.columns, b.columns), a.rows + b.rows)
-        }
+        guard case let .split(id, axis, children) = self else { return (self, 1, 1) }
+        let counted = children.map { $0.node.equalizedCounting() }
+        let along = counted.map { axis == .columns ? $0.columns : $0.rows }
+        let total = along.reduce(0, +)
+        let node = TerminalSplitNode.split(id: id, axis: axis, children: zip(counted, along).map {
+            TerminalSplitChild(node: $0.node, share: CGFloat($1) / CGFloat(total))
+        })
+        let columns = axis == .columns ? total : counted.map(\.columns).max() ?? 1
+        let rows = axis == .rows ? total : counted.map(\.rows).max() ?? 1
+        return (node, columns, rows)
     }
 
     func layout(in rect: CGRect, gap: CGFloat) -> (frames: [UUID: CGRect], dividers: [TerminalSplitDivider]) {
@@ -134,27 +186,37 @@ nonisolated indirect enum TerminalSplitNode: Equatable, Sendable {
         switch self {
         case let .pane(id):
             frames[id] = rect
-        case let .split(id, axis, ratio, first, second):
+        case let .split(id, axis, children):
             let length = axis == .columns ? rect.width : rect.height
-            let extent = max(0, length - gap)
-            // Whole points keep the terminal grids on pixel boundaries.
-            let firstLength = (extent * ratio).rounded()
-            let slices: (CGRect, CGRect, CGRect)
-            switch axis {
-            case .columns:
-                slices = (CGRect(x: rect.minX, y: rect.minY, width: firstLength, height: rect.height),
-                          CGRect(x: rect.minX + firstLength, y: rect.minY, width: gap, height: rect.height),
-                          CGRect(x: rect.minX + firstLength + gap, y: rect.minY,
-                                 width: extent - firstLength, height: rect.height))
-            case .rows:
-                slices = (CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: firstLength),
-                          CGRect(x: rect.minX, y: rect.minY + firstLength, width: rect.width, height: gap),
-                          CGRect(x: rect.minX, y: rect.minY + firstLength + gap,
-                                 width: rect.width, height: extent - firstLength))
+            let extent = max(0, length - gap * CGFloat(children.count - 1))
+            var start: CGFloat = 0
+            var cumulative: CGFloat = 0
+            for (index, child) in children.enumerated() {
+                cumulative += child.share
+                // Whole points keep the terminal grids on pixel boundaries. Rounding the running
+                // total rather than each length keeps the last node flush with the edge.
+                let end = index == children.count - 1 ? extent : (extent * cumulative).rounded()
+                let offset = start + gap * CGFloat(index)
+                child.node.place(in: Self.slice(of: rect, axis: axis, at: offset, length: end - start),
+                                 gap: gap, frames: &frames, dividers: &dividers)
+                if index + 1 < children.count {
+                    let pair = child.share + children[index + 1].share
+                    dividers.append(TerminalSplitDivider(
+                        id: TerminalSplitDivider.ID(splitID: id, index: index), axis: axis,
+                        ratio: child.share / pair,
+                        frame: Self.slice(of: rect, axis: axis, at: offset + end - start, length: gap),
+                        extent: extent * pair
+                    ))
+                }
+                start = end
             }
-            first.place(in: slices.0, gap: gap, frames: &frames, dividers: &dividers)
-            dividers.append(TerminalSplitDivider(id: id, axis: axis, ratio: ratio, frame: slices.1, extent: extent))
-            second.place(in: slices.2, gap: gap, frames: &frames, dividers: &dividers)
+        }
+    }
+
+    private static func slice(of rect: CGRect, axis: TerminalSplitAxis, at offset: CGFloat, length: CGFloat) -> CGRect {
+        switch axis {
+        case .columns: CGRect(x: rect.minX + offset, y: rect.minY, width: length, height: rect.height)
+        case .rows: CGRect(x: rect.minX, y: rect.minY + offset, width: rect.width, height: length)
         }
     }
 }
@@ -219,8 +281,8 @@ nonisolated struct TerminalTab: Identifiable, Equatable, Sendable {
         zoomedID = zoomedID == nil && isSplit ? focusedID : nil
     }
 
-    mutating func setRatio(_ ratio: CGFloat, ofSplit splitID: UUID) {
-        root = root.settingRatio(ratio, ofSplit: splitID)
+    mutating func setRatio(_ ratio: CGFloat, of dividerID: TerminalSplitDivider.ID) {
+        root = root.settingRatio(ratio, of: dividerID)
     }
 
     mutating func resize(dx: Int, dy: Int) {

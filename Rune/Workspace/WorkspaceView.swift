@@ -203,7 +203,7 @@ struct WorkspaceView: View {
                     }
                     if isSplit {
                         TerminalSplitDividers(dividers: terminals.panelTab.layout(in: paneArea, gap: WorkspaceMetrics.gap).dividers,
-                                              onResize: { id, ratio in terminals.setRatio(ratio, ofSplit: id) })
+                                              onResize: { id, ratio in terminals.setRatio(ratio, of: id) })
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .disabled(isPalettePresented)
                             .zIndex(0.28)
