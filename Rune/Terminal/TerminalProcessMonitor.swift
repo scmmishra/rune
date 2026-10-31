@@ -17,7 +17,16 @@ nonisolated struct TerminalResourceSample: Sendable {
 }
 
 nonisolated enum TerminalProcessMonitor {
-    private static let shells: Set<String> = ["zsh", "bash", "sh", "fish", "nu", "tcsh", "csh", "dash"]
+    private static let shells: Set<String> = {
+        var names: Set<String> = ["zsh", "bash", "sh", "fish", "nu", "tcsh", "csh", "dash"]
+        // Terminals start `$SHELL`, so the user's own shell counts even when it is not listed.
+        // The kernel keeps only the first MAXCOMLEN bytes of a process name, so match that.
+        if let path = ProcessInfo.processInfo.environment["SHELL"],
+           let name = path.split(separator: "/").last {
+            names.insert(String(decoding: name.utf8.prefix(Int(MAXCOMLEN)), as: UTF8.self))
+        }
+        return names
+    }()
 
     static func snapshot(roots: [UUID: TerminationTarget]) -> [UUID: TerminalProcessStatus] {
         var result: [UUID: TerminalProcessStatus] = [:]
@@ -31,7 +40,7 @@ nonisolated enum TerminalProcessMonitor {
             let isShell = shells.contains(name)
             let processArguments = arguments(foregroundPID) ?? []
             let agent = agentName(in: processArguments)
-            let isIdle = isShell && (foregroundPID == root.pid || foreground.kp_eproc.e_ppid == root.pid)
+            let isIdle = isShell && (foregroundPID == root.pid || isOutermostShell(foreground, below: root.pid))
             result[id] = TerminalProcessStatus(
                 name: agent?.rawValue ?? name,
                 isRunning: foreground.kp_proc.p_stat != SSTOP && !isIdle,
@@ -40,6 +49,20 @@ nonisolated enum TerminalProcessMonitor {
             )
         }
         return result
+    }
+
+    /// Whether no other shell sits between `process` and the terminal's root. The root is
+    /// /usr/bin/login, which libghostty starts the command under, and Rune's launcher sits
+    /// between it and the login shell, so a shell at its prompt is not the root's child.
+    /// A shell started from that shell, such as a nested `zsh`, counts as running something.
+    private static func isOutermostShell(_ process: kinfo_proc, below rootPID: pid_t) -> Bool {
+        var pid = process.kp_eproc.e_ppid
+        for _ in 0..<16 {
+            if pid == rootPID { return true }
+            guard pid > 1, let parent = info(pid), !shells.contains(processName(parent)) else { return false }
+            pid = parent.kp_eproc.e_ppid
+        }
+        return false
     }
 
     /// Sums memory and CPU time over the root and its descendants, and gathers the TCP
