@@ -1026,10 +1026,41 @@ struct WorkspaceView: View {
                             }
                         }
                     }
+                    // Outside the drag's offset and the card's gestures, so it stays in the gap.
+                    .overlay(alignment: .bottom) { cardResizeHandle(under: id, arrangement: arrangement) }
                     .workspaceCard(id, sizing: cardDefinition(id)?.sizing ?? .fixed)
             }
         }
         .frame(width: size.width, height: size.height)
+    }
+
+    /// The handle in the gap under a card, when dragging that gap can change any heights. It
+    /// hangs off the card because only the layout knows where a card ends: a fixed card's
+    /// height is measured there.
+    @ViewBuilder
+    private func cardResizeHandle(under id: WorkspaceCardID, arrangement: WorkspaceArrangement) -> some View {
+        if let slot = arrangement.slots.first(where: { $0.cards.contains(id) }), slot.cards.last != id,
+           let boundary = WorkspaceCardBoundary(
+               under: id, in: slot.cards.map { ($0, cardDefinition($0)?.sizing ?? .fixed) }
+           ) {
+            WorkspaceCardResizeHandle { delta, heights in
+                let sizings = Dictionary(uniqueKeysWithValues: slot.cards.map { card in
+                    (card, (cardDefinition(card)?.sizing ?? .fixed))
+                })
+                guard let weights = boundary.weights(moving: delta, heights: heights, sizings: sizings) else { return }
+                layoutModel.update { $0.setWeights(weights, ofColumn: slot.id) }
+            } startHeights: {
+                cardDrag.cardFrames.filter { slot.cards.contains($0.key) }.mapValues(\.height)
+            } onEnd: {
+                layoutModel.save()
+            } onReset: {
+                layoutModel.update { $0.setWeights(nil, ofColumn: slot.id) }
+                layoutModel.save()
+            }
+            .frame(height: WorkspaceMetrics.cardResizeHandleHeight)
+            // Centred in the gap, which starts at the card's bottom edge.
+            .offset(y: (WorkspaceMetrics.gap + WorkspaceMetrics.cardResizeHandleHeight) / 2)
+        }
     }
 
     /// Changes which cards the arrangement holds, and saves it.
@@ -1404,6 +1435,41 @@ struct WorkspaceView: View {
                     layoutModel.save()
                 })
             .accessibilityLabel("Resize column")
+    }
+}
+
+/// The gap between two cards. Drag it to change their heights; double-click for the defaults.
+private struct WorkspaceCardResizeHandle: View {
+    let onResize: (CGFloat, [WorkspaceCardID: CGFloat]) -> Void
+    let startHeights: () -> [WorkspaceCardID: CGFloat]
+    let onEnd: () -> Void
+    let onReset: () -> Void
+    @State private var heights: [WorkspaceCardID: CGFloat]?
+
+    var body: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onHover { isHovered in
+                if isHovered {
+                    NSCursor.resizeUpDown.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            // The handle moves during the drag; measure in a fixed space so its own movement
+            // cannot feed back into the next height.
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    let start = heights ?? startHeights()
+                    heights = start
+                    onResize(value.translation.height, start)
+                }
+                .onEnded { _ in
+                    heights = nil
+                    onEnd()
+                })
+            .simultaneousGesture(TapGesture(count: 2).onEnded { onReset() })
+            .accessibilityLabel("Resize cards")
     }
 }
 

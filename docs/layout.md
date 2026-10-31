@@ -32,8 +32,9 @@ A column has:
 | `id` | A unique ID. |
 | `width` | The column's width in points. |
 | `cards` | The cards in the column, top to bottom, by card ID. |
+| `weights` | Optional. The fill cards' weights after a resize, by card ID. |
 
-When Rune reads a layout, it removes a card listed twice, a column with no cards, and a column whose ID repeats. It raises any width below the minimum to the minimum.
+When Rune reads a layout, it removes a card listed twice, a column with no cards, and a column whose ID repeats. It raises any width below the minimum to the minimum. It removes a weight that is not positive or whose card is not in the column.
 
 A card ID that Rune does not recognise is kept. It is most likely a custom card whose file is missing. It shows as a placeholder until the file returns or the card is removed.
 
@@ -74,6 +75,10 @@ A card declares how it takes height in its column.
 | History | Fill | 120 | 1 |
 | Usage | Fixed | | |
 | A custom card | Fill unless it says `fixed` | 120 | 1 |
+
+Dragging the gap between two cards trades height between the nearest fill card above it and the nearest fill card below it. A fixed card between them keeps its height. Neither fill card goes below its minimum. The gap has no handle if a fill card is missing on either side.
+
+The drag sets a weight for every fill card in the column, so the heights scale with the window. The weights are saved when the drag ends. Double-clicking the gap removes them and restores the default weights. A card that moves into the column uses its default weight.
 
 A column's heights are worked out in this order:
 

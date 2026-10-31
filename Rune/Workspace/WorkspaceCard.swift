@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Names a card. A string, so cards Rune does not ship can be named in a saved layout later.
-nonisolated struct WorkspaceCardID: RawRepresentable, Hashable, Codable, Sendable {
+nonisolated struct WorkspaceCardID: RawRepresentable, Hashable, Codable, CodingKeyRepresentable, Sendable {
     let rawValue: String
 
     static let commands = WorkspaceCardID(rawValue: "commands")
@@ -27,6 +27,57 @@ nonisolated enum WorkspaceCardSizing: Equatable, Sendable {
     /// A share of the height the fixed cards leave, by weight, and never less than
     /// `minHeight` while the column has the room.
     case fill(minHeight: CGFloat, weight: CGFloat)
+
+    /// This sizing with the weight the user chose by resizing, if any.
+    func weighted(_ chosen: CGFloat?) -> WorkspaceCardSizing {
+        guard case let .fill(minHeight, weight) = self else { return self }
+        return .fill(minHeight: minHeight, weight: chosen ?? weight)
+    }
+}
+
+/// The gap between two cards that can trade height. A fixed card between them stays as it is.
+nonisolated struct WorkspaceCardBoundary: Equatable, Sendable {
+    let above: WorkspaceCardID
+    let below: WorkspaceCardID
+
+    /// The boundary a handle under `card` moves. Nil when no fill card sits on one of its sides.
+    init?(under card: WorkspaceCardID, in cards: [(id: WorkspaceCardID, sizing: WorkspaceCardSizing)]) {
+        guard let index = cards.firstIndex(where: { $0.id == card }) else { return nil }
+        func isFill(_ card: (id: WorkspaceCardID, sizing: WorkspaceCardSizing)) -> Bool { card.sizing != .fixed }
+        guard let above = cards[...index].last(where: isFill),
+              let below = cards[(index + 1)...].first(where: isFill) else { return nil }
+        self.above = above.id
+        self.below = below.id
+    }
+
+    /// The weights that give the column's fill cards the `heights` they started the drag at,
+    /// with this boundary moved by `delta`. Each card stops at its minimum.
+    ///
+    /// Heights become weights, so the cards scale with the window. Every fill card gets one,
+    /// because a card held at its minimum has a height its old weight does not describe. The
+    /// weights are scaled to add up to the same total as `sizings`, so a card that joins the
+    /// column later takes a fair share with its default weight.
+    func weights(moving delta: CGFloat, heights: [WorkspaceCardID: CGFloat],
+                 sizings: [WorkspaceCardID: WorkspaceCardSizing]) -> [WorkspaceCardID: CGFloat]? {
+        var fills: [WorkspaceCardID: (minHeight: CGFloat, weight: CGFloat)] = [:]
+        for (id, sizing) in sizings {
+            if case let .fill(minHeight, weight) = sizing { fills[id] = (minHeight, weight) }
+        }
+        guard Set(fills.keys).isSubset(of: heights.keys),
+              let aboveHeight = heights[above], let belowHeight = heights[below],
+              let aboveMin = fills[above]?.minHeight, let belowMin = fills[below]?.minHeight else { return nil }
+        // Too short for both minimums: there is nothing to trade.
+        let pair = aboveHeight + belowHeight
+        guard pair >= aboveMin + belowMin else { return nil }
+
+        var moved = heights.filter { fills[$0.key] != nil }
+        moved[above] = min(max(aboveHeight + delta, aboveMin), pair - belowMin)
+        moved[below] = pair - (moved[above] ?? aboveHeight)
+        let totalHeight = moved.values.reduce(0, +)
+        guard totalHeight > 0 else { return nil }
+        let totalWeight = fills.values.reduce(0) { $0 + $1.weight }
+        return moved.mapValues { $0 / totalHeight * totalWeight }
+    }
 }
 
 /// What the layout needs to know about a card. What the card draws is the workspace's business.
@@ -89,7 +140,9 @@ struct WorkspaceCardsLayout: Layout {
         for slot in slots {
             let cards = slot.cards.compactMap { id in subviews.first { $0[WorkspaceCardIDKey.self] == id } }
             guard cards.count == slot.cards.count else { continue }
-            let sizings = cards.map { $0[WorkspaceCardSizingKey.self] }
+            let sizings = cards.map { card in
+                card[WorkspaceCardSizingKey.self].weighted(card[WorkspaceCardIDKey.self].flatMap { slot.weights[$0] })
+            }
             let available = max(0, height - spacing * CGFloat(max(0, cards.count - 1)))
             // Measure fixed cards once per pass; that is the only measuring a resize costs.
             let natural = zip(cards, sizings).map { card, sizing -> CGFloat? in

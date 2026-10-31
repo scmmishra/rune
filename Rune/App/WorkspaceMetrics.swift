@@ -35,6 +35,8 @@ enum WorkspaceMetrics {
     /// between the cards stacked inside them.
     static let outerMargin: CGFloat = gap
     static let gap: CGFloat = 8
+    /// The grab area in the gap between two cards. As tall as the gap, so it covers neither card.
+    static let cardResizeHandleHeight: CGFloat = gap
 
     static func titleBarClearance(isFullScreen: Bool) -> CGFloat {
         isFullScreen ? outerMargin : 32

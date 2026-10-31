@@ -7,6 +7,9 @@ nonisolated struct WorkspaceColumn: Codable, Equatable, Identifiable, Sendable {
     var id = UUID()
     var width: CGFloat
     var cards: [WorkspaceCardID]
+    /// Fill cards' weights, once the user has resized them. A card without one uses its
+    /// default. Optional so layouts saved before it existed still read.
+    var weights: [WorkspaceCardID: CGFloat]?
 
     static let defaultWidth: CGFloat = 240
     static let minWidth: CGFloat = 160
@@ -90,6 +93,11 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
         update(id) { $0.width = max(WorkspaceColumn.minWidth, width) }
     }
 
+    /// Replaces the column's chosen card weights. Nil returns its cards to their defaults.
+    mutating func setWeights(_ weights: [WorkspaceCardID: CGFloat]?, ofColumn id: UUID) {
+        update(id) { $0.weights = weights }
+    }
+
     private func column(_ id: UUID) -> WorkspaceColumn? { columns.first { $0.id == id } }
 
     private mutating func update(_ id: UUID, _ change: (inout WorkspaceColumn) -> Void) {
@@ -98,8 +106,14 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
     }
 
     private mutating func removeCard(_ card: WorkspaceCardID) {
-        for index in leading.indices { leading[index].cards.removeAll { $0 == card } }
-        for index in trailing.indices { trailing[index].cards.removeAll { $0 == card } }
+        for index in leading.indices {
+            leading[index].cards.removeAll { $0 == card }
+            leading[index].weights?[card] = nil
+        }
+        for index in trailing.indices {
+            trailing[index].cards.removeAll { $0 == card }
+            trailing[index].weights?[card] = nil
+        }
     }
 
     private mutating func pruneEmptyColumns() {
@@ -107,8 +121,8 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
         trailing.removeAll(where: \.cards.isEmpty)
     }
 
-    /// A layout that came from a file: no card twice, no empty or duplicate column, and no
-    /// width below the minimum. A card Rune does not know stays, since it is likely a custom
+    /// A layout that came from a file: no card twice, no empty or duplicate column, no width
+    /// below the minimum, and no unusable weight. A card Rune does not know stays, since it is likely a custom
     /// card whose file is missing; it shows as that until the file returns or it is removed.
     var normalized: WorkspaceLayout {
         var seenCards: Set<WorkspaceCardID> = []
@@ -119,6 +133,7 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
                 var column = column
                 column.cards = column.cards.filter { seenCards.insert($0).inserted }
                 column.width = max(WorkspaceColumn.minWidth, column.width)
+                column.weights = column.weights?.filter { column.cards.contains($0.key) && $0.value.isFinite && $0.value > 0 }
                 return column.cards.isEmpty ? nil : column
             }
         }
@@ -132,6 +147,7 @@ nonisolated struct WorkspaceArrangement: Equatable, Sendable {
         let id: UUID
         let side: WorkspaceLayout.Side
         let cards: [WorkspaceCardID]
+        let weights: [WorkspaceCardID: CGFloat]
         let x: CGFloat
         let width: CGFloat
     }
@@ -174,7 +190,8 @@ nonisolated extension WorkspaceLayout {
         var slots: [WorkspaceArrangement.Slot] = []
         var x = margin
         for column in leading {
-            slots.append(.init(id: column.id, side: .leading, cards: column.cards, x: x, width: fitted(column)))
+            slots.append(.init(id: column.id, side: .leading, cards: column.cards, weights: column.weights ?? [:],
+                               x: x, width: fitted(column)))
             x += fitted(column) + gap
         }
         let hubX = x
@@ -182,7 +199,8 @@ nonisolated extension WorkspaceLayout {
         let hubWidth = max(0, width - margin - hubX - trailingWidth)
         x = hubX + hubWidth + gap
         for column in trailing {
-            slots.append(.init(id: column.id, side: .trailing, cards: column.cards, x: x, width: fitted(column)))
+            slots.append(.init(id: column.id, side: .trailing, cards: column.cards, weights: column.weights ?? [:],
+                               x: x, width: fitted(column)))
             x += fitted(column) + gap
         }
         return WorkspaceArrangement(slots: slots, hubX: hubX, hubWidth: hubWidth, collapsed: collapsed)

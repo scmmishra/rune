@@ -78,7 +78,7 @@ private struct WorkspaceHelpView: View {
                     Text("Hold Command to see terminal shortcuts. Switch to any terminal by name in the command palette. In terminals, ⇧⌘[ and ⇧⌘] cycle tabs and Escape goes to the running application. In diff previews, ⌥⌘↑↓ navigates hunks.")
                     Text("Use ⌘` to focus the main terminal and slide the supporting terminal partly off the right edge. Its width stays unchanged. Toggle again, select its shortcut, or click the visible strip to bring it back.")
                     Text("Hide a supporting terminal with its header chevron or “Hide Secondary Terminal” in the command palette. It keeps running. Click a row’s close button twice to end its processes, or exit the shell to remove it. Right-click to rename.")
-                    Text("Drag the edges beside the terminal to resize the sidebars. Rune remembers your layout.")
+                    Text("Drag the edges beside the terminal to resize the sidebars. Drag the gap between two cards to change their heights, or double-click it to reset them. Rune remembers your layout.")
                 }
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
