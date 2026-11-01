@@ -1,5 +1,7 @@
 [tools]
 watchexec = "2.3.3"
+# Must match Ghostty's minimum_zig_version at the pinned tag (Scripts/build-ghostty.sh).
+zig = "0.17.0"
 
 [tasks.build]
 description = "Build Rune in Debug mode"
