@@ -77,7 +77,7 @@ private struct WorkspaceHelpView: View {
                     Text("⌘D splits the focused terminal into two columns and ⇧⌘D into two rows. The new pane starts in the project folder. Drag the gap between panes to resize them, or double-click it to make them equal. Drag a pane by its header to move it, and the other panes make room. ⇧⌘↩ zooms the focused pane over the others, and again to put it back.")
                     Text("Hold Command to see terminal shortcuts. Switch to any terminal by name in the command palette. In terminals, ⇧⌘[ and ⇧⌘] cycle tabs and Escape goes to the running application. In diff previews, ⌥⌘↑↓ navigates hunks.")
                     Text("⌘` switches between your two most recent terminals. A window always has a terminal: closing the last one opens a fresh shell.")
-                    Text("Dismiss a preview with its header button or “Dismiss Terminal Preview” in the command palette. It keeps running. Close a tab to end its processes, or exit the shell to remove it. Right-click a tab to rename it.")
+                    Text("Dismiss a preview with its header button or “Dismiss Terminal Preview” in the command palette. It keeps running. Close a tab to end its processes, or exit the shell to remove it. Right-click a tab to rename it. Drag a tab to move it.")
                     Text("Drag the edges beside the terminal to resize the sidebars. Drag the gap between two cards to change their heights, or double-click it to reset them. Rune remembers your layout.")
                 }
                 .foregroundStyle(.secondary)

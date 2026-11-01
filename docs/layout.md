@@ -163,3 +163,5 @@ A window always has a terminal. It opens with one tab, and every tab behaves the
 If you close the last terminal, or its shell exits, a fresh shell replaces it. If that fresh shell exits within 5 seconds, it stays on screen with a **Restart Terminal** button, so a failing shell does not restart forever.
 
 ⌘` switches between the two most recent terminals.
+
+Drag a tab along the tab row to move it. It stays inside the row, and the tabs it passes slide out of its way. ⌘1–9 and ⇧⌘[ ] follow the order of the row, so the numbers always read 1, 2, 3 from the left.

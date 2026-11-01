@@ -1,6 +1,6 @@
 import Foundation
 
-/// Session order, stable number shortcuts, and the most recently used terminal.
+/// Session order and the most recently used terminal.
 nonisolated struct TerminalNavigation {
     /// Where the keyboard is: the panel session, or one of the peeks.
     private(set) var activeID: UUID
@@ -10,27 +10,24 @@ nonisolated struct TerminalNavigation {
     private(set) var peekedIDs: [UUID] = []
     private(set) var sessionIDs: [UUID]
     private var recentIDs: [UUID]
-    private var shortcutNumbers: [UUID: Int]
 
     init(firstID: UUID) {
         activeID = firstID
         panelID = firstID
         sessionIDs = [firstID]
         recentIDs = [firstID]
-        shortcutNumbers = [firstID: 1]
-    }
-
-    func shortcutNumber(for id: UUID) -> Int? { shortcutNumbers[id] }
-
-    func sessionID(forShortcut number: Int) -> UUID? {
-        shortcutNumbers.first { $0.value == number }?.key
     }
 
     mutating func add(_ id: UUID) {
         guard !sessionIDs.contains(id) else { return }
         sessionIDs.append(id)
-        // Reuse vacant slots only for new sessions; never renumber surviving ones.
-        shortcutNumbers[id] = (1...9).first { !shortcutNumbers.values.contains($0) }
+    }
+
+    /// Puts tabs in `tabIDs` order, so cycling follows the tab row. Saved commands share the
+    /// list, and each keeps its slot.
+    mutating func orderTabs(_ tabIDs: [UUID]) {
+        var next = tabIDs.makeIterator()
+        sessionIDs = sessionIDs.map { tabIDs.contains($0) ? next.next() ?? $0 : $0 }
     }
 
     func isPeeked(_ id: UUID) -> Bool { peekedIDs.contains(id) }
@@ -96,7 +93,6 @@ nonisolated struct TerminalNavigation {
     /// The caller keeps one session open, so the panel always has something to show.
     mutating func remove(_ id: UUID) {
         sessionIDs.removeAll { $0 == id }
-        shortcutNumbers[id] = nil
         recentIDs.removeAll { $0 == id }
         peekedIDs.removeAll { $0 == id }
         if panelID == id, let next = recentIDs.first(where: { !peekedIDs.contains($0) })

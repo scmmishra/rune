@@ -285,6 +285,11 @@ final class TerminalSessions: ObservableObject {
         session(forNavigation: navigation.neighbor(in: direction))
     }
 
+    /// The number ⌘-number reaches a session's tab by, which follows the tab row.
+    func tabNumber(of session: TerminalSession) -> Int? {
+        tabs.firstIndex { $0.contains(session.id) }.map { $0 + 1 }.flatMap { $0 <= 9 ? $0 : nil }
+    }
+
     /// The session ⌘-number and the tab at `index` stand for.
     func tabSession(at index: Int) -> TerminalSession? {
         tabs.indices.contains(index) ? session(tabs[index].focusedID) : nil
@@ -342,6 +347,13 @@ final class TerminalSessions: ObservableObject {
         // A split made while the keyboard is in a peek still lands in the panel.
         navigation.select(tabID)
         return session
+    }
+
+    /// Moves a tab along the tab row.
+    func moveTab(_ tabID: UUID, to index: Int) {
+        guard let from = tabs.firstIndex(where: { $0.id == tabID }), tabs.indices.contains(index) else { return }
+        tabs.insert(tabs.remove(at: from), at: index)
+        navigation.orderTabs(tabs.map(\.id))
     }
 
     func toggleZoom() { updatePanelTab { $0.toggleZoom() } }

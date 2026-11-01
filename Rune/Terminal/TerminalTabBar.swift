@@ -14,11 +14,24 @@ struct TerminalTabBar: View {
     /// Even margin on all four sides of the tab row.
     private static let stripInset: CGFloat = (height - WorkspaceMetrics.headerHeight) / 2
     private static let barHeight: CGFloat = WorkspaceMetrics.headerHeight
+    private static let tabSpacing: CGFloat = 4
+    /// From one tab's place to the next. Tabs have a fixed width, so a drag's distance
+    /// converts to a place in the row.
+    private static let tabStep: CGFloat = TerminalTabItem.width + tabSpacing
+    private static let tabMoveAnimation = Animation.snappy(duration: 0.18)
+
+    /// The tab being dragged, with how far it has come and the place it would take. The
+    /// tab row itself changes only on the drop, so a neighbour's move never fights the drag.
+    @State private var draggedTabID: UUID?
+    @State private var dragTravel: CGFloat = 0
+    @State private var dragTarget = 0
+    /// The dragged tab is on its way to its place, so the gesture no longer steers it.
+    @State private var isDropping = false
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                HStack(spacing: 4) {
+                HStack(spacing: Self.tabSpacing) {
                     ForEach(Array(sessions.tabs.enumerated()), id: \.element.id) { index, tab in
                         // A tab stands for its focused pane: its name, its status, and where
                         // selecting or peeking the tab goes.
@@ -43,6 +56,15 @@ struct TerminalTabBar: View {
                                 }
                             )
                             .id(tab.id)
+                            .offset(x: tabOffset(at: index))
+                            .zIndex(tab.id == draggedTabID ? 1 : 0)
+                            // Beside the tab's button, so a click still selects it.
+                            .simultaneousGesture(
+                                // Global, because the tab moves under the pointer during the drag.
+                                DragGesture(minimumDistance: 6, coordinateSpace: .global)
+                                    .onChanged { dragTab(tab.id, from: index, by: $0.translation.width) }
+                                    .onEnded { _ in dropTab(tab.id, from: index) }
+                            )
                         }
                     }
                     Button(action: onAdd) {
@@ -66,12 +88,57 @@ struct TerminalTabBar: View {
         }
         .frame(height: Self.barHeight)
         .padding(Self.stripInset)
+        // A tab opened or closed during a drag leaves its places out of date.
+        .onChange(of: sessions.tabs.map(\.id)) { resetTabDrag() }
+    }
+
+    /// How far a tab shows from its place: the dragged one with the pointer, and the tabs it
+    /// has passed one place the other way.
+    private func tabOffset(at index: Int) -> CGFloat {
+        guard let draggedTabID, let start = sessions.tabs.firstIndex(where: { $0.id == draggedTabID }) else { return 0 }
+        if index == start { return dragTravel }
+        if start < index, index <= dragTarget { return -Self.tabStep }
+        if dragTarget <= index, index < start { return Self.tabStep }
+        return 0
+    }
+
+    private func dragTab(_ id: UUID, from start: Int, by distance: CGFloat) {
+        guard !isDropping, draggedTabID == nil || draggedTabID == id else { return }
+        let last = sessions.tabs.count - 1
+        guard last > 0 else { return }
+        if draggedTabID == nil {
+            draggedTabID = id
+            dragTarget = start
+        }
+        // Held to the row of tabs, so a tab cannot be dragged past either end.
+        dragTravel = min(max(distance, -CGFloat(start) * Self.tabStep), CGFloat(last - start) * Self.tabStep)
+        let target = start + Int((dragTravel / Self.tabStep).rounded())
+        if target != dragTarget { withAnimation(Self.tabMoveAnimation) { dragTarget = target } }
+    }
+
+    private func dropTab(_ id: UUID, from start: Int) {
+        guard draggedTabID == id, !isDropping else { return }
+        isDropping = true
+        let target = dragTarget
+        withAnimation(Self.tabMoveAnimation) {
+            dragTravel = CGFloat(target - start) * Self.tabStep
+        } completion: {
+            // Every tab already shows at its new place, so this changes nothing on screen.
+            sessions.moveTab(id, to: target)
+            resetTabDrag()
+        }
+    }
+
+    private func resetTabDrag() {
+        draggedTabID = nil
+        dragTravel = 0
+        isDropping = false
     }
 }
 
 private struct TerminalTabItem: View {
     // Fixed-width tabs keep the row on a steady rhythm; the bar scrolls once they overflow.
-    private static let width: CGFloat = 140
+    static let width: CGFloat = 140
     @ObservedObject var session: TerminalSession
     /// The pane whose state the tab's dot shows: one that is waiting, else the focused one.
     @ObservedObject var status: TerminalSession

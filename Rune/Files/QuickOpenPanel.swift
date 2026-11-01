@@ -367,7 +367,7 @@ struct CommandPalette: View {
                     Text(shortcut).foregroundStyle(.secondary)
                 }
                 if case let .terminal(session) = entry,
-                   let number = terminals.navigation.shortcutNumber(for: session.id) {
+                   let number = terminals.tabNumber(of: session) {
                     Text("⌘\(number)").foregroundStyle(.secondary)
                 }
             }
