@@ -151,18 +151,6 @@ public final class TerminalSurface {
 
     // MARK: - Rendering
 
-    func draw() {
-        guard let s = surface else { return }
-        TerminalDebugLog.log(.render, "surface draw")
-        ghostty_surface_draw(s)
-    }
-
-    func refresh() {
-        guard let s = surface else { return }
-        TerminalDebugLog.log(.render, "surface refresh")
-        ghostty_surface_refresh(s)
-    }
-
     func setSize(width: UInt32, height: UInt32) {
         guard let s = surface else {
             TerminalDebugLog.log(.metrics, "surface setSize ignored: missing surface")
@@ -202,6 +190,12 @@ public final class TerminalSurface {
         guard let s = surface else { return }
         TerminalDebugLog.log(.lifecycle, "surface occlusion visible=\(visible)")
         ghostty_surface_set_occlusion(s, visible)
+    }
+
+    func setDisplayID(_ id: UInt32) {
+        guard let s = surface else { return }
+        TerminalDebugLog.log(.lifecycle, "surface displayID=\(id)")
+        ghostty_surface_set_display_id(s, id)
     }
 
     // MARK: - Size Query

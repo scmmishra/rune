@@ -7,6 +7,8 @@ This code is the macOS part of the `GhosttyTerminal` module from [libghostty-spm
 - Commit: 4a92e0102ba134b7f4bdd7a2d1c3b9cfa9614edd
 - License: MIT. See `LICENSE` in this folder.
 
+Ghostty's renderer paces the frames. Swift only ticks the app and never draws.
+
 The Ghostty core is not from the package. `Scripts/build-ghostty.sh` builds it from Ghostty source into `Vendor/GhosttyKit.xcframework`, and the Xcode project links that. The script also copies the shell integration and terminfo into `Rune/Resources`.
 
 ## What was removed
@@ -17,6 +19,7 @@ The Ghostty core is not from the package. `Scripts/build-ghostty.sh` builds it f
 - `PlatformSupport.swift`, which only guarded against targets with neither UIKit nor AppKit.
 - Code only the UIKit views called: file staging for pasted images, the long-press text-selection request, quicklook word lookup, selection anchors, IME composition helpers, the software key commit router, and the USB HID key tables.
 - The `#if DEBUG` test hooks on `TerminalSurfaceCoordinator`.
+- The package's shared display link and every per-frame draw and refresh call. The package ticked and drew from a display link. Rune only ticks the app, and passes the window's occlusion, display id and app focus to Ghostty.
 
 ## What changed
 

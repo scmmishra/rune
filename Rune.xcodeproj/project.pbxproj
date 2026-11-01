@@ -12,7 +12,6 @@
         C30000000000000000000001 /* BeautifulMermaid in Frameworks */ = {isa = PBXBuildFile; productRef = C30000000000000000000002 /* BeautifulMermaid */; };
 		B20000000000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000002 /* Sparkle */; };
 		A1000000000000000000002D /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1000000000000000000002C /* GhosttyKit.xcframework */; };
-		A10000000000000000000025 /* MSDisplayLink in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000027 /* MSDisplayLink */; };
 		A10000000000000000000017 /* SwiftTreeSitter in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000021 /* SwiftTreeSitter */; };
 		A10000000000000000000018 /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000022 /* TreeSitterSwift */; };
 		A10000000000000000000019 /* TreeSitterRuby in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000023 /* TreeSitterRuby */; };
@@ -66,7 +65,6 @@
                 C30000000000000000000001 /* BeautifulMermaid in Frameworks */,
 				B20000000000000000000001 /* Sparkle in Frameworks */,
 				A1000000000000000000002D /* GhosttyKit.xcframework in Frameworks */,
-				A10000000000000000000025 /* MSDisplayLink in Frameworks */,
 				A10000000000000000000017 /* SwiftTreeSitter in Frameworks */,
 				A10000000000000000000018 /* TreeSitterSwift in Frameworks */,
 				A10000000000000000000019 /* TreeSitterRuby in Frameworks */,
@@ -118,7 +116,6 @@
 			packageProductDependencies = (
                 C30000000000000000000002 /* BeautifulMermaid */,
 				B20000000000000000000002 /* Sparkle */,
-				A10000000000000000000027 /* MSDisplayLink */,
 				A10000000000000000000021 /* SwiftTreeSitter */,
 				A10000000000000000000022 /* TreeSitterSwift */,
 				A10000000000000000000023 /* TreeSitterRuby */,
@@ -155,7 +152,6 @@
 			packageReferences = (
                 C30000000000000000000003 /* beautiful-mermaid-swift */,
 				B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
-				A10000000000000000000026 /* XCRemoteSwiftPackageReference "MSDisplayLink" */,
 				A1000000000000000000001C /* XCRemoteSwiftPackageReference "swift-tree-sitter" */,
 				A1000000000000000000001D /* XCRemoteSwiftPackageReference "tree-sitter-swift" */,
 				A1000000000000000000001E /* XCRemoteSwiftPackageReference "tree-sitter-ruby" */,
@@ -204,14 +200,6 @@
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
 			requirement = { kind = exactVersion; version = 2.9.5; };
 		};
-		A10000000000000000000026 /* XCRemoteSwiftPackageReference "MSDisplayLink" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/Lakr233/MSDisplayLink.git";
-			requirement = {
-				kind = exactVersion;
-				version = 2.2.0;
-			};
-		};
 		A1000000000000000000001C /* XCRemoteSwiftPackageReference "swift-tree-sitter" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/tree-sitter/swift-tree-sitter.git";
@@ -256,11 +244,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
-		};
-		A10000000000000000000027 /* MSDisplayLink */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000026 /* XCRemoteSwiftPackageReference "MSDisplayLink" */;
-			productName = MSDisplayLink;
 		};
 		A10000000000000000000021 /* SwiftTreeSitter */ = {
 			isa = XCSwiftPackageProductDependency;

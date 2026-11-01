@@ -67,8 +67,8 @@ extension AppTerminalView {
             }
             updateMetalLayerMetrics()
             updateColorScheme()
-            core.startDisplayLink()
-            core.requestImmediateTick()
+            core.updateOcclusion()
+            core.updateDisplayID()
 
             NotificationCenter.default.addObserver(
                 self,
@@ -80,6 +80,14 @@ extension AppTerminalView {
                 self,
                 selector: #selector(windowDidResignKey),
                 name: NSWindow.didResignKeyNotification,
+                object: window
+            )
+            // Ghostty stops rendering a surface in a window that is fully
+            // covered, minimized or on another Space, as its own app does.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(windowDidChangeOcclusionState),
+                name: NSWindow.didChangeOcclusionStateNotification,
                 object: window
             )
             // Cross-display rescue: AppKit posts didChangeScreen when the
@@ -105,7 +113,8 @@ extension AppTerminalView {
                 (delegate as? TerminalViewState)?.replayPendingFocusIfNeeded()
             }
         } else {
-            core.stopDisplayLink()
+            // A detached view is not visible: Ghostty stops rendering it.
+            core.updateOcclusion()
             core.setFocus(false)
         }
     }
@@ -123,7 +132,15 @@ extension AppTerminalView {
         core.setFocus(false)
     }
 
+    @objc func windowDidChangeOcclusionState(_: Notification) {
+        core.updateOcclusion()
+    }
+
     @objc func windowDidChangeScreen(_: Notification) {
+        // Ghostty binds its display link to this display, so the renderer
+        // follows the new display's refresh rate. Ghostty's own app does
+        // this synchronously, before the deferred metrics pass below.
+        core.updateDisplayID()
         // Defer one runloop tick so AppKit's layout pass and the
         // window's new backingScaleFactor have both settled before we
         // re-derive metrics. Calling synchronously can race with the
@@ -132,7 +149,6 @@ extension AppTerminalView {
             guard let self else { return }
             updateMetalLayerMetrics()
             core.synchronizeMetrics()
-            core.requestImmediateTick()
         }
     }
 
@@ -155,25 +171,27 @@ extension AppTerminalView {
             name: NSWindow.didChangeScreenNotification,
             object: nil
         )
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSWindow.didChangeOcclusionStateNotification,
+            object: nil
+        )
     }
 
     override open func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         core.fitToSize()
-        core.requestImmediateTick()
     }
 
     override open func layout() {
         super.layout()
         core.fitToSize()
-        core.requestImmediateTick()
     }
 
     override open func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         updateMetalLayerMetrics()
         core.fitToSize()
-        core.requestImmediateTick()
     }
 
     public func fitToSize() {
@@ -206,16 +224,6 @@ extension AppTerminalView {
             width: bounds.width * scale,
             height: bounds.height * scale
         )
-    }
-
-    func enforceMetalLayerScale() {
-        let scale = core.scaleFactor()
-        if let layer, layer.contentsScale != scale {
-            layer.contentsScale = scale
-        }
-        if let metalLayer, metalLayer.contentsScale != scale {
-            metalLayer.contentsScale = scale
-        }
     }
 
     override open func viewDidChangeEffectiveAppearance() {

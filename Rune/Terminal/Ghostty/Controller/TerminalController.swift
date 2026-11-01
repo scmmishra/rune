@@ -9,6 +9,7 @@ import Foundation
 import GhosttyKit
 
 import AppKit
+import os
 
 /// Manages the Ghostty app lifecycle, configuration loading, and surface
 /// creation.
@@ -52,26 +53,14 @@ public final class TerminalController {
     var renderedConfigContents: String = TerminalController.defaultRenderedConfig
 
     public internal(set) var lastConfigurationIssue: String?
-    /// One surface's interest in a wakeup. Every surface shares this
-    /// controller, so a single handler is not enough.
-    struct WakeupObserver {
-        let shouldProcess: () -> Bool
-        let onWakeup: () -> Void
-    }
+    /// True while a wakeup has queued an app tick that has not started yet.
+    /// Ghostty calls the wakeup callback from its own threads, at a rate
+    /// that follows terminal output. This flag keeps at most one tick on the
+    /// main queue, so a burst of wakeups cannot flood it.
+    private nonisolated let tickQueued = OSAllocatedUnfairLock(initialState: false)
 
-    private var wakeupObservers: [ObjectIdentifier: WakeupObserver] = [:]
-
-    func addWakeupObserver(
-        _ key: ObjectIdentifier,
-        shouldProcess: @escaping () -> Bool,
-        onWakeup: @escaping () -> Void
-    ) {
-        wakeupObservers[key] = WakeupObserver(shouldProcess: shouldProcess, onWakeup: onWakeup)
-    }
-
-    func removeWakeupObserver(_ key: ObjectIdentifier) {
-        wakeupObservers.removeValue(forKey: key)
-    }
+    /// Tokens for the app activation observers that feed `ghostty_app_set_focus`.
+    private nonisolated(unsafe) var activationObservers: [any NSObjectProtocol] = []
 
     // MARK: - Config Resolution State
 
@@ -173,6 +162,7 @@ public final class TerminalController {
         // load; the fallback is what a host reads here after init.
         if let baseIssue { lastConfigurationIssue = baseIssue }
         createApp()
+        observeAppActivation()
     }
 
     // MARK: - Color Scheme
@@ -306,16 +296,47 @@ public final class TerminalController {
         ghostty_app_tick(app)
     }
 
-    func handleWakeup() {
-        let observers = Array(wakeupObservers.values)
-        // One detached surface must not stop the tick for the others.
-        guard observers.isEmpty || observers.contains(where: { $0.shouldProcess() }) else {
-            TerminalDebugLog.log(.lifecycle, "wakeup suspended")
-            return
+    /// Called from Ghostty's wakeup callback, on any thread. Queues one
+    /// `ghostty_app_tick` on the main queue unless one is already queued.
+    ///
+    /// Ticks run regardless of surface visibility or app activation. The app
+    /// mailbox (titles, pwd, bell, child exit) only empties in a tick, and a
+    /// full mailbox blocks the session's write thread. Ghostty's renderer
+    /// threads pace and draw frames on their own, so a tick draws nothing.
+    nonisolated func scheduleTick() {
+        let alreadyQueued = tickQueued.withLock { queued in
+            let was = queued
+            queued = true
+            return was
         }
+        guard !alreadyQueued else { return }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { [self] in
+                // Clear before ticking. A wakeup that arrives during the
+                // tick queues another one instead of being dropped.
+                tickQueued.withLock { $0 = false }
+                tick()
+            }
+        }
+    }
 
-        tick()
-        for observer in observers { observer.onWakeup() }
+    /// Tells Ghostty whether the app is active, as Ghostty's own macOS app does.
+    func observeAppActivation() {
+        ghostty_app_set_focus(app, NSApplication.shared.isActive)
+        let center = NotificationCenter.default
+        for (name, active) in [
+            (NSApplication.didBecomeActiveNotification, true),
+            (NSApplication.didResignActiveNotification, false),
+        ] {
+            activationObservers.append(
+                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        guard let app = self?.app else { return }
+                        ghostty_app_set_focus(app, active)
+                    }
+                }
+            )
+        }
     }
 
     private static func initializeRuntimeIfNeeded() {
@@ -326,6 +347,7 @@ public final class TerminalController {
     }
 
     deinit {
+        for observer in activationObservers { NotificationCenter.default.removeObserver(observer) }
         if let app { ghostty_app_free(app) }
         if let config { ghostty_config_free(config) }
         if let managedConfigURL {

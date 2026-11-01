@@ -19,7 +19,6 @@ final class TerminalCallbackBridge {
     /// Raw surface pointer for use in C callbacks (e.g. clipboard).
     nonisolated(unsafe) var rawSurface: ghostty_surface_t?
     var onCellSizeChange: ((UInt32, UInt32) -> Void)?
-    var onRenderRequest: (() -> Void)?
 
     init(delegate: (any TerminalSurfaceViewDelegate)? = nil) {
         self.delegate = delegate
@@ -50,18 +49,6 @@ final class TerminalCallbackBridge {
             TerminalDebugLog.log(.actions, "callback action=ring_bell")
             (delegate as? any TerminalSurfaceBellDelegate)?
                 .terminalDidRingBell()
-
-        case GHOSTTY_ACTION_RENDER:
-            TerminalDebugLog.log(.render, "callback action=render")
-            onRenderRequest?()
-
-        case GHOSTTY_ACTION_CONFIG_CHANGE:
-            // Colors/theme may have changed (e.g. on system appearance
-            // toggle). Ghostty applies the new config internally but won't
-            // repaint until the next frame — request one so the refreshed
-            // theme is visible without waiting for input or layout.
-            TerminalDebugLog.log(.actions, "callback action=config_change")
-            onRenderRequest?()
 
         case GHOSTTY_ACTION_PROGRESS_REPORT:
             let report = action.action.progress_report

@@ -81,6 +81,12 @@ open class AppTerminalView: NSView {
         setupTrackingArea()
 
         core.isAttached = { [weak self] in self?.window != nil }
+        core.isWindowVisible = { [weak self] in
+            self?.window?.occlusionState.contains(.visible) ?? false
+        }
+        core.displayID = { [weak self] in
+            self?.window?.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32
+        }
         core.scaleFactor = { [weak self] in
             Double(
                 self?.window?.backingScaleFactor
@@ -102,9 +108,6 @@ open class AppTerminalView: NSView {
         }
         core.onMetricsUpdate = { [weak self] in
             self?.updateMetalLayerMetrics()
-        }
-        core.onPostRender = { [weak self] in
-            self?.enforceMetalLayerScale()
         }
     }
 

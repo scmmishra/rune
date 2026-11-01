@@ -11,11 +11,9 @@ import AppKit
 private nonisolated enum TerminalCallbacks {
     static func wakeup(userdata: UnsafeMutableRawPointer?) {
         guard let userdata else { return }
-        let controller = Unmanaged<TerminalController>.fromOpaque(userdata)
+        Unmanaged<TerminalController>.fromOpaque(userdata)
             .takeUnretainedValue()
-        terminalRunOnMain {
-            controller.handleWakeup()
-        }
+            .scheduleTick()
     }
 
     static func action(
