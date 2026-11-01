@@ -44,6 +44,13 @@ public nonisolated enum TerminalPasteboardContent {
         return string
     }
 
+    /// Whether ``text(from:)`` could return text, judged from the declared
+    /// pasteboard types without reading any data.
+    static func hasText(in pasteboard: NSPasteboard = .general) -> Bool {
+        let types = pasteboard.types ?? []
+        return types.contains(.string) || types.contains(.fileURL)
+    }
+
     /// The pasteboard as text — see ``text(string:urls:)``.
     static func text(from pasteboard: NSPasteboard = .general) -> String? {
         text(

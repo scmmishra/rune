@@ -22,7 +22,6 @@ extension TerminalController {
         var surfaceConfig = ghostty_surface_config_new()
         surfaceConfig.userdata = Unmanaged.passUnretained(bridge).toOpaque()
         surfaceConfig.context = configuration.context.ghosttyValue
-        surfaceConfig.backend = GHOSTTY_SURFACE_IO_BACKEND_EXEC
 
         if let fontSize = configuration.fontSize {
             surfaceConfig.font_size = fontSize

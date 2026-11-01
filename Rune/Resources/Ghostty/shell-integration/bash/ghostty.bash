@@ -1,191 +1,283 @@
-# Ghostty bash shell integration.
+# Parts of this script are based on Kitty's bash integration. Kitty is
+# distributed under GPLv3, so this file is also distributed under GPLv3.
+# The license header is reproduced below:
 #
-# Copyright (c) 2026 @Lakr233
-# SPDX-License-Identifier: MIT
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
 #
-# Written from scratch for libghostty-spm. Not derived from Ghostty's or
-# Kitty's bash integration (both GPLv3). Hooks come from bash-preexec.sh
-# next to this file (MIT, https://github.com/rcaloras/bash-preexec — see
-# LICENSE-bash-preexec.md).
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 #
-# Two ways in:
-#
-# 1. Injected. The terminal starts `bash --posix` with ENV pointing here, so
-#    bash reads this file instead of its normal startup files. The contract,
-#    from libghostty's termio/shell_integration.zig (hosts that spawn bash
-#    themselves set the same variables):
-#
-#      GHOSTTY_BASH_INJECT            "1", plus any of " --norc" " --noprofile"
-#                                     the terminal swallowed from the command
-#      GHOSTTY_BASH_RCFILE            the argument of --rcfile / --init-file
-#      GHOSTTY_BASH_ENV               the user's ENV, if there was one
-#      GHOSTTY_BASH_UNEXPORT_HISTFILE the terminal exported HISTFILE only to
-#                                     undo POSIX mode's ~/.sh_history default
-#
-#    The file leaves POSIX mode, undoes those variables, replays the startup
-#    files bash would have read on its own, then attaches the hooks.
-#
-# 2. Sourced from a .bashrc. Only the hooks attach.
-#
-# What the terminal gets from the hooks, per prompt:
-#
-#   OSC 133 A / B / C / D   prompt start, input start, output start,
-#                           command end with its exit code
-#   OSC 7                   the working directory, as a file:// URL
-#   OSC 2                   the title — the directory at a prompt, the
-#                           command while it runs (feature `title`)
-#   DECSCUSR                a bar cursor while editing, the default shape
-#                           while a command runs (feature `cursor`)
-#
-# Features come from GHOSTTY_SHELL_FEATURES, a comma-separated list the
-# terminal exports (`cursor`, `cursor:blink`, `cursor:steady`, `title`, …).
-# Anything else in the list is ignored.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-if [[ -n "${GHOSTTY_BASH_INJECT:-}" ]]; then
-    builtin set +o posix
+# We need to be in interactive mode to proceed.
+if [[ "$-" != *i* ]]; then builtin return; fi
 
-    _ghostty_inject="$GHOSTTY_BASH_INJECT"
-    _ghostty_rcfile="${GHOSTTY_BASH_RCFILE:-}"
-    builtin unset GHOSTTY_BASH_INJECT GHOSTTY_BASH_RCFILE
+# When automatic shell integration is active, we were started in POSIX
+# mode and need to manually recreate the bash startup sequence.
+if [ -n "$GHOSTTY_BASH_INJECT" ]; then
+  # Store a temporary copy of our startup flags and unset these global
+  # environment variables so we can safely handle reentrancy.
+  builtin declare __ghostty_bash_flags="$GHOSTTY_BASH_INJECT"
+  builtin unset ENV GHOSTTY_BASH_INJECT
 
-    if [[ -n "${GHOSTTY_BASH_ENV:-}" ]]; then
-        builtin export ENV="$GHOSTTY_BASH_ENV"
-    else
-        builtin unset ENV
-    fi
+  # Restore an existing ENV that was replaced by the shell integration code.
+  if [[ -n "$GHOSTTY_BASH_ENV" ]]; then
+    builtin export ENV=$GHOSTTY_BASH_ENV
     builtin unset GHOSTTY_BASH_ENV
+  fi
 
-    if [[ -n "${GHOSTTY_BASH_UNEXPORT_HISTFILE:-}" ]]; then
-        builtin export -n HISTFILE
-        builtin unset GHOSTTY_BASH_UNEXPORT_HISTFILE
+  # Restore bash's default 'posix' behavior. Also reset 'inherit_errexit',
+  # which doesn't happen as part of the 'posix' reset.
+  builtin set +o posix
+  builtin shopt -u inherit_errexit 2>/dev/null
+
+  # Unexport HISTFILE if it was set by the shell integration code.
+  if [[ -n "$GHOSTTY_BASH_UNEXPORT_HISTFILE" ]]; then
+    builtin export -n HISTFILE
+    builtin unset GHOSTTY_BASH_UNEXPORT_HISTFILE
+  fi
+
+  # Manually source the startup files. See INVOCATION in bash(1) and
+  # run_startup_files() in shell.c in the Bash source code.
+  if builtin shopt -q login_shell; then
+    if [[ $__ghostty_bash_flags != *"--noprofile"* ]]; then
+      [ -r /etc/profile ] && builtin source "/etc/profile"
+      for __ghostty_rcfile in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+        [ -r "$__ghostty_rcfile" ] && {
+          builtin source "$__ghostty_rcfile"
+          break
+        }
+      done
     fi
-
-    _ghostty_norc=0
-    _ghostty_noprofile=0
-    for _ghostty_word in $_ghostty_inject; do
-        case "$_ghostty_word" in
-            --norc) _ghostty_norc=1 ;;
-            --noprofile) _ghostty_noprofile=1 ;;
-        esac
-    done
-
-    # The system files live in bash's compiled-in sysconfdir. Derive it from
-    # the binary's location: /bin/bash and /usr/bin/bash → /etc,
-    # /var/jb/usr/bin/bash → /var/jb/etc, /opt/homebrew/bin/bash →
-    # /opt/homebrew/etc.
-    _ghostty_sysconfdir="${BASH%/bin/bash}"
-    _ghostty_sysconfdir="${_ghostty_sysconfdir%/usr}/etc"
-
-    if shopt -q login_shell; then
-        if (( ! _ghostty_noprofile )); then
-            [[ -r "$_ghostty_sysconfdir/profile" ]] && builtin source "$_ghostty_sysconfdir/profile"
-            for _ghostty_file in ~/.bash_profile ~/.bash_login ~/.profile; do
-                if [[ -r "$_ghostty_file" ]]; then
-                    builtin source "$_ghostty_file"
-                    break
-                fi
-            done
-        fi
-    elif (( ! _ghostty_norc )); then
-        for _ghostty_file in "$_ghostty_sysconfdir/bash.bashrc" "$_ghostty_sysconfdir/bashrc"; do
-            if [[ -r "$_ghostty_file" ]]; then
-                builtin source "$_ghostty_file"
-                break
-            fi
-        done
-        if [[ -n "$_ghostty_rcfile" ]]; then
-            [[ -r "$_ghostty_rcfile" ]] && builtin source "$_ghostty_rcfile"
-        elif [[ -r ~/.bashrc ]]; then
-            builtin source ~/.bashrc
-        fi
+  else
+    if [[ $__ghostty_bash_flags != *"--norc"* ]]; then
+      # The location of the system bashrc is determined at bash build
+      # time via -DSYS_BASHRC and can therefore vary across distros:
+      #  Arch, Debian, Ubuntu use /etc/bash.bashrc
+      #  Fedora uses /etc/bashrc sourced from ~/.bashrc instead of SYS_BASHRC
+      #  Void Linux uses /etc/bash/bashrc
+      #  Nixos uses /etc/bashrc
+      for __ghostty_rcfile in /etc/bash.bashrc /etc/bash/bashrc /etc/bashrc; do
+        [ -r "$__ghostty_rcfile" ] && {
+          builtin source "$__ghostty_rcfile"
+          break
+        }
+      done
+      if [[ -z "$GHOSTTY_BASH_RCFILE" ]]; then GHOSTTY_BASH_RCFILE="$HOME/.bashrc"; fi
+      [ -r "$GHOSTTY_BASH_RCFILE" ] && builtin source "$GHOSTTY_BASH_RCFILE"
     fi
+  fi
 
-    builtin unset _ghostty_inject _ghostty_rcfile _ghostty_norc _ghostty_noprofile \
-        _ghostty_word _ghostty_file _ghostty_sysconfdir
+  builtin unset __ghostty_rcfile
+  builtin unset __ghostty_bash_flags
+  builtin unset GHOSTTY_BASH_RCFILE
 fi
 
-[[ $- == *i* ]] || return 0
-[[ -n "${_ghostty_integration_loaded:-}" ]] && return 0
-_ghostty_integration_loaded=1
+# Add Ghostty binary to PATH if the path feature is enabled
+if [[ "$GHOSTTY_SHELL_FEATURES" == *"path"* && -n "$GHOSTTY_BIN_DIR" ]]; then
+  if [[ ":$PATH:" != *":$GHOSTTY_BIN_DIR:"* ]]; then
+    export PATH="$PATH:$GHOSTTY_BIN_DIR"
+  fi
+fi
 
-# Not a precmd: bash-preexec runs those before the pre-existing PROMPT_COMMAND
-# text, so only a tail entry survives a PROMPT_COMMAND that rebuilds PS1 every
-# cycle. Appended before bash-preexec installs itself so that on the first
-# prompt it also precedes __bp_interactive_mode, whose flag the DEBUG trap
-# spends on the next command it sees.
-PROMPT_COMMAND+=$'\n_ghostty_mark_input'
-builtin source "${BASH_SOURCE[0]%/*}/bash-preexec.sh"
-
-_ghostty_prompt_end='\[\e]133;B\a\]'
-_ghostty_command_ran=0
-
-_ghostty_feature() {
-    [[ ",${GHOSTTY_SHELL_FEATURES:-}," == *",$1,"* ]]
-}
-
-# Percent-encodes $PWD byte by byte for the OSC 7 URL.
-_ghostty_encoded_pwd() {
-    local LC_ALL=C
-    local out= byte i
-    for (( i = 0; i < ${#PWD}; i++ )); do
-        byte="${PWD:i:1}"
-        case "$byte" in
-            [A-Za-z0-9/_.~-]) out+="$byte" ;;
-            *) builtin printf -v byte '%%%02X' "$(( $(builtin printf '%d' "'$byte") & 0xFF ))"
-               out+="$byte" ;;
-        esac
+# Sudo
+if [[ "$GHOSTTY_SHELL_FEATURES" == *"sudo"* && -n "$TERMINFO" ]]; then
+  # Wrap `sudo` command to ensure Ghostty terminfo is preserved.
+  #
+  # This approach supports wrapping a `sudo` alias, but the alias definition
+  # must come _after_ this function is defined. Otherwise, the alias expansion
+  # will take precedence over this function, and it won't be wrapped.
+  function sudo {
+    builtin local sudo_has_sudoedit_flags="no"
+    for arg in "$@"; do
+      # Check if argument is '-e' or '--edit' (sudoedit flags)
+      if [[ "$arg" == "-e" || $arg == "--edit" ]]; then
+        sudo_has_sudoedit_flags="yes"
+        builtin break
+      fi
+      # Check if argument is neither an option nor a key-value pair
+      if [[ "$arg" != -* && "$arg" != *=* ]]; then
+        builtin break
+      fi
     done
-    builtin printf '%s' "$out"
+    if [[ "$sudo_has_sudoedit_flags" == "yes" ]]; then
+      builtin command sudo "$@"
+    else
+      builtin command sudo --preserve-env=TERMINFO "$@"
+    fi
+  }
+fi
+
+# SSH Integration
+#
+# Wrap `ssh` with `ghostty +ssh` and translate the shell-integration
+# feature flags into command options.
+if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
+  function ssh() {
+    builtin local -a flags
+    flags=()
+    [[ "$GHOSTTY_SHELL_FEATURES" != *ssh-env* ]] && flags+=(--forward-env=false)
+    [[ "$GHOSTTY_SHELL_FEATURES" != *ssh-terminfo* ]] && flags+=(--terminfo=false)
+    "$GHOSTTY_BIN_DIR/ghostty" +ssh "${flags[@]}" -- "$@"
+  }
+fi
+
+# This is set to 1 when we're executing a command so that we don't
+# send prompt marks multiple times.
+_ghostty_executing=""
+_ghostty_last_reported_cwd=""
+
+function __ghostty_precmd() {
+  local ret="${1:-$?}"
+  if test "$_ghostty_executing" != "0"; then
+    _GHOSTTY_SAVE_PS1="$PS1"
+    _GHOSTTY_SAVE_PS2="$PS2"
+
+    # Use 133;P (not 133;A) inside PS1 to avoid fresh-line behavior on
+    # readline redraws (e.g., vi mode switches, Ctrl-L). The initial
+    # 133;A with fresh-line is emitted once via printf below.
+    PS1='\[\e]133;P;k=i\a\]'$PS1'\[\e]133;B\a\]'
+    PS2='\[\e]133;P;k=s\a\]'$PS2'\[\e]133;B\a\]'
+
+    # Bash doesn't redraw the leading lines in a multiline prompt so we mark
+    # the start of each line (after each newline) as a secondary prompt. This
+    # correctly handles multiline prompts by setting the first to primary and
+    # the subsequent lines to secondary.
+    #
+    # We only replace the \n prompt escape, not literal newlines ($'\n'),
+    # because literal newlines may appear inside $(...) command substitutions
+    # where inserting escape sequences would break shell syntax.
+    if [[ "$PS1" == *"\n"* ]]; then
+      PS1="${PS1//\\n/\\n$'\\[\\e]133;P;k=s\\a\\]'}"
+    fi
+
+    # Cursor
+    if [[ "$GHOSTTY_SHELL_FEATURES" == *"cursor"* ]]; then
+      builtin local cursor=5  # blinking bar
+      [[ "$GHOSTTY_SHELL_FEATURES" == *"cursor:steady"* ]] && cursor=6  # steady bar
+
+      [[ "$PS1" != *"\[\e[${cursor} q\]"* ]] && PS1=$PS1"\[\e[${cursor} q\]"
+      [[ "$PS0" != *'\[\e[0 q\]'* ]] && PS0=$PS0'\[\e[0 q\]' # reset
+    fi
+
+    # Title (working directory)
+    if [[ "$GHOSTTY_SHELL_FEATURES" == *"title"* ]]; then
+      PS1=$PS1'\[\e]2;\w\a\]'
+    fi
+  fi
+
+  if test "$_ghostty_executing" != ""; then
+    # End of current command. Report its status.
+    builtin printf "\e]133;D;%s;aid=%s\a" "$ret" "$BASHPID"
+  fi
+
+  # Fresh line and start of prompt. When ble.sh is active, emit 133;P instead
+  # of 133;A because ble.sh maintains its own cursor position tracking. 133;A's
+  # cursor movement (CR+LF when not at column 0) is invisible to ble.sh and
+  # desyncs its position state, causing display artifacts like duplicate
+  # prompts. See: https://github.com/akinomyoga/ble.sh/issues/684
+  if [[ -n "${BLE_VERSION-}" ]]; then
+    builtin printf "\e]133;P;k=i\a"
+  else
+    builtin printf "\e]133;A;redraw=last;cl=line;aid=%s\a" "$BASHPID"
+  fi
+
+  # unfortunately bash provides no hooks to detect cwd changes
+  # in particular this means cwd reporting will not happen for a
+  # command like cd /test && cat. PS0 is evaluated before cd is run.
+  if [[ "$_ghostty_last_reported_cwd" != "$PWD" ]]; then
+    _ghostty_last_reported_cwd="$PWD"
+    # Remove control bytes from the hostname and directory before sending
+    # them. A directory name that contains a raw ESC or BEL byte could
+    # otherwise end our OSC 7 early and start a sequence of its own, such
+    # as an OSC 52 clipboard write. Backslashes are safe here because
+    # printf only expands escapes in the format string, not in %s values.
+    builtin printf "\e]7;kitty-shell-cwd://%s%s\a" "${HOSTNAME//[[:cntrl:]]/}" "${PWD//[[:cntrl:]]/}"
+  fi
+
+  _ghostty_executing=0
 }
 
-_ghostty_precmd() {
-    local exit_code=$?
+function __ghostty_preexec() {
+  builtin local cmd="$1"
 
-    if (( _ghostty_command_ran )); then
-        builtin printf '\033]133;D;%s\007' "$exit_code"
-        _ghostty_command_ran=0
-    fi
+  PS1="$_GHOSTTY_SAVE_PS1"
+  PS2="$_GHOSTTY_SAVE_PS2"
 
-    # Prompt start goes out directly, so it lands however PS1 is built.
-    builtin printf '\033]133;A\007'
-    builtin printf '\033]7;file://%s%s\007' "${HOSTNAME:-}" "$(_ghostty_encoded_pwd)"
+  # Title (current command)
+  if [[ -n $cmd && "$GHOSTTY_SHELL_FEATURES" == *"title"* ]]; then
+    builtin printf "\e]2;%s\a" "${cmd//[[:cntrl:]]/}"
+  fi
 
-    if _ghostty_feature title; then
-        local directory="$PWD"
-        [[ -n "$HOME" && ( "$directory" == "$HOME" || "$directory" == "$HOME"/* ) ]] && directory="~${directory#"$HOME"}"
-        builtin printf '\033]2;%s\007' "$directory"
-    fi
-
-    if _ghostty_feature cursor:steady; then
-        builtin printf '\033[6 q'
-    elif _ghostty_feature cursor || _ghostty_feature cursor:blink; then
-        builtin printf '\033[5 q'
-    fi
+  # End of input, start of output.
+  builtin printf "\e]133;C;\a"
+  _ghostty_executing=1
 }
 
-_ghostty_preexec() {
-    _ghostty_command_ran=1
+if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )); then
+  __ghostty_preexec_hook() {
+    builtin local cmd
+    cmd=$(LC_ALL=C HISTTIMEFORMAT='' builtin history 1)
+    cmd="${cmd#*[[:digit:]][* ] }"  # remove leading history number
+    [[ -n "$cmd" ]] && __ghostty_preexec "$cmd"
+  }
 
-    if _ghostty_feature cursor || _ghostty_feature cursor:blink || _ghostty_feature cursor:steady; then
-        builtin printf '\033[0 q'
+  # Bash 5.1+ restores the command status for each PROMPT_COMMAND array entry.
+  # Scalar values need to save and restore it before existing commands run.
+  __ghostty_restore_status() {
+    builtin return "$1"
+  }
+
+  __ghostty_hook() {
+    builtin local ret="${__ghostty_status:-$?}"
+    builtin unset __ghostty_status
+    __ghostty_precmd "$ret"
+
+    # Append preexec hook to PS0 if not already present.
+    # Use function substitution in 5.3+, otherwise command substitution.
+    if [[ "$PS0" != *"__ghostty_preexec_hook"* ]]; then
+      if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 3) )); then
+        # shellcheck disable=SC2016
+        PS0+='${ __ghostty_preexec_hook; }'
+      else
+        # shellcheck disable=SC2016
+        PS0+='$(__ghostty_preexec_hook >/dev/tty)'
+      fi
     fi
+  }
 
-    if _ghostty_feature title; then
-        # The first line of the command, control characters stripped.
-        local command="${1%%$'\n'*}"
-        builtin printf '\033]2;%s\007' "${command//[[:cntrl:]]/}"
+  # Append our hook to PROMPT_COMMAND, preserving its existing type. Array
+  # entries receive their command's status directly, while scalar values
+  # need a leading status capture before existing commands run.
+  #
+  # The 2>/dev/null suppresses "command not found" in subshells that inherit
+  # PROMPT_COMMAND without the function definitions. This also silences any
+  # errors from inside our hooks, but those are all terminal escape sequences
+  # and non-actionable.
+  # shellcheck disable=SC2128,SC2178,SC2179
+  if [[ "${PROMPT_COMMAND[*]:-}" != *"__ghostty_hook 2>/dev/null"* ]]; then
+    if [[ -z "${PROMPT_COMMAND[*]}" ]]; then
+      if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) )); then
+        PROMPT_COMMAND=("__ghostty_hook 2>/dev/null")
+      else
+        PROMPT_COMMAND="__ghostty_hook 2>/dev/null"
+      fi
+    elif [[ $(builtin declare -p PROMPT_COMMAND 2>/dev/null) == "declare -a"* ]]; then
+      PROMPT_COMMAND+=("__ghostty_hook 2>/dev/null")
+    else
+      PROMPT_COMMAND='__ghostty_status=$?;if builtin declare -F __ghostty_restore_status >/dev/null;then __ghostty_restore_status "$__ghostty_status";else (exit "$__ghostty_status");fi;'"${PROMPT_COMMAND}"
+      [[ "${PROMPT_COMMAND}" =~ (\;[[:space:]]*|$'\n')$ ]] || PROMPT_COMMAND+=";"
+      PROMPT_COMMAND+="__ghostty_hook 2>/dev/null"
     fi
-
-    builtin printf '\033]133;C\007'
-}
-
-# Input start rides on the end of PS1; re-append whenever something
-# rebuilt PS1 without it.
-_ghostty_mark_input() {
-    if [[ "$PS1" != *"$_ghostty_prompt_end" ]]; then
-        PS1="$PS1$_ghostty_prompt_end"
-    fi
-}
-
-precmd_functions+=(_ghostty_precmd)
-preexec_functions+=(_ghostty_preexec)
+  fi
+else
+  builtin source "$(dirname -- "${BASH_SOURCE[0]}")/bash-preexec.sh"
+  preexec_functions+=(__ghostty_preexec)
+  precmd_functions+=(__ghostty_precmd)
+fi

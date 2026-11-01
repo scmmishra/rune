@@ -6,6 +6,7 @@ zig = "0.17.0"
 [tasks.build]
 description = "Build Rune in Debug mode"
 run = """
+bash Scripts/build-ghostty.sh
 xcodebuild \
   -project Rune.xcodeproj \
   -scheme Rune \

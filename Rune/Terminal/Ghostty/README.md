@@ -7,7 +7,7 @@ This code is the macOS part of the `GhosttyTerminal` module from [libghostty-spm
 - Commit: 4a92e0102ba134b7f4bdd7a2d1c3b9cfa9614edd
 - License: MIT. See `LICENSE` in this folder.
 
-Rune still links the Ghostty C API (`GhosttyKit`) from the package. It no longer links `GhosttyTerminal`.
+The Ghostty core is not from the package. `Scripts/build-ghostty.sh` builds it from Ghostty source into `Vendor/GhosttyKit.xcframework`, and the Xcode project links that. The script also copies the shell integration and terminfo into `Rune/Resources`.
 
 ## What was removed
 
@@ -26,3 +26,4 @@ Rune still links the Ghostty C API (`GhosttyKit`) from the package. It no longer
 - `TerminalPasteboardContent` keeps only the AppKit reader.
 - `TerminalSurfaceView` uses the two-parameter `onChange`.
 - Rune's own `TerminalSurface` enum is now `TerminalBackground`, because this module's `TerminalSurface` class has the old name.
+- The clipboard callbacks follow the Ghostty 1.4.0 C API: explicit lengths, the confirm struct, and `ghostty_surface_deny_clipboard_request` for a refused request. Only `text/plain` is served and written.

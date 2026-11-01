@@ -47,6 +47,8 @@ public nonisolated enum TerminalClipboardRequestKind: Sendable {
     case paste
     case osc52Read
     case osc52Write
+    case kittyRead
+    case kittyWrite
 
     init?(_ rawValue: ghostty_clipboard_request_e) {
         switch rawValue {
@@ -56,6 +58,10 @@ public nonisolated enum TerminalClipboardRequestKind: Sendable {
             self = .osc52Read
         case GHOSTTY_CLIPBOARD_REQUEST_OSC_52_WRITE:
             self = .osc52Write
+        case GHOSTTY_CLIPBOARD_REQUEST_KITTY_READ:
+            self = .kittyRead
+        case GHOSTTY_CLIPBOARD_REQUEST_KITTY_WRITE:
+            self = .kittyWrite
         default:
             return nil
         }

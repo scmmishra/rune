@@ -1,7 +1,11 @@
 #!/bin/bash
 # Build GhosttyKit.xcframework (macOS arm64, ReleaseFast) from Ghostty's source.
 # Output: Vendor/GhosttyKit.xcframework and Vendor/GhosttyResources.
+# It also copies the shell integration and terminfo into Rune/Resources, which are tracked
+# in git, so the resources in the app always match this Ghostty version.
 # To upgrade Ghostty, change the two lines below and run this script.
+# Patches in Scripts/ghostty-patches/*.patch are applied to the source before the build.
+# Drop a patch once the pinned version contains the fix.
 GHOSTTY_VERSION="v1.4.0"
 # The commit the tag points to. A moved tag fails the build.
 GHOSTTY_SHA="83fb95624b0439ee660c2679b43b38c8b63769cd"
@@ -19,8 +23,20 @@ output="$vendor_dir/GhosttyKit.xcframework"
 resources_output="$vendor_dir/GhosttyResources"
 stamp="$vendor_dir/GhosttyKit.stamp"
 
-stamp_value="$GHOSTTY_SHA $ZIG_FLAGS"
+# Rune ships these two folders without the themes. Xcode copies them into the app as is.
+# --checksum leaves files with unchanged content alone, so a no-op sync touches nothing.
+sync_app_resources() {
+    rsync -a --checksum --delete "$resources_output/ghostty/shell-integration/" "$root/Rune/Resources/Ghostty/shell-integration/"
+    rsync -a --checksum --delete "$resources_output/terminfo/" "$root/Rune/Resources/terminfo/"
+}
+
+# The patches are part of the stamp, so changing one rebuilds.
+patch_files=("$root"/Scripts/ghostty-patches/*.patch)
+[ -e "${patch_files[0]}" ] || patch_files=()
+patches_hash=$( (echo "patches"; [ ${#patch_files[@]} -eq 0 ] || cat "${patch_files[@]}") | shasum -a 256 | cut -d' ' -f1)
+stamp_value="$GHOSTTY_SHA $ZIG_FLAGS $patches_hash"
 if [ -d "$output" ] && [ -d "$resources_output" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$stamp_value" ]; then
+    sync_app_resources
     echo "GhosttyKit.xcframework is up to date ($GHOSTTY_VERSION)."
     exit 0
 fi
@@ -52,6 +68,10 @@ fi
 git -C "$source_dir" -c advice.detachedHead=false checkout -q -f "$GHOSTTY_SHA"
 # Remove old outputs so a stale xcframework is never mistaken for a fresh one.
 git -C "$source_dir" clean -fdq
+for patch in ${patch_files[@]+"${patch_files[@]}"}; do
+    git -C "$source_dir" apply "$patch"
+    echo "Applied $(basename "$patch")."
+done
 rm -rf "$source_dir/zig-out"
 
 # Ghostty needs one exact Zig release. mise.toml pins it.
@@ -80,4 +100,5 @@ cp -R "$built" "$output"
 cp -R "$source_dir/zig-out/share/ghostty" "$resources_output/ghostty"
 cp -R "$source_dir/zig-out/share/terminfo" "$resources_output/terminfo"
 printf '%s' "$stamp_value" > "$stamp"
+sync_app_resources
 echo "Built $output from Ghostty $GHOSTTY_VERSION."

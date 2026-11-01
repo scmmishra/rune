@@ -13,6 +13,9 @@ if [[ ! "$SPARKLE_PUBLIC_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
     exit 1
 fi
 
+# The app links the Ghostty core from Vendor/. This does nothing when it is up to date.
+bash Scripts/build-ghostty.sh
+
 xcodebuild -project Rune.xcodeproj -scheme Rune -configuration Release \
     -derivedDataPath DerivedData -destination 'generic/platform=macOS' \
     build CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \

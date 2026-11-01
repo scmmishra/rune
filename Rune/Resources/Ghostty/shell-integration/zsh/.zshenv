@@ -1,54 +1,61 @@
-# Ghostty zsh shell integration — bootstrap.
+# Based on (started as) a copy of Kitty's zsh integration. Kitty is
+# distributed under GPLv3, so this file is also distributed under GPLv3.
+# The license header is reproduced below:
 #
-# Copyright (c) 2026 @Lakr233
-# SPDX-License-Identifier: MIT
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
 #
-# Written from scratch for libghostty-spm. Not derived from Ghostty's or
-# Kitty's zsh integration (both GPLv3); only the environment contract is
-# shared, so libghostty's exec backend and any host that mimics it can load
-# this file the same way:
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 #
-#   ZDOTDIR=<resources>/shell-integration/zsh   zsh reads this file first
-#   GHOSTTY_ZSH_ZDOTDIR=<user's ZDOTDIR>         set only if the user had one
-#
-# This file puts ZDOTDIR back, runs the user's own .zshenv, and — for an
-# interactive shell — arranges for ghostty-integration to load after .zshrc,
-# so the user's prompt and hooks are already in place when ours attach.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# Where this file lives; ghostty-integration sits next to it.
-typeset -g GHOSTTY_ZSH_INTEGRATION_DIR="${${(%):-%x}:A:h}"
+# This script is sourced automatically by zsh when ZDOTDIR is set to this
+# directory. It therefore assumes it's running within our shell integration
+# environment and should not be sourced manually (unlike ghostty-integration).
+#
+# This file can get sourced with aliases enabled. To avoid alias expansion
+# we quote everything that can be quoted. Some aliases will still break us
+# though.
 
-# Restore ZDOTDIR before anything else reads it. zsh looks the variable up
-# again for every later startup file, so .zprofile/.zshrc/.zlogin come from
-# the user's directory, not from ours.
-if [[ -n "${GHOSTTY_ZSH_ZDOTDIR+set}" ]]; then
-    ZDOTDIR="$GHOSTTY_ZSH_ZDOTDIR"
-    unset GHOSTTY_ZSH_ZDOTDIR
+# Restore the original ZDOTDIR value if GHOSTTY_ZSH_ZDOTDIR is set.
+# Otherwise, unset the ZDOTDIR that was set during shell injection.
+if [[ -n "${GHOSTTY_ZSH_ZDOTDIR+X}" ]]; then
+    'builtin' 'export' ZDOTDIR="$GHOSTTY_ZSH_ZDOTDIR"
+    'builtin' 'unset' 'GHOSTTY_ZSH_ZDOTDIR'
 else
-    unset ZDOTDIR
+    'builtin' 'unset' 'ZDOTDIR'
 fi
 
-# The user's .zshenv, which may itself relocate ZDOTDIR.
-if [[ -r "${ZDOTDIR:-$HOME}/.zshenv" ]]; then
-    builtin source -- "${ZDOTDIR:-$HOME}/.zshenv"
-fi
-
-if [[ -o interactive ]]; then
-    # Load the integration from the first precmd: by then .zshrc has run,
-    # so hooks we add land after the user's and our prompt marks survive
-    # prompt frameworks that rebuild PS1 in their own precmd.
-    _ghostty_deferred_init() {
-        builtin unfunction _ghostty_deferred_init
-        precmd_functions=(${precmd_functions:#_ghostty_deferred_init})
-        # Already sourced by .zshrc: its hooks are in this cycle's snapshot.
-        (( ${+_ghostty_integration_loaded} )) && return 0
-        if [[ -r "$GHOSTTY_ZSH_INTEGRATION_DIR/ghostty-integration" ]]; then
-            builtin source -- "$GHOSTTY_ZSH_INTEGRATION_DIR/ghostty-integration"
-            # This precmd cycle iterates a snapshot of the hook list, so
-            # run ours once by hand for the very first prompt.
-            _ghostty_precmd
+# Use try-always to have the right error code.
+{
+    # Zsh treats unset ZDOTDIR as if it was HOME. We do the same.
+    #
+    # Source the user's .zshenv before sourcing ghostty-integration because the
+    # former might set fpath and other things without which ghostty-integration
+    # won't work.
+    #
+    # Use typeset in case we are in a function with warn_create_global in
+    # effect. Unlikely but better safe than sorry.
+    'builtin' 'typeset' _ghostty_file=${ZDOTDIR-$HOME}"/.zshenv"
+    # Zsh ignores unreadable rc files. We do the same.
+    # Zsh ignores rc files that are directories, and so does source.
+    [[ ! -r "$_ghostty_file" ]] || 'builtin' 'source' '--' "$_ghostty_file"
+} always {
+    if [[ -o 'interactive' ]]; then
+        # ${(%):-%x} is the path to the current file.
+        # On top of it we add :A:h to get the directory.
+        'builtin' 'typeset' _ghostty_file="${${(%):-%x}:A:h}"/ghostty-integration
+        if [[ -r "$_ghostty_file" ]]; then
+            'builtin' 'autoload' '-Uz' '--' "$_ghostty_file"
+            "${_ghostty_file:t}"
+            'builtin' 'unfunction' '--' "${_ghostty_file:t}"
         fi
-    }
-    typeset -ga precmd_functions
-    precmd_functions+=(_ghostty_deferred_init)
-fi
+    fi
+    'builtin' 'unset' '_ghostty_file'
+}

@@ -11,7 +11,7 @@
 		A1000000000000000000002B /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000029 /* terminfo */; };
         C30000000000000000000001 /* BeautifulMermaid in Frameworks */ = {isa = PBXBuildFile; productRef = C30000000000000000000002 /* BeautifulMermaid */; };
 		B20000000000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000002 /* Sparkle */; };
-		A10000000000000000000014 /* GhosttyKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* GhosttyKit */; };
+		A1000000000000000000002D /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1000000000000000000002C /* GhosttyKit.xcframework */; };
 		A10000000000000000000025 /* MSDisplayLink in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000027 /* MSDisplayLink */; };
 		A10000000000000000000017 /* SwiftTreeSitter in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000021 /* SwiftTreeSitter */; };
 		A10000000000000000000018 /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000022 /* TreeSitterSwift */; };
@@ -20,6 +20,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A1000000000000000000002C /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GhosttyKit.xcframework; path = Vendor/GhosttyKit.xcframework; sourceTree = "<group>"; };
 		A10000000000000000000028 /* Ghostty */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Ghostty; path = Rune/Resources/Ghostty; sourceTree = "<group>"; };
 		A10000000000000000000029 /* terminfo */ = {isa = PBXFileReference; lastKnownFileType = folder; name = terminfo; path = Rune/Resources/terminfo; sourceTree = "<group>"; };
 		A10000000000000000000004 /* Rune.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rune.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -30,9 +31,11 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Resources/Info.plist,
-				Resources/Ghostty/shell-integration/bash/LICENSE-bash-preexec.md,
 				Resources/Ghostty/shell-integration/bash/bash-preexec.sh,
 				Resources/Ghostty/shell-integration/bash/ghostty.bash,
+				Resources/Ghostty/shell-integration/elvish/lib/ghostty-integration.elv,
+				Resources/Ghostty/shell-integration/fish/vendor_conf.d/ghostty-shell-integration.fish,
+				Resources/Ghostty/shell-integration/nushell/vendor/autoload/ghostty.nu,
 				Resources/Ghostty/shell-integration/zsh/.zshenv,
 				Resources/Ghostty/shell-integration/zsh/ghostty-integration,
 				Resources/terminfo/67/ghostty,
@@ -62,7 +65,7 @@
 			files = (
                 C30000000000000000000001 /* BeautifulMermaid in Frameworks */,
 				B20000000000000000000001 /* Sparkle in Frameworks */,
-				A10000000000000000000014 /* GhosttyKit in Frameworks */,
+				A1000000000000000000002D /* GhosttyKit.xcframework in Frameworks */,
 				A10000000000000000000025 /* MSDisplayLink in Frameworks */,
 				A10000000000000000000017 /* SwiftTreeSitter in Frameworks */,
 				A10000000000000000000018 /* TreeSitterSwift in Frameworks */,
@@ -80,6 +83,7 @@
 				A10000000000000000000005 /* Rune */,
 				A10000000000000000000028 /* Ghostty */,
 				A10000000000000000000029 /* terminfo */,
+				A1000000000000000000002C /* GhosttyKit.xcframework */,
 				A10000000000000000000008 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -114,7 +118,6 @@
 			packageProductDependencies = (
                 C30000000000000000000002 /* BeautifulMermaid */,
 				B20000000000000000000002 /* Sparkle */,
-				A10000000000000000000016 /* GhosttyKit */,
 				A10000000000000000000027 /* MSDisplayLink */,
 				A10000000000000000000021 /* SwiftTreeSitter */,
 				A10000000000000000000022 /* TreeSitterSwift */,
@@ -152,7 +155,6 @@
 			packageReferences = (
                 C30000000000000000000003 /* beautiful-mermaid-swift */,
 				B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
-				A10000000000000000000015 /* XCRemoteSwiftPackageReference "libghostty-spm" */,
 				A10000000000000000000026 /* XCRemoteSwiftPackageReference "MSDisplayLink" */,
 				A1000000000000000000001C /* XCRemoteSwiftPackageReference "swift-tree-sitter" */,
 				A1000000000000000000001D /* XCRemoteSwiftPackageReference "tree-sitter-swift" */,
@@ -201,14 +203,6 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
 			requirement = { kind = exactVersion; version = 2.9.5; };
-		};
-		A10000000000000000000015 /* XCRemoteSwiftPackageReference "libghostty-spm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/Lakr233/libghostty-spm.git";
-			requirement = {
-				kind = exactVersion;
-				version = 1.5.2;
-			};
 		};
 		A10000000000000000000026 /* XCRemoteSwiftPackageReference "MSDisplayLink" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -262,11 +256,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
-		};
-		A10000000000000000000016 /* GhosttyKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000015 /* XCRemoteSwiftPackageReference "libghostty-spm" */;
-			productName = GhosttyKit;
 		};
 		A10000000000000000000027 /* MSDisplayLink */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -382,6 +371,7 @@
 		A10000000000000000000011 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDev;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -394,6 +384,21 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"-lc++",
+					"-framework",
+					Carbon,
+					"-framework",
+					CoreGraphics,
+					"-framework",
+					CoreText,
+					"-framework",
+					CoreVideo,
+					"-framework",
+					IOSurface,
+					"-framework",
+					QuartzCore,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1.0;
@@ -411,6 +416,7 @@
 		A10000000000000000000012 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -422,6 +428,21 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"-lc++",
+					"-framework",
+					Carbon,
+					"-framework",
+					CoreGraphics,
+					"-framework",
+					CoreText,
+					"-framework",
+					CoreVideo,
+					"-framework",
+					IOSurface,
+					"-framework",
+					QuartzCore,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1.0;
