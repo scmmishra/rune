@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import GhosttyTerminal
 
 @MainActor
 final class TerminalSession: ObservableObject, Identifiable {
@@ -112,7 +111,6 @@ final class TerminalSession: ObservableObject, Identifiable {
             }
         )
         terminal.configuration = TerminalSurfaceOptions(
-            backend: .exec,
             workingDirectory: workingDirectory?.path,
             command: processGuardian?.launchCommand(execution?.launchCommand ?? Self.shellCommand(running: startCommand), shellIntegration: execution == nil),
             waitAfterCommand: execution == nil ? nil : true

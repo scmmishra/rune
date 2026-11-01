@@ -187,7 +187,7 @@ struct WorkspaceView: View {
                     let peeked = terminals.peeked
                     // Keep each surface at one structural identity across every layout.
                     // Moving it between conditional containers would rebuild its PTY.
-                    // Source: libghostty-spm 1.5.2, TerminalSurfaceCoordinator.rebuildIfReady.
+                    // Source: Rune/Terminal/Ghostty, TerminalSurfaceCoordinator.rebuildIfReady.
                     ForEach(terminals.all) { session in
                         terminalSurface(session, placement: placement(
                             of: session, peeked: peeked, paneArea: paneArea, size: geometry.size,
@@ -862,7 +862,7 @@ struct WorkspaceView: View {
         }
         // Also focus an already-visible session, e.g. after using the file tree
         // or a palette. New surfaces replay this request when they attach.
-        // Source: libghostty-spm 1.5.2, TerminalViewState.requestFocus().
+        // Source: Rune/Terminal/Ghostty, TerminalViewState.requestFocus().
         if !terminals.isHidden(session) { session.terminal.requestFocus() }
     }
 

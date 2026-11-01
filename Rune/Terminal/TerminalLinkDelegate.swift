@@ -1,5 +1,4 @@
 import AppKit
-import GhosttyTerminal
 
 /// libghostty tells its surface delegate about a ⌘-clicked link, and spawns `/usr/bin/open`
 /// itself unless that delegate handles it. `TerminalViewState` doesn't adopt the open-URL
@@ -18,7 +17,6 @@ final class TerminalLinkDelegate: NSObject,
     TerminalSurfaceScrollbarDelegate,
     TerminalSurfaceCommandFinishedDelegate,
     TerminalSurfaceLifecycleDelegate,
-    TerminalSurfaceTextSelectionRequestDelegate,
     TerminalSurfaceClipboardConfirmationDelegate
 {
     let state: TerminalViewState
@@ -45,11 +43,8 @@ final class TerminalLinkDelegate: NSObject,
     func terminalDidFinishCommand(exitCode: Int?, durationNanos: UInt64) {
         state.terminalDidFinishCommand(exitCode: exitCode, durationNanos: durationNanos)
     }
-    func terminalDidAttachSurface(_ surface: GhosttyTerminal.TerminalSurface) { state.terminalDidAttachSurface(surface) }
+    func terminalDidAttachSurface(_ surface: TerminalSurface) { state.terminalDidAttachSurface(surface) }
     func terminalDidDetachSurface() { state.terminalDidDetachSurface() }
-    func terminalDidRequestTextSelection(_ request: TerminalTextSelectionRequest) {
-        state.terminalDidRequestTextSelection(request)
-    }
     func terminalDidRequestClipboardConfirmation(_ request: TerminalClipboardConfirmationRequest) {
         state.terminalDidRequestClipboardConfirmation(request)
     }

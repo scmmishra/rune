@@ -59,7 +59,7 @@ There is no tool to edit files. An agent edits files with its own tools, so its 
 
 `rune_read_terminal` reads every terminal in the caller's window, not only the panes the agent opened. A terminal can show secrets, such as a token printed by a command. The agent's prompt before the tool call is the check.
 
-libghostty-spm 1.5.2 has no public way to read a terminal's text. Rune reads the surface handle from the package's `TerminalSurface` by reflection. The package is pinned to that exact version, and an update has to check this still works.
+Rune reads a terminal's text through `ghostty_surface_read_text`. It takes the surface handle from `TerminalSurface.rawValue` in `Rune/Terminal/Ghostty`.
 
 ## Acting on panes
 

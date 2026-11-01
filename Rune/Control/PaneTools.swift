@@ -1,5 +1,4 @@
 import Foundation
-import GhosttyTerminal
 
 /// The MCP tools that act on an open pane: type a command into it, interrupt it, wait for
 /// its output, show it, or close it. An agent cannot type into, interrupt or close its own

@@ -7,9 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1000000000000000000002A /* Ghostty in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000028 /* Ghostty */; };
+		A1000000000000000000002B /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000029 /* terminfo */; };
         C30000000000000000000001 /* BeautifulMermaid in Frameworks */ = {isa = PBXBuildFile; productRef = C30000000000000000000002 /* BeautifulMermaid */; };
 		B20000000000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000002 /* Sparkle */; };
-		A10000000000000000000014 /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* GhosttyTerminal */; };
+		A10000000000000000000014 /* GhosttyKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* GhosttyKit */; };
+		A10000000000000000000025 /* MSDisplayLink in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000027 /* MSDisplayLink */; };
 		A10000000000000000000017 /* SwiftTreeSitter in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000021 /* SwiftTreeSitter */; };
 		A10000000000000000000018 /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000022 /* TreeSitterSwift */; };
 		A10000000000000000000019 /* TreeSitterRuby in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000023 /* TreeSitterRuby */; };
@@ -17,6 +20,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A10000000000000000000028 /* Ghostty */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Ghostty; path = Rune/Resources/Ghostty; sourceTree = "<group>"; };
+		A10000000000000000000029 /* terminfo */ = {isa = PBXFileReference; lastKnownFileType = folder; name = terminfo; path = Rune/Resources/terminfo; sourceTree = "<group>"; };
 		A10000000000000000000004 /* Rune.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rune.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -25,6 +30,15 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Resources/Info.plist,
+				Resources/Ghostty/shell-integration/bash/LICENSE-bash-preexec.md,
+				Resources/Ghostty/shell-integration/bash/bash-preexec.sh,
+				Resources/Ghostty/shell-integration/bash/ghostty.bash,
+				Resources/Ghostty/shell-integration/zsh/.zshenv,
+				Resources/Ghostty/shell-integration/zsh/ghostty-integration,
+				Resources/terminfo/67/ghostty,
+				Resources/terminfo/78/xterm-ghostty,
+				Terminal/Ghostty/LICENSE,
+				Terminal/Ghostty/README.md,
 			);
 			target = A10000000000000000000001 /* Rune */;
 		};
@@ -48,7 +62,8 @@
 			files = (
                 C30000000000000000000001 /* BeautifulMermaid in Frameworks */,
 				B20000000000000000000001 /* Sparkle in Frameworks */,
-				A10000000000000000000014 /* GhosttyTerminal in Frameworks */,
+				A10000000000000000000014 /* GhosttyKit in Frameworks */,
+				A10000000000000000000025 /* MSDisplayLink in Frameworks */,
 				A10000000000000000000017 /* SwiftTreeSitter in Frameworks */,
 				A10000000000000000000018 /* TreeSitterSwift in Frameworks */,
 				A10000000000000000000019 /* TreeSitterRuby in Frameworks */,
@@ -63,6 +78,8 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000005 /* Rune */,
+				A10000000000000000000028 /* Ghostty */,
+				A10000000000000000000029 /* terminfo */,
 				A10000000000000000000008 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -97,7 +114,8 @@
 			packageProductDependencies = (
                 C30000000000000000000002 /* BeautifulMermaid */,
 				B20000000000000000000002 /* Sparkle */,
-				A10000000000000000000016 /* GhosttyTerminal */,
+				A10000000000000000000016 /* GhosttyKit */,
+				A10000000000000000000027 /* MSDisplayLink */,
 				A10000000000000000000021 /* SwiftTreeSitter */,
 				A10000000000000000000022 /* TreeSitterSwift */,
 				A10000000000000000000023 /* TreeSitterRuby */,
@@ -135,6 +153,7 @@
                 C30000000000000000000003 /* beautiful-mermaid-swift */,
 				B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				A10000000000000000000015 /* XCRemoteSwiftPackageReference "libghostty-spm" */,
+				A10000000000000000000026 /* XCRemoteSwiftPackageReference "MSDisplayLink" */,
 				A1000000000000000000001C /* XCRemoteSwiftPackageReference "swift-tree-sitter" */,
 				A1000000000000000000001D /* XCRemoteSwiftPackageReference "tree-sitter-swift" */,
 				A1000000000000000000001E /* XCRemoteSwiftPackageReference "tree-sitter-ruby" */,
@@ -155,6 +174,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000000000000000000002A /* Ghostty in Resources */,
+				A1000000000000000000002B /* terminfo in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -187,6 +208,14 @@
 			requirement = {
 				kind = exactVersion;
 				version = 1.5.2;
+			};
+		};
+		A10000000000000000000026 /* XCRemoteSwiftPackageReference "MSDisplayLink" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Lakr233/MSDisplayLink.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.2.0;
 			};
 		};
 		A1000000000000000000001C /* XCRemoteSwiftPackageReference "swift-tree-sitter" */ = {
@@ -234,10 +263,15 @@
 			package = B20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
 		};
-		A10000000000000000000016 /* GhosttyTerminal */ = {
+		A10000000000000000000016 /* GhosttyKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000015 /* XCRemoteSwiftPackageReference "libghostty-spm" */;
-			productName = GhosttyTerminal;
+			productName = GhosttyKit;
+		};
+		A10000000000000000000027 /* MSDisplayLink */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000026 /* XCRemoteSwiftPackageReference "MSDisplayLink" */;
+			productName = MSDisplayLink;
 		};
 		A10000000000000000000021 /* SwiftTreeSitter */ = {
 			isa = XCSwiftPackageProductDependency;

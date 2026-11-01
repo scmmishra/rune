@@ -79,7 +79,7 @@ struct TerminalGuardianChecks {
             terminal.arguments = ["-q", "-F", output.path, "/bin/sh", "-c", guardian.launchCommand(shell + " -l", shellIntegration: true)]
             var environment = ProcessInfo.processInfo.environment
             environment["SHELL"] = shell
-            environment["GHOSTTY_RESOURCES_DIR"] = FileManager.default.currentDirectoryPath + "/DerivedData/SourcePackages/checkouts/libghostty-spm/Sources/GhosttyTerminal/Resources/Ghostty"
+            environment["GHOSTTY_RESOURCES_DIR"] = FileManager.default.currentDirectoryPath + "/Rune/Resources/Ghostty"
             environment["GHOSTTY_SHELL_FEATURES"] = "cursor,title"
             terminal.environment = environment
             terminal.standardInput = input

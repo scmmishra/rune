@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import GhosttyTerminal
 import ObjectiveC
 
 struct TerminalPane: View {
@@ -55,7 +54,7 @@ struct TerminalPane: View {
                 // Request focus once, not on subsequent updates that could interrupt a palette.
                 // Ghostty's imperative focus API avoids SwiftUI FocusState resets
                 // resigning the native responder immediately after a session switch.
-                // Source: libghostty-spm TerminalViewState.requestFocus (1.5.2).
+                // Source: Rune/Terminal/Ghostty, TerminalViewState.requestFocus.
                 guard isVisible, isActive, !didRequestInitialFocus else { return }
                 didRequestInitialFocus = true
                 terminal.requestFocus()
@@ -178,7 +177,7 @@ final class RuneTerminalView: TerminalView {
     func stop() {
         // SwiftUI can retain removed views. Detach the controller to free the
         // PTY immediately, and prevent outgoing updates from recreating it.
-        // Source: libghostty-spm TerminalSurfaceCoordinator.rebuildIfReady (1.5.2).
+        // Source: Rune/Terminal/Ghostty, TerminalSurfaceCoordinator.rebuildIfReady.
         isStopped = true
         super.controller = nil
         if let layer { Self.retireDisplayCallback(on: layer) }

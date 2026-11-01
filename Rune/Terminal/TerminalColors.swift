@@ -1,5 +1,3 @@
-import GhosttyTerminal
-
 /// One terminal color scheme. Every value is a hex color without the leading `#`.
 nonisolated struct TerminalColors {
     let background: String

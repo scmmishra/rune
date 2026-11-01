@@ -1,5 +1,4 @@
 import AppKit
-import GhosttyTerminal
 import SwiftUI
 
 /// Rune's colors: the terminal's, and every card and the window around them. Each theme
@@ -54,10 +53,10 @@ nonisolated enum RuneTheme: String, CaseIterable, Identifiable {
         guard let colors else {
             return TerminalTheme(
                 light: TerminalConfiguration(startingFrom: .alabaster) { builder in
-                    builder.withBackground(TerminalSurface.lightHex)
+                    builder.withBackground(TerminalBackground.lightHex)
                 },
                 dark: TerminalConfiguration(startingFrom: .afterglow) { builder in
-                    builder.withBackground(TerminalSurface.darkHex)
+                    builder.withBackground(TerminalBackground.darkHex)
                 }
             )
         }
@@ -86,7 +85,7 @@ nonisolated enum RuneTheme: String, CaseIterable, Identifiable {
     private func makePalette() -> Palette {
         guard let colors else {
             return Palette(
-                surface: Self.adaptive(light: NSColor(hex: TerminalSurface.lightHex), dark: NSColor(hex: TerminalSurface.darkHex)),
+                surface: Self.adaptive(light: NSColor(hex: TerminalBackground.lightHex), dark: NSColor(hex: TerminalBackground.darkHex)),
                 chrome: Self.adaptive(light: NSColor(white: 0.885, alpha: 1), dark: NSColor(white: 0.065, alpha: 1)),
                 foreground: .primary,
                 roles: [.accent: .accentColor, .red: .red, .orange: .orange, .yellow: .yellow,

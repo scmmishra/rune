@@ -11,7 +11,7 @@ nonisolated final class CommandExecution: Sendable {
                                                attributes: [.posixPermissions: 0o700])
         // The exec API retains output but exposes no child exit code. A private
         // status file records the actual shell result, including `exit` and syntax errors.
-        // Source: libghostty-spm 1.5.2 TerminalSurfaceOptions.waitAfterCommand.
+        // Source: Rune/Terminal/Ghostty, TerminalSurfaceOptions.waitAfterCommand.
         script = """
         printf '%s' "$$" > \(Self.quote(directory.appendingPathComponent("pid").path))
         \(Self.quote(shell)) -lic \(Self.quote(command))
