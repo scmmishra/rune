@@ -19,7 +19,7 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
     let onDismissPeek: () -> Bool
     let onPromotePeek: () -> Void
     let onCycleTerminal: (Int) -> Void
-    let onTogglePrimaryTerminal: () -> Void
+    let onToggleRecentTerminal: () -> Void
     var preservesPreviewHunkShortcuts = false
     @Binding var isCommandHeld: Bool
     /// True while a freshly opened preview still owns Escape and Return.
@@ -143,7 +143,7 @@ struct WorkspaceShortcutMonitor: NSViewRepresentable {
                             self.parent.onPeekTerminal(number)
                             self.armedHere = true
                         case let .cycle(direction): self.parent.onCycleTerminal(direction)
-                        case .togglePrimary: self.parent.onTogglePrimaryTerminal()
+                        case .toggleRecent: self.parent.onToggleRecentTerminal()
                         case let .pane(action): self.parent.onPaneAction(action)
                         }
                     }

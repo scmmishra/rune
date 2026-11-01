@@ -27,7 +27,7 @@ struct TerminalDrawer: View {
     var onPane: (TerminalPaneAction) -> Void = { _ in }
     /// Ends the session once the user has confirmed.
     var onTerminate: () -> Void = {}
-    /// Set for the main terminal, whose shell is replaced rather than removed.
+    /// Set for a window's only terminal, which a fresh shell replaces.
     var onRestart: (() -> Void)?
     /// Reports the header being dragged, with the gesture's start, position and travel.
     var onDragPane: (DragGesture.Value) -> Void = { _ in }

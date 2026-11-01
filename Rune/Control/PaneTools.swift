@@ -58,7 +58,6 @@ enum PaneTools {
             guard session.terminal.sendKey(.c, modifiers: .ctrl) else { return .failure("\(session.name) has not started yet.") }
             return RuneControlReply(text: "Sent Ctrl-C to \(session.name).")
         case "rune_close_terminal":
-            guard session.id != terminals.primary.id else { return .failure("The main terminal cannot be closed.") }
             await terminals.terminate(session)
             guard terminals.session(session.id) == nil else { return .failure("Could not close \(session.name).") }
             return RuneControlReply(text: "Closed \(session.name) and stopped its processes.")

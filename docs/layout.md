@@ -12,8 +12,7 @@ A window is one row: card columns, the hub, then more card columns.
     { "id": "6F1C…", "width": 300, "cards": ["chatwoot-conversations", "commands", "files"] },
     { "id": "B07E…", "width": 440, "cards": ["chatwoot-chat"] }
   ],
-  "trailing": [],
-  "hidesMainTerminal": true
+  "trailing": []
 }
 ```
 
@@ -21,7 +20,6 @@ A window is one row: card columns, the hub, then more card columns.
 |---|---|
 | `leading` | The card columns left of the hub, left to right. |
 | `trailing` | The card columns right of the hub, left to right. |
-| `hidesMainTerminal` | Optional. When true, the hub leaves out the main terminal. See [The main terminal](#the-main-terminal). |
 
 The hub is not listed. It sits between `leading` and `trailing`, so it always exists exactly once. Putting every column on one side puts the hub at the other edge.
 
@@ -158,16 +156,10 @@ An added card goes to the bottom of the outermost column on its usual side. Comm
 
 If every card has been removed, there is no card to right-click. Use the palette.
 
-## The main terminal
+## Terminals in the hub
 
-Every window has a main terminal. It is the first tab of the hub, and Rune restarts its shell if the shell exits.
+A window always has a terminal. It opens with one tab, and every tab behaves the same way.
 
-A layout can hide it with `hidesMainTerminal`, for a space whose terminals are all opened by its cards. The palette commands are **Hide Main Terminal** and **Show Main Terminal**.
+If you close the last terminal, or its shell exits, a fresh shell replaces it. If that fresh shell exits within 5 seconds, it stays on screen with a **Restart Terminal** button, so a failing shell does not restart forever.
 
-While it is hidden:
-
-- It has no tab, and it never takes the hub or the keyboard.
-- It still runs in the background, because other parts of Rune expect a main terminal to exist.
-- With no other tab open, the hub shows a short message in place of a terminal.
-- ⌘` does nothing.
-- ⌘D and ⇧⌘D open a first terminal tab when the hub is empty.
+⌘` switches between the two most recent terminals.

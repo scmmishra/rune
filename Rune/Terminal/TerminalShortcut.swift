@@ -4,7 +4,7 @@ nonisolated enum TerminalShortcut: Equatable {
     case select(Int)
     case peek(Int)
     case cycle(Int)
-    case togglePrimary
+    case toggleRecent
     /// Splits, zoom, and moving between panes: Ghostty's own bindings for them.
     case pane(TerminalPaneAction)
 
@@ -35,7 +35,7 @@ nonisolated enum TerminalShortcut: Equatable {
     static func matching(_ event: NSEvent) -> Self? {
         let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if modifiers == .command, event.charactersIgnoringModifiers == "`" {
-            return .togglePrimary
+            return .toggleRecent
         }
         switch (event.keyCode, modifiers) {
         case (Key.d, .command): return .pane(.split(.columns))

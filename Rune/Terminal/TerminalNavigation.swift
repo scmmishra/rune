@@ -2,7 +2,6 @@ import Foundation
 
 /// Session order, stable number shortcuts, and the most recently used terminal.
 nonisolated struct TerminalNavigation {
-    let primaryID: UUID
     /// Where the keyboard is: the panel session, or one of the peeks.
     private(set) var activeID: UUID
     /// The session filling the terminal panel.
@@ -13,13 +12,12 @@ nonisolated struct TerminalNavigation {
     private var recentIDs: [UUID]
     private var shortcutNumbers: [UUID: Int]
 
-    init(primaryID: UUID) {
-        self.primaryID = primaryID
-        activeID = primaryID
-        panelID = primaryID
-        sessionIDs = [primaryID]
-        recentIDs = [primaryID]
-        shortcutNumbers = [:]
+    init(firstID: UUID) {
+        activeID = firstID
+        panelID = firstID
+        sessionIDs = [firstID]
+        recentIDs = [firstID]
+        shortcutNumbers = [firstID: 1]
     }
 
     func shortcutNumber(for id: UUID) -> Int? { shortcutNumbers[id] }
@@ -56,9 +54,10 @@ nonisolated struct TerminalNavigation {
             return
         }
         if panelID == id {
-            panelID = recentIDs.first { $0 != id && !peekedIDs.contains($0) }
-                ?? sessionIDs.first { $0 != id && !peekedIDs.contains($0) }
-                ?? primaryID
+            // With nothing else to fill the panel, the session stays in it.
+            guard let next = recentIDs.first(where: { $0 != id && !peekedIDs.contains($0) })
+                ?? sessionIDs.first(where: { $0 != id && !peekedIDs.contains($0) }) else { return }
+            panelID = next
         }
         peekedIDs.append(id)
         // A terminal below a handful of rows is unreadable, so the oldest peek
@@ -82,26 +81,29 @@ nonisolated struct TerminalNavigation {
         recentIDs.insert(id, at: 0)
     }
 
-    /// The session before or after the active one, passing over `skipped`.
-    func neighbor(in direction: Int, skipping skipped: UUID? = nil) -> UUID {
-        let ids = sessionIDs.filter { $0 != skipped || $0 == activeID }
-        let index = ids.firstIndex(of: activeID) ?? 0
+    /// The session before or after the active one.
+    func neighbor(in direction: Int) -> UUID {
+        let index = sessionIDs.firstIndex(of: activeID) ?? 0
         let offset = direction < 0 ? -1 : 1
-        return ids[(index + offset + ids.count) % ids.count]
+        return sessionIDs[(index + offset + sessionIDs.count) % sessionIDs.count]
     }
 
+    /// The session used before the active one.
     var toggleTarget: UUID {
-        guard activeID == primaryID else { return primaryID }
-        return recentIDs.first { $0 != primaryID } ?? sessionIDs.dropFirst().first ?? primaryID
+        recentIDs.first { $0 != activeID } ?? sessionIDs.first { $0 != activeID } ?? activeID
     }
 
+    /// The caller keeps one session open, so the panel always has something to show.
     mutating func remove(_ id: UUID) {
-        guard id != primaryID else { return }
         sessionIDs.removeAll { $0 == id }
         shortcutNumbers[id] = nil
         recentIDs.removeAll { $0 == id }
         peekedIDs.removeAll { $0 == id }
-        if panelID == id { panelID = recentIDs.first { !peekedIDs.contains($0) } ?? primaryID }
-        if activeID == id { activeID = recentIDs.first ?? primaryID }
+        if panelID == id, let next = recentIDs.first(where: { !peekedIDs.contains($0) })
+            ?? sessionIDs.first(where: { !peekedIDs.contains($0) }) ?? sessionIDs.first {
+            panelID = next
+            peekedIDs.removeAll { $0 == next }
+        }
+        if activeID == id { activeID = recentIDs.first ?? panelID }
     }
 }

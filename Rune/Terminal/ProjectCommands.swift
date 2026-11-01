@@ -92,7 +92,7 @@ final class ProjectCommands: ObservableObject {
     }
 
     func session(for command: ProjectCommand) -> TerminalSession? {
-        sessions.supporting.first { $0.savedCommandID == command.id }
+        sessions.all.first { $0.savedCommandID == command.id }
     }
 
     var allCommandsRunning: Bool {
@@ -117,7 +117,7 @@ final class ProjectCommands: ObservableObject {
         // Processes dropped from the group take their idle terminals with them.
         let kept = Set(saved.map(\.id))
         for id in replacing.subtracting(kept) {
-            if let session = sessions.supporting.first(where: { $0.savedCommandID == id }) { sessions.remove(session) }
+            if let session = sessions.all.first(where: { $0.savedCommandID == id }) { sessions.remove(session) }
         }
         if let previousGroup, previousGroup != name, expandedGroups.contains(previousGroup) {
             setExpanded(previousGroup, false)

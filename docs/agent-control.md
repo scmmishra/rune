@@ -43,7 +43,7 @@ A card's source runs as a child of Rune, not of a terminal. It cannot use the so
 | `rune_open_markdown` | Shows Markdown in the preview drawer under a title. Mermaid blocks render as diagrams. A link to a path, such as `src/app.ts:42`, opens that file at that line. A second call replaces the page. |
 | `rune_send_to_terminal` | Types a command into a pane and presses Return. The pane must be at a shell prompt. |
 | `rune_interrupt_terminal` | Sends Ctrl-C to a pane. The pane stays open. |
-| `rune_close_terminal` | Closes a pane and stops its processes. The main terminal cannot be closed. |
+| `rune_close_terminal` | Closes a pane and stops its processes. If it is the window's last terminal, a fresh shell replaces it. |
 | `rune_wait_for_output` | Waits until a pane prints some text, for up to 50 seconds (30 by default). Only output printed after the call counts. Returns the last 30 lines either way. Saved commands count as panes. |
 | `rune_focus_terminal` | Shows a pane and gives it the keyboard. It does not bring the window forward. |
 | `rune_list_commands` | Returns every saved command of the Commands card: its id, name, shell command, folder, group, auto-start, and status. A command that has run lists its pane. A running command lists the TCP ports its process tree listens on. |

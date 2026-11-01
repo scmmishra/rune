@@ -149,15 +149,6 @@ struct WorkspaceView: View {
                                     // Split panes are cards of their own, and so is the tab row.
                                     .workspacePanel(isVisible: isSplit)
                                 Color.clear
-                                    .overlay {
-                                        if terminals.isHubEmpty {
-                                            Text("No terminal open. Pick an item in a card, or press ⇧⌘T.")
-                                                .runeFont(size: 12)
-                                                .foregroundStyle(.tertiary)
-                                                .multilineTextAlignment(.center)
-                                                .padding(24)
-                                        }
-                                    }
                             }
                         } else {
                             WorkspacePlaceholder()
@@ -260,15 +251,13 @@ struct WorkspaceView: View {
                         } else if isCommandPalettePresented {
                             CommandPalette(
                                 canSwitchBranch: repository.snapshot.isRepository && !repository.isBusy,
-                                canHideTerminal: terminals.navigation.panelID != terminals.primary.id,
-                                canCheckForUpdates: updater.isConfigured && updater.canCheckForUpdates
-                                    || !terminals.navigation.peekedIDs.isEmpty,
+                                canHideTerminal: !terminals.navigation.peekedIDs.isEmpty,
+                                canCheckForUpdates: updater.isConfigured && updater.canCheckForUpdates,
                                 rootURL: directoryURL,
                                 canShowGuide: repository.snapshot.isRepository,
                                 projects: recentWorkspaces,
                                 setups: setups,
                                 hasSetup: layoutModel.setup != nil,
-                                hidesMainTerminal: terminals.hidesPrimary,
                                 shownCards: layoutModel.layout.cards.compactMap(cardDefinition),
                                 hiddenCards: layoutModel.layout.hidden(among: availableCards),
                                 onShowCard: { id in
@@ -348,7 +337,7 @@ struct WorkspaceView: View {
                 onDismissPeek: dismissPeek,
                 onPromotePeek: promotePeek,
                 onCycleTerminal: cycleTerminal,
-                onTogglePrimaryTerminal: togglePrimaryTerminal,
+                onToggleRecentTerminal: toggleRecentTerminal,
                 preservesPreviewHunkShortcuts: isPreviewNavigationVisible && !isPalettePresented,
                 isCommandHeld: $isCommandHeld,
                 isPeekArmed: $isPeekArmed
@@ -358,10 +347,6 @@ struct WorkspaceView: View {
         .onChange(of: isPalettePresented) { _, isPresented in
             if isPresented { isHelpPresented = false }
         }
-        // The layout says whether the main terminal shows; the terminals act on it.
-        .onChange(of: layoutModel.layout.hidesMainTerminal == true, initial: true) { _, hides in
-            terminals.hidesPrimary = hides
-        }
         .onChange(of: terminals.active.id) {
             // A hidden terminal must never take the keyboard: typing would go nowhere visible.
             if !isPalettePresented, !isDrawerVisible { focusActiveTerminal() }
@@ -369,7 +354,7 @@ struct WorkspaceView: View {
         .task { await terminals.monitorProcesses() }
         .task { if directoryURL != nil { await projectCommands.load() } }
         .onAppear { cardCatalog.reload() }
-        .onChange(of: terminals.supporting.map(\.id)) { closeExitedDrawerTerminal() }
+        .onChange(of: terminals.all.map(\.id)) { closeExitedDrawerTerminal() }
         // An agent can close a pane or the user can switch tabs with the button still down.
         // The drag's layout no longer describes the tab, so the panes go back to their places.
         .onChange(of: [terminals.panelTab.id] + terminals.panelTab.paneIDs) { _ = cancelPaneDrag() }
@@ -483,9 +468,6 @@ struct WorkspaceView: View {
         case .hideTerminal: hideTerminalDrawer()
         // The palette lists these options itself rather than handing them back.
         case .openSetup, .showCard, .removeCard, .changeTheme: break
-        case .toggleMainTerminal:
-            layoutModel.update { $0.hidesMainTerminal = !terminals.hidesPrimary }
-            layoutModel.save()
         case .newSetup:
             setupNameDraft = ""
             setupPrompt = .new
@@ -672,8 +654,7 @@ struct WorkspaceView: View {
         }
         // A pane keeps its place in its own tab while another tab is showing, so switching
         // tabs never resizes a terminal.
-        // The hidden main terminal waits off screen like a tab that is not showing.
-        let inPanel = tab.id == terminals.navigation.panelID && !terminals.isHidden(session)
+        let inPanel = tab.id == terminals.navigation.panelID
         return TerminalPlacement(
             frame: frame, isPeek: false,
             isVisible: inPanel && tab.shows(session.id), isInPlace: inPanel,
@@ -685,8 +666,7 @@ struct WorkspaceView: View {
     private func terminalSurface(_ session: TerminalSession, placement: TerminalPlacement, paneArea: CGRect,
                                  in size: CGSize) -> some View {
         let frame = placement.frame
-        let isPrimary = session.id == terminals.primary.id
-        let onRestart: (() -> Void)? = isPrimary ? { terminals.restartPrimary() } : nil
+        let onRestart: (() -> Void)? = terminals.isOnlyTerminal(session) ? { terminals.remove(session) } : nil
         let zIndex: Double = placement.isPeek ? 1 : (draggedPane == session.id ? 0.35 : (placement.isRaised ? 0.3 : 0.25))
         let parkOffset: CGFloat = placement.isInPlace ? 0 : size.width - frame.minX + 48
         return TerminalDrawer(
@@ -838,17 +818,12 @@ struct WorkspaceView: View {
     /// it: typing would go nowhere visible.
     private func focusActiveTerminal() {
         let session = terminals.active
-        if !terminals.isHidden(session) { session.terminal.requestFocus() }
+        session.terminal.requestFocus()
     }
 
     /// Splits, zoom, and moving between panes, from a shortcut or a pane's header.
     private func performPaneAction(_ action: TerminalPaneAction) {
         guard directoryURL != nil, !isPalettePresented else { return }
-        // With no terminal in the hub there is no pane to act on; a split opens the first.
-        if terminals.isHubEmpty {
-            if case .split = action { addTerminal() }
-            return
-        }
         switch action {
         case let .split(axis):
             // A new surface replays this request when it attaches.
@@ -937,10 +912,10 @@ struct WorkspaceView: View {
         // Also focus an already-visible session, e.g. after using the file tree
         // or a palette. New surfaces replay this request when they attach.
         // Source: libghostty-spm 1.5.2, TerminalViewState.requestFocus().
-        if !terminals.isHidden(session) { session.terminal.requestFocus() }
+        session.terminal.requestFocus()
     }
 
-    /// Close this surface: a peek leaves the column, the panel returns to primary.
+    /// Close this surface: a peek leaves the column, anything else gives way to the panel.
     private func closeTerminalSurface(_ session: TerminalSession) {
         dismissPalettes()
         if terminals.isPeeked(session) {
@@ -952,20 +927,16 @@ struct WorkspaceView: View {
             focusActiveTerminal()
             return
         }
-        showTerminal(terminals.primary)
+        showTerminal(terminals.panel)
     }
 
-    /// The palette's Hide Terminal: close the focused peek, else return the panel.
+    /// The palette's Dismiss Terminal Preview: close the focused peek, else the newest one.
     private func hideTerminalDrawer() {
         if let focusedPeek = terminals.peeked.first(where: { $0.id == terminals.navigation.activeID }) {
             closeTerminalSurface(focusedPeek)
             return
         }
-        if let lastPeek = terminals.peeked.last {
-            closeTerminalSurface(lastPeek)
-            return
-        }
-        showTerminal(terminals.primary)
+        if let lastPeek = terminals.peeked.last { closeTerminalSurface(lastPeek) }
     }
 
     private func selectTerminal(_ number: Int) {
@@ -980,9 +951,8 @@ struct WorkspaceView: View {
         showTerminal(session)
     }
 
-    private func togglePrimaryTerminal() {
-        // ⌘` goes to the main terminal, which a space can leave out.
-        guard directoryURL != nil, !terminals.hidesPrimary,
+    private func toggleRecentTerminal() {
+        guard directoryURL != nil,
               let session = terminals.session(forNavigation: terminals.navigation.toggleTarget) else { return }
         showTerminal(session)
     }
@@ -1276,17 +1246,13 @@ struct WorkspaceView: View {
 
     private func closeExitedDrawerTerminal() {
         guard case let .terminal(id) = openDrawer,
-              !terminals.supporting.contains(where: { $0.id == id }) else { return }
-        if terminals.navigation.activeID == terminals.primary.id {
-            // A parked session exiting must not take focus from a
-            // palette, editor, or the primary terminal being used.
-            drawerCleanupTask?.cancel()
-            withAnimation(.snappy(duration: 0.22)) {
-                openDrawer = nil
-                isDrawerVisible = false
-            }
-        } else {
-            showTerminal(terminals.active)
+              !terminals.all.contains(where: { $0.id == id }) else { return }
+        // A parked session exiting must not take focus from a palette, an editor, or the
+        // terminal in use, so this only closes the drawer.
+        drawerCleanupTask?.cancel()
+        withAnimation(.snappy(duration: 0.22)) {
+            openDrawer = nil
+            isDrawerVisible = false
         }
     }
 
@@ -1453,7 +1419,7 @@ struct WorkspaceView: View {
 
     /// What `rune_space` tells an agent, as JSON.
     private func spaceDescription(rootURL: URL, caller: TerminalSession) -> String {
-        let tabs: [[String: Any]] = terminals.tabs.filter { !terminals.hidesPrimary || $0.id != terminals.primary.id }.map { tab in
+        let tabs: [[String: Any]] = terminals.tabs.map { tab in
             let panes = tab.paneIDs.compactMap { terminals.session($0) }.map { session in
                 var pane = paneDescription(session, caller: caller)
                 pane["focused"] = session.id == tab.focusedID
@@ -1462,7 +1428,7 @@ struct WorkspaceView: View {
             return ["panes": panes, "shown": tab.id == terminals.panelTab.id]
         }
         // Saved commands run in terminals of their own, outside the tabs.
-        let commands = terminals.supporting.filter { $0.savedCommandID != nil }.map { session in
+        let commands = terminals.all.filter { $0.savedCommandID != nil }.map { session in
             var command = paneDescription(session, caller: caller)
             command["status"] = session.commandStatus
             return command

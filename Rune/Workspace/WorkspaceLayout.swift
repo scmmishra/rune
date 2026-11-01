@@ -22,9 +22,6 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
     var leading: [WorkspaceColumn]
     /// Card columns right of the hub, left to right.
     var trailing: [WorkspaceColumn]
-    /// Whether the hub leaves out the main terminal, for a space whose terminals are all
-    /// opened by its cards. Optional so layouts saved before it existed still read.
-    var hidesMainTerminal: Bool?
 
     static let standard = WorkspaceLayout(
         leading: [WorkspaceColumn(width: WorkspaceColumn.defaultWidth, cards: [.commands, .files])],
@@ -137,7 +134,7 @@ nonisolated struct WorkspaceLayout: Codable, Equatable, Sendable {
                 return column.cards.isEmpty ? nil : column
             }
         }
-        return WorkspaceLayout(leading: clean(leading), trailing: clean(trailing), hidesMainTerminal: hidesMainTerminal)
+        return WorkspaceLayout(leading: clean(leading), trailing: clean(trailing))
     }
 }
 

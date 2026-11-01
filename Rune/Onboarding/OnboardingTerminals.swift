@@ -12,7 +12,7 @@ final class OnboardingTerminalDemo: ObservableObject {
     }
 
     enum Lesson: String, CaseIterable, Identifiable {
-        case select, holdPeek, open, cycle, main
+        case select, holdPeek, open, cycle, recent
         var id: Self { self }
 
         var title: String {
@@ -21,7 +21,7 @@ final class OnboardingTerminalDemo: ObservableObject {
             case .holdPeek: "Peek while held"
             case .open: "Open the peek"
             case .cycle: "Previous / next"
-            case .main: "Back to main"
+            case .recent: "Last terminal"
             }
         }
 
@@ -31,13 +31,13 @@ final class OnboardingTerminalDemo: ObservableObject {
             case .holdPeek: ["hold", "⌘", "2–4"]
             case .open: ["↩"]
             case .cycle: ["⇧", "⌘", "[ ]"]
-            case .main: ["⌘", "`"]
+            case .recent: ["⌘", "`"]
             }
         }
     }
 
     let sessions = [
-        Session(name: "Main", line: "~/code/api ❯ git status"),
+        Session(name: "Shell", line: "~/code/api ❯ git status"),
         Session(name: "Claude Code", line: "✻ Editing Sources/Routes.swift…"),
         Session(name: "Codex", line: "▸ Running the test suite"),
         Session(name: "tests", line: "✓ 142 passed in 3.1s"),
@@ -57,7 +57,7 @@ final class OnboardingTerminalDemo: ObservableObject {
     private let peekLimit = 2
 
     init() {
-        navigation = TerminalNavigation(primaryID: sessions[0].id)
+        navigation = TerminalNavigation(firstID: sessions[0].id)
         sessions.dropFirst().forEach { navigation.add($0.id) }
     }
 
@@ -112,17 +112,17 @@ final class OnboardingTerminalDemo: ObservableObject {
                 self.finish(self.hold.expire(token: token))
             }
         case let .peek(number):
-            guard let id = sessionID(number), id != navigation.primaryID else { break }
+            guard let id = sessionID(number), id != navigation.panelID else { break }
             peek(id)
             caption = navigation.isPeeked(id) ? "Peeking \(name(id)) · ↩ opens it" : "Put \(name(id)) away"
         case let .cycle(direction):
             let id = navigation.neighbor(in: direction)
             animate { navigation.select(id) }
             learn(.cycle, "Moved to \(name(id))")
-        case .togglePrimary:
+        case .toggleRecent:
             let id = navigation.toggleTarget
             animate { navigation.select(id) }
-            learn(.main, id == navigation.primaryID ? "Back to Main" : "Back to \(name(id))")
+            learn(.recent, "Back to \(name(id))")
         case .pane:
             break
         }
@@ -139,7 +139,7 @@ final class OnboardingTerminalDemo: ObservableObject {
             animate { navigation.select(id) }
             learn(.select, "Switched to \(name(id))")
         case let .peek(number):
-            guard let id = sessionID(number), id != navigation.primaryID, id != navigation.panelID,
+            guard let id = sessionID(number), id != navigation.panelID,
                   !navigation.isPeeked(id) else { return }
             peek(id)
             holdPeekID = id
@@ -304,7 +304,7 @@ private struct OnboardingWorkspaceSketch: View {
     private func tab(_ session: OnboardingTerminalDemo.Session, number: Int, isSelected: Bool, isPeeked: Bool) -> some View {
         HStack(spacing: 5) {
             Circle()
-                .fill(session.name == "Main" ? Color.secondary.opacity(0.45) : .green)
+                .fill(session.name == "Shell" ? Color.secondary.opacity(0.45) : .green)
                 .frame(width: 5, height: 5)
             Text(session.name).font(.caption).lineLimit(1)
             if demo.isCommandHeld {

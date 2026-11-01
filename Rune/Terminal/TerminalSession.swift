@@ -46,8 +46,7 @@ final class TerminalSession: ObservableObject, Identifiable {
     /// Ports, memory and CPU, sampled only while the terminal's header is on screen.
     /// A separate object so its once-a-second updates redraw the readout alone.
     let resources = TerminalResourceMeter()
-    /// The foreground process of every shell session, the primary included. Unlike
-    /// `processStatus`, it never renames the primary tab.
+    /// The foreground process of every shell session.
     @Published var foreground: TerminalProcessStatus?
     var onExit: (() -> Void)?
     /// A ⌘-clicked link in this terminal, routed by the workspace.
@@ -88,9 +87,8 @@ final class TerminalSession: ObservableObject, Identifiable {
     /// - Parameter startCommand: Run in the shell before its first prompt, such as an agent
     ///   resuming a thread. The shell stays when it exits.
     init(name: String, workingDirectory: URL?, detectsAgent: Bool = true,
-         savedCommandID: UUID? = nil, execution: CommandExecution? = nil, startCommand: String? = nil,
-         id: UUID = UUID()) {
-        self.id = id
+         savedCommandID: UUID? = nil, execution: CommandExecution? = nil, startCommand: String? = nil) {
+        id = UUID()
         self.defaultName = name
         self.savedCommandID = savedCommandID
         self.startDirectory = workingDirectory
@@ -235,33 +233,29 @@ final class TerminalSession: ObservableObject, Identifiable {
 
 @MainActor
 final class TerminalSessions: ObservableObject {
-    @Published private(set) var primary: TerminalSession
-    @Published private(set) var supporting: [TerminalSession] = []
+    @Published private(set) var all: [TerminalSession]
     /// Navigation tracks tabs and saved commands, never single panes: a tab is known by
     /// its own ID and a command by its session's.
     @Published private(set) var navigation: TerminalNavigation
-    /// The primary's tab first, then tabs in the order they were opened.
+    /// Tabs in the order they were opened. There is always at least one.
     @Published private(set) var tabs: [TerminalTab]
-    /// Whether the main terminal is kept out of sight. It still runs, since the rest of
-    /// Rune counts on there being one; it has no tab and never takes the hub.
-    @Published var hidesPrimary = false
     private let workingDirectory: URL?
-    private var nextNumber = 1
+    private var nextNumber = 2
     private var commandObservations: [UUID: AnyCancellable] = [:]
     /// A tab shows that any of its panes is waiting, so the tab row has to hear about panes
     /// it is not otherwise watching.
     private var attentionObservations: [UUID: AnyCancellable] = [:]
     private var isShuttingDown = false
-    private var primaryRestartedAt: ContinuousClock.Instant?
-    private static let minimumPrimaryLifetime: Duration = .seconds(5)
+    private var lastReplacedAt: ContinuousClock.Instant?
+    /// A window's only terminal has to outlive this for its exit to start a fresh one.
+    private static let minimumReplacementLifetime: Duration = .seconds(5)
 
-    var all: [TerminalSession] { [primary] + supporting }
     /// Where the keyboard is: the focused pane of a tab, or a saved command beside the panel.
-    var active: TerminalSession { shown(for: navigation.activeID) ?? primary }
+    var active: TerminalSession { shown(for: navigation.activeID) ?? panel }
     /// The tab filling the terminal panel.
     var panelTab: TerminalTab { tabs.first { $0.id == navigation.panelID } ?? tabs[0] }
     /// The focused pane of the tab filling the terminal panel.
-    var panel: TerminalSession { session(panelTab.focusedID) ?? primary }
+    var panel: TerminalSession { session(panelTab.focusedID) ?? all[0] }
     /// Sessions open beside the panel, in column order. A peeked tab shows its focused pane.
     var peeked: [TerminalSession] { navigation.peekedIDs.compactMap(shown) }
     /// Once any tab is split, the tab row and every pane are cards of their own.
@@ -281,20 +275,19 @@ final class TerminalSessions: ObservableObject {
         session(tabs.first { $0.id == navigationID }?.focusedID ?? navigationID)
     }
 
-    /// The tabs the tab row shows.
-    var shownTabs: [TerminalTab] { hidesPrimary ? tabs.filter { $0.id != primary.id } : tabs }
-    /// Whether a terminal belongs to the hidden main tab.
-    func isHidden(_ session: TerminalSession) -> Bool { hidesPrimary && tab(containing: session)?.id == primary.id }
-    /// Whether the hub has no terminal to show: the main one is hidden and nothing else is open.
-    var isHubEmpty: Bool { hidesPrimary && navigation.panelID == primary.id }
-    /// The next tab when cycling, never the hidden main one.
+    /// Whether a session is the window's last terminal, which a fresh one replaces.
+    func isOnlyTerminal(_ session: TerminalSession) -> Bool {
+        tabs.count == 1 && tabs[0].paneIDs == [session.id]
+    }
+
+    /// The next tab when cycling.
     func cycleTarget(in direction: Int) -> TerminalSession? {
-        session(forNavigation: navigation.neighbor(in: direction, skipping: hidesPrimary ? primary.id : nil))
+        session(forNavigation: navigation.neighbor(in: direction))
     }
 
     /// The session ⌘-number and the tab at `index` stand for.
     func tabSession(at index: Int) -> TerminalSession? {
-        shownTabs.indices.contains(index) ? session(shownTabs[index].focusedID) : nil
+        tabs.indices.contains(index) ? session(tabs[index].focusedID) : nil
     }
 
     /// The session a navigation target resolves to, such as the next tab when cycling.
@@ -344,7 +337,7 @@ final class TerminalSessions: ObservableObject {
     func split(_ axis: TerminalSplitAxis) -> TerminalSession {
         let tabID = panelTab.id
         let session = makeShell()
-        supporting.append(session)
+        all.append(session)
         if let index = tabs.firstIndex(where: { $0.id == tabID }) { tabs[index].split(axis, adding: session.id) }
         // A split made while the keyboard is in a peek still lands in the panel.
         navigation.select(tabID)
@@ -371,41 +364,32 @@ final class TerminalSessions: ObservableObject {
 
     init(workingDirectory: URL?) {
         self.workingDirectory = workingDirectory
-        let primary = TerminalSession(name: "Main Terminal", workingDirectory: workingDirectory, detectsAgent: false)
-        self.primary = primary
-        navigation = TerminalNavigation(primaryID: primary.id)
-        tabs = [TerminalTab(id: primary.id, paneID: primary.id)]
-        routeLinks(primary)
-        observeAttention(primary)
-        observePrimaryExit()
+        let first = TerminalSession(name: "Terminal 1", workingDirectory: workingDirectory)
+        all = [first]
+        navigation = TerminalNavigation(firstID: first.id)
+        tabs = [TerminalTab(id: first.id, paneID: first.id)]
+        watch(first)
     }
 
-    private func observePrimaryExit() {
-        primary.onExit = { [weak self, weak session = primary] in
+    private func watch(_ session: TerminalSession) {
+        session.onExit = { [weak self, weak session] in
+            guard let self, let session else { return }
+            guard self.isOnlyTerminal(session) else {
+                self.remove(session)
+                return
+            }
             // Leave Ghostty's close callback before replacing its native surface.
             Task { @MainActor [weak self, weak session] in
-                guard let self, let session, self.primary === session, !self.isShuttingDown else { return }
-                if let restartedAt = self.primaryRestartedAt,
-                   restartedAt.duration(to: .now) < Self.minimumPrimaryLifetime { return }
-                self.restartPrimary()
+                guard let self, let session, !self.isShuttingDown else { return }
+                // A shell that fails at startup would be replaced forever. It stays on
+                // screen instead, with its Restart button.
+                if let lastReplacedAt = self.lastReplacedAt,
+                   lastReplacedAt.duration(to: .now) < Self.minimumReplacementLifetime { return }
+                self.remove(session)
             }
         }
-    }
-
-    func restartPrimary() {
-        guard !isShuttingDown, primary.hasExited else { return }
-        let id = primary.id
-        let customName = primary.customName
-        primary.onExit = nil
-        primary.stop()
-        primaryRestartedAt = .now
-        // Keep shortcuts and parked-terminal navigation stable across shell lifetimes.
-        primary = TerminalSession(name: "Main Terminal", workingDirectory: workingDirectory,
-                                  detectsAgent: false, id: id)
-        primary.customName = customName
-        routeLinks(primary)
-        observeAttention(primary)
-        observePrimaryExit()
+        routeLinks(session)
+        observeAttention(session)
     }
 
     /// The tab running each agent thread, by the thread's key.
@@ -429,7 +413,7 @@ final class TerminalSessions: ObservableObject {
             return add(startCommand: startCommand)
         }
         let added = makeShell(startCommand: startCommand)
-        supporting.append(added)
+        all.append(added)
         tabs[index].focus(session.id)
         tabs[index].split(axis, adding: added.id)
         tabs[index].focus(session.id)
@@ -441,7 +425,7 @@ final class TerminalSessions: ObservableObject {
         let session = makeShell(startCommand: startCommand)
         navigation.add(session.id)
         tabs.append(TerminalTab(id: session.id, paneID: session.id))
-        supporting.append(session)
+        all.append(session)
         return session
     }
 
@@ -449,12 +433,7 @@ final class TerminalSessions: ObservableObject {
         let session = TerminalSession(name: "Terminal \(nextNumber)", workingDirectory: workingDirectory,
                                       startCommand: startCommand)
         nextNumber += 1
-        session.onExit = { [weak self, weak session] in
-            guard let self, let session else { return }
-            self.remove(session)
-        }
-        routeLinks(session)
-        observeAttention(session)
+        watch(session)
         return session
     }
 
@@ -464,7 +443,7 @@ final class TerminalSessions: ObservableObject {
         commandObservations[session.id] = session.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         navigation.add(session.id)
         routeLinks(session)
-        supporting.append(session)
+        all.append(session)
         return session
     }
 
@@ -476,32 +455,40 @@ final class TerminalSessions: ObservableObject {
     }
 
     func remove(_ session: TerminalSession) {
-        guard session.id != primary.id else { return }
         session.stop()
+        guard !isShuttingDown else { return }
         commandObservations.removeValue(forKey: session.id)
         attentionObservations.removeValue(forKey: session.id)
         threadSessions = threadSessions.filter { $0.value != session.id }
         if let index = tabs.firstIndex(where: { $0.contains(session.id) }) {
             // A tab's last pane takes the tab with it; any other gives its room to a sibling.
             if !tabs[index].close(session.id) {
+                if tabs.count == 1 { replaceLastTab() }
                 navigation.remove(tabs[index].id)
                 tabs.remove(at: index)
             }
         } else {
             navigation.remove(session.id)
         }
-        supporting.removeAll { $0.id == session.id }
+        all.removeAll { $0.id == session.id }
+    }
+
+    /// A window always has a terminal, so a fresh one takes over from the last tab.
+    private func replaceLastTab() {
+        nextNumber = 1
+        lastReplacedAt = .now
+        navigation.select(add().id)
     }
 
     func terminate(_ session: TerminalSession) async {
         if await session.stopCommand() {
-            // Explicit closing always replaces the main shell, even during the
-            // automatic respawn cooldown used for failing shell startup.
-            if session === primary { restartPrimary() } else { remove(session) }
+            // Explicit closing always removes the session, even during the cooldown
+            // that keeps a failing last shell on screen.
+            remove(session)
         }
     }
 
-    /// Closes every pane of a session's tab. The main terminal's tab stays, with a fresh shell.
+    /// Closes every pane of a session's tab.
     func terminateTab(containing session: TerminalSession) async {
         let panes = tab(containing: session)?.paneIDs.compactMap { self.session($0) } ?? [session]
         for pane in panes { await terminate(pane) }
@@ -517,18 +504,17 @@ final class TerminalSessions: ObservableObject {
                 TerminalProcessMonitor.snapshot(roots: roots)
             }.value
             guard !Task.isCancelled else { return }
-            await primary.refreshCommand()
             for session in shells where session.foreground != statuses[session.id] {
                 session.foreground = statuses[session.id]
             }
-            for session in supporting {
+            for session in all {
                 await session.refreshCommand()
                 if session.execution != nil { continue }
                 let status = statuses[session.id]
                 if session.processStatus != status { session.processStatus = status }
             }
             await sampleResources()
-            do { try await Task.sleep(for: .milliseconds(supporting.contains { $0.isCommandRunning } ? 250 : 1000)) } catch { return }
+            do { try await Task.sleep(for: .milliseconds(all.contains { $0.isCommandRunning } ? 250 : 1000)) } catch { return }
         }
     }
 
@@ -556,8 +542,9 @@ final class TerminalSessions: ObservableObject {
 
     func stopAll() {
         isShuttingDown = true
-        primary.onExit = nil
-        primary.stop()
-        supporting.forEach { $0.stop() }
+        all.forEach {
+            $0.onExit = nil
+            $0.stop()
+        }
     }
 }

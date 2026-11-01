@@ -9,8 +9,7 @@ struct TerminalTabBar: View {
     let onAdd: () -> Void
     let onClose: (TerminalSession) -> Void
 
-    /// Total space the bar occupies inside the terminal panel, padding included, so
-    /// tabbed sessions can be offset by exactly what the primary pane is.
+    /// Total space the bar occupies inside the terminal panel, padding included.
     static let height: CGFloat = WorkspaceMetrics.bandHeight
     /// Even margin on all four sides of the tab row.
     private static let stripInset: CGFloat = (height - WorkspaceMetrics.headerHeight) / 2
@@ -20,7 +19,7 @@ struct TerminalTabBar: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 HStack(spacing: 4) {
-                    ForEach(Array(sessions.shownTabs.enumerated()), id: \.element.id) { index, tab in
+                    ForEach(Array(sessions.tabs.enumerated()), id: \.element.id) { index, tab in
                         // A tab stands for its focused pane: its name, its status, and where
                         // selecting or peeking the tab goes.
                         if let session = sessions.session(tab.focusedID) {
@@ -29,7 +28,7 @@ struct TerminalTabBar: View {
                                 // A pane waiting in the background speaks for the whole tab.
                                 status: sessions.waitingPane(in: tab) ?? session,
                                 tiles: tab.tileIDs.compactMap { sessions.session($0) },
-                                isPrimary: session.id == sessions.primary.id,
+                                isOnlyTerminal: sessions.isOnlyTerminal(session),
                                 isSplit: tab.isSplit,
                                 shortcutNumber: index < 9 ? index + 1 : nil,
                                 showsShortcut: showsShortcuts,
@@ -78,7 +77,7 @@ private struct TerminalTabItem: View {
     @ObservedObject var status: TerminalSession
     /// The tab's panes as tiles, the focused one first.
     let tiles: [TerminalSession]
-    let isPrimary: Bool
+    let isOnlyTerminal: Bool
     let isSplit: Bool
     let shortcutNumber: Int?
     let showsShortcut: Bool
@@ -96,7 +95,7 @@ private struct TerminalTabItem: View {
     @State private var isRenaming = false
     @State private var draftName = ""
 
-    private var title: String { isPrimary ? session.customName ?? "Terminal" : session.name }
+    private var title: String { session.name }
     // The close affordance replaces the status dot on hover, so titles stay still.
     private var showsClose: Bool { isHovered && !session.isStopping }
 
@@ -189,7 +188,7 @@ private struct TerminalTabItem: View {
         } message: {
             Text(isSplit
                  ? "This ends the running processes in every pane of the tab."
-                 : isPrimary
+                 : isOnlyTerminal
                  ? "This ends the terminal’s running processes and starts a fresh terminal in its place."
                  : "This ends the terminal’s running processes. Saved commands remain available in the sidebar.")
         }

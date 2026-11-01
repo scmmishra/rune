@@ -109,7 +109,7 @@ nonisolated enum RuneMCPServer {
         tool("rune_interrupt_terminal", "Send Ctrl-C to a terminal pane, to stop what runs there but keep the pane open. It cannot be your own pane, a pane where another agent runs, or a saved command.",
              properties: ["pane": ["type": "string", "description": "The pane's id or name, from rune_space."]],
              required: ["pane"]),
-        tool("rune_close_terminal", "Close a terminal pane and stop its processes. Use it for panes you opened and no longer need. It cannot be your own pane, the main terminal, a pane where another agent runs, or a saved command.",
+        tool("rune_close_terminal", "Close a terminal pane and stop its processes. Use it for panes you opened and no longer need. If it is the window's last terminal, a fresh shell replaces it. It cannot be your own pane, a pane where another agent runs, or a saved command.",
              properties: ["pane": ["type": "string", "description": "The pane's id or name, from rune_space."]],
              required: ["pane"]),
         tool("rune_wait_for_output", "Wait until a terminal prints some text, such as a server's ready line or a test summary. Only output printed after the call counts. Returns the last lines of the terminal when the text appears or the time runs out.",
