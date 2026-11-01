@@ -68,6 +68,11 @@ struct WorkspaceView: View {
     /// The card being dragged. Set once at each end of a drag, to lift the cards above the
     /// terminals while one of them is carried across.
     @State private var draggedCard: WorkspaceCardID?
+    // Held without observing, like the card drag: each pane watches it for itself.
+    @State private var paneDrag = TerminalPaneDrag()
+    /// The pane being dragged. Set once at each end of a drag, to raise it over its siblings
+    /// and hide the dividers, which mark places the panes have left.
+    @State private var draggedPane: UUID?
     @State private var isCommandHeld = false
     /// This window's part in the control socket that agents in its terminals reach.
     @State private var controlTarget: RuneControlTarget?
@@ -192,7 +197,7 @@ struct WorkspaceView: View {
                         terminalSurface(session, placement: placement(
                             of: session, peeked: peeked, paneArea: paneArea, size: geometry.size,
                             headerTop: headerTop, drawerWidth: drawerWidth
-                        ), in: geometry.size)
+                        ), paneArea: paneArea, in: geometry.size)
                     }
                     if terminals.panelTab.stackDepth > 0 {
                         // Above the panes left underneath, below the zoomed one.
@@ -201,7 +206,7 @@ struct WorkspaceView: View {
                             .transition(.opacity)
                             .zIndex(0.29)
                     }
-                    if isSplit {
+                    if isSplit, draggedPane == nil {
                         TerminalSplitDividers(dividers: terminals.panelTab.layout(in: paneArea, gap: WorkspaceMetrics.gap).dividers,
                                               onResize: { id, ratio in terminals.setRatio(ratio, of: id) })
                             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -362,6 +367,9 @@ struct WorkspaceView: View {
         .task { if directoryURL != nil { await projectCommands.load() } }
         .onAppear { cardCatalog.reload() }
         .onChange(of: terminals.supporting.map(\.id)) { closeExitedDrawerTerminal() }
+        // An agent can close a pane or the user can switch tabs with the button still down.
+        // The drag's layout no longer describes the tab, so the panes go back to their places.
+        .onChange(of: [terminals.panelTab.id] + terminals.panelTab.paneIDs) { _ = cancelPaneDrag() }
         .environmentObject(repository)
         .navigationTitle(windowTitle)
         .alert(setupPromptText.title, isPresented: isSetupPromptPresented) {
@@ -671,11 +679,12 @@ struct WorkspaceView: View {
         )
     }
 
-    private func terminalSurface(_ session: TerminalSession, placement: TerminalPlacement, in size: CGSize) -> some View {
+    private func terminalSurface(_ session: TerminalSession, placement: TerminalPlacement, paneArea: CGRect,
+                                 in size: CGSize) -> some View {
         let frame = placement.frame
         let isPrimary = session.id == terminals.primary.id
         let onRestart: (() -> Void)? = isPrimary ? { terminals.restartPrimary() } : nil
-        let zIndex: Double = placement.isPeek ? 1 : (placement.isRaised ? 0.3 : 0.25)
+        let zIndex: Double = placement.isPeek ? 1 : (draggedPane == session.id ? 0.35 : (placement.isRaised ? 0.3 : 0.25))
         let parkOffset: CGFloat = placement.isInPlace ? 0 : size.width - frame.minX + 48
         return TerminalDrawer(
             session: session,
@@ -705,11 +714,14 @@ struct WorkspaceView: View {
                 performPaneAction(action)
             },
             onTerminate: { Task { await terminals.terminate(session) } },
-            onRestart: onRestart
+            onRestart: onRestart,
+            onDragPane: { dragPane(session, value: $0, paneArea: paneArea) },
+            onDropPane: { dropPane(session) }
         )
         // The stack is trailing-aligned and as tall as the window, so these paddings pin
         // the frame to its place in the workspace.
         .frame(width: frame.width, height: frame.height)
+        .modifier(TerminalPaneDragEffect(drag: paneDrag, id: session.id))
         .padding(.top, frame.minY)
         .padding(.bottom, max(0, size.height - frame.maxY))
         .padding(.trailing, max(0, size.width - frame.maxX))
@@ -730,6 +742,64 @@ struct WorkspaceView: View {
             x: size.width > 0 ? frame.midX / size.width : 0.5,
             y: size.height > 0 ? frame.midY / size.height : 0.5
         )).combined(with: .opacity))
+    }
+
+    /// Dragging a pane by its header carries it, and the other panes slide to where the drop
+    /// would put them.
+    private func dragPane(_ session: TerminalSession, value: DragGesture.Value, paneArea: CGRect) {
+        if !paneDrag.isActive {
+            let tab = terminals.panelTab
+            guard paneDrag.canBegin(from: value.startLocation), draggedPane == nil, tab.isSplit,
+                  tab.zoomedID == nil, tab.contains(session.id) else { return }
+            paneDrag.begin(session.id, tab: tab, area: paneArea, gap: WorkspaceMetrics.gap,
+                           grab: value.startLocation, travel: value.translation)
+            guard paneDrag.isActive else { return }
+            draggedPane = session.id
+            NSCursor.closedHand.push()
+        }
+        guard paneDrag.pane == session.id else { return }
+        paneDrag.move(to: value.location, travel: value.translation)
+    }
+
+    private func dropPane(_ session: TerminalSession) {
+        guard paneDrag.isActive, paneDrag.pane == session.id else {
+            paneDrag.gestureEnded()
+            return
+        }
+        NSCursor.pop()
+        if let drop = paneDrag.finish() {
+            // Every pane already looks like its landing place, so the layout changes in one
+            // step. Animating it would resize each terminal on every frame, and each resize
+            // makes an agent's TUI redraw.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                terminals.movePane(session.id, to: drop)
+                paneDrag.land()
+            }
+        }
+        settlePanes()
+    }
+
+    /// Escape, or a tab that changed underneath the drag. Reports whether a drag was running.
+    private func cancelPaneDrag() -> Bool {
+        guard paneDrag.isActive else { return false }
+        NSCursor.pop()
+        paneDrag.cancel()
+        settlePanes()
+        return true
+    }
+
+    private func settlePanes() {
+        Task {
+            // One frame, so the layout change above lands before the pane starts to settle.
+            try? await Task.sleep(for: .milliseconds(16))
+            withAnimation(TerminalPaneDrag.settleAnimation) { paneDrag.settle() }
+            // The pane stays above its siblings until it has settled.
+            try? await Task.sleep(for: .milliseconds(260))
+            paneDrag.clear()
+            draggedPane = nil
+        }
     }
 
     /// The frame of one peek in the column beside the panel.
@@ -824,6 +894,7 @@ struct WorkspaceView: View {
     /// Escape dismisses the newest preview, command or shell, and reports whether
     /// there was one. Escape reaches the panel untouched whenever the column is empty.
     private func dismissPeek() -> Bool {
+        if cancelPaneDrag() { return true }
         guard let session = terminals.peeked.last else { return false }
         closeTerminalSurface(session)
         return true
@@ -996,7 +1067,7 @@ struct WorkspaceView: View {
         }
     }
 
-    private static let workspaceSpace = "workspace"
+    static let workspaceSpace = "workspace"
     private static let cardMoveAnimation = Animation.snappy(duration: 0.22)
 
     /// Every card, placed by column. One list for all columns, so a card that moves to

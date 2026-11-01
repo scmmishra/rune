@@ -29,6 +29,9 @@ struct TerminalDrawer: View {
     var onTerminate: () -> Void = {}
     /// Set for the main terminal, whose shell is replaced rather than removed.
     var onRestart: (() -> Void)?
+    /// Reports the header being dragged, with the gesture's start, position and travel.
+    var onDragPane: (DragGesture.Value) -> Void = { _ in }
+    var onDropPane: () -> Void = {}
     @State private var isRenaming = false
     @State private var draftName = ""
     @State private var isHovered = false
@@ -36,6 +39,7 @@ struct TerminalDrawer: View {
     @FocusState private var isNameFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.runeTheme) private var runeTheme
+    @Environment(\.terminalPanePreview) private var panePreview
 
     static let controlsAnimation = Animation.snappy(duration: 0.16)
 
@@ -48,7 +52,7 @@ struct TerminalDrawer: View {
     private var showsHeader: Bool { style != .merged || session.savedCommandID != nil }
     private var showsPaneControls: Bool { style == .card && (isHovered || isFocused) }
 
-    private var shape: UnevenRoundedRectangle {
+    private var shape: TerminalPaneShape {
         // A merged pane continues the panel's card from one point inside its border, so only
         // its bottom corners are round.
         let radius: CGFloat = switch style {
@@ -56,9 +60,7 @@ struct TerminalDrawer: View {
         case .merged: WorkspaceMetrics.panelRadius - 1
         case .card: WorkspaceMetrics.panelRadius
         }
-        let top: CGFloat = style == .merged ? 0 : radius
-        return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: radius,
-                                      bottomTrailingRadius: radius, topTrailingRadius: top, style: .continuous)
+        return TerminalPaneShape(top: style == .merged ? 0 : radius, bottom: radius, growth: panePreview.growth)
     }
 
     private var borderOpacity: Double {
@@ -70,10 +72,11 @@ struct TerminalDrawer: View {
     }
 
     private var shadow: (opacity: Double, radius: CGFloat, y: CGFloat) {
+        if panePreview.isLifted { return (colorScheme == .dark ? 0.55 : 0.28, 22, 10) }
         switch style {
-        case .floating: (0.22, 24, 8)
-        case .merged: (0, 0, 0)
-        case .card: (colorScheme == .dark ? 0.45 : 0.10, 10, 2)
+        case .floating: return (0.22, 24, 8)
+        case .merged: return (0, 0, 0)
+        case .card: return (colorScheme == .dark ? 0.45 : 0.10, 10, 2)
         }
     }
 
@@ -154,6 +157,16 @@ struct TerminalDrawer: View {
             .opacity(showsHeader ? 1 : 0)
             .allowsHitTesting(showsHeader)
             .accessibilityHidden(!showsHeader)
+            // The header's empty space has no content, so without this it takes no drags.
+            .contentShape(Rectangle())
+            // Beside the header's buttons rather than over them, so a click still reaches
+            // them. Only the header moves a pane: the terminal below keeps its own selection.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 6, coordinateSpace: .named(WorkspaceView.workspaceSpace))
+                    .onChanged(onDragPane)
+                    .onEnded { _ in onDropPane() },
+                including: style == .card && !isRenaming ? .all : .subviews
+            )
 
             // A pane's header shares the terminal's surface, so no rule sets it apart.
             if showsHeader, style != .card { Divider() }

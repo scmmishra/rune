@@ -89,6 +89,32 @@ A column's heights are worked out in this order:
 
 Cards in a column are 8 points apart. A column never has a gap between cards. A column holding only fixed cards leaves its spare room at the bottom.
 
+## Moving a pane
+
+Drag a split pane by its header to move it. A drag starts after 6 points of movement, so a click on a header button still works. A zoomed pane does not move, and neither does the only pane of a tab.
+
+While a pane is dragged:
+
+- The pane shrinks a little and follows the pointer. It stays inside the hub.
+- The other panes slide to where the drop would put them.
+- Terminals keep their size. A pane going to a smaller place is cropped, and a pane going to a bigger place has blank room beside it.
+
+The drag's direction picks the axis, and the pointer picks the landing place. The pane under the pointer is the pane with the dragged pane already removed.
+
+| Drag | Pointer is over | The pane lands |
+|---|---|---|
+| Mostly sideways | The left or right half of a pane | Left or right of that pane |
+| Mostly up or down | The top or bottom half of a pane | Above or below that pane |
+| Toward an edge of the hub | Within 28 points of that edge | Along that whole edge |
+
+Panes stay where they are until the drag has travelled 32 points. A target must also hold for 80 milliseconds, so panes do not move while the pointer passes over them.
+
+A pane that stays in its own row or column keeps its size, and so do the others. A pane that joins another row takes an equal share of it. A pane dropped across another pane takes half of that pane.
+
+Press Escape, or release more than 48 points outside the hub, and every pane returns to its place. The drag also cancels if the tab's panes change or the tab switches.
+
+Terminals resize once, on the drop.
+
 ## Moving a card
 
 Drag a card by its header band, the top 40 points of the card. The rest of a card scrolls and selects as usual. A drag starts after 6 points of movement, so a click on a header button still works.

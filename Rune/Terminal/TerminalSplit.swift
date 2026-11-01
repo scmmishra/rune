@@ -18,6 +18,28 @@ nonisolated enum TerminalPaneAction: Equatable, Sendable {
     case close
 }
 
+/// A side of a pane, or of the whole tab.
+nonisolated enum TerminalPaneSide: Equatable, Sendable {
+    case left, right, top, bottom
+
+    var axis: TerminalSplitAxis {
+        switch self {
+        case .left, .right: .columns
+        case .top, .bottom: .rows
+        }
+    }
+
+    /// Whether this side comes first along its axis.
+    var isLeading: Bool { self == .left || self == .top }
+}
+
+/// Where a dragged pane lands.
+nonisolated struct TerminalPaneDrop: Equatable, Sendable {
+    /// The pane to land beside. Nil means the edge of the whole tab.
+    let anchorID: UUID?
+    let side: TerminalPaneSide
+}
+
 /// The gap between two neighbouring nodes of a split, which drags to resize them.
 nonisolated struct TerminalSplitDivider: Identifiable, Equatable, Sendable {
     struct ID: Hashable, Sendable {
@@ -70,29 +92,82 @@ nonisolated enum TerminalSplitNode: Equatable, Sendable {
         }
     }
 
-    /// Puts a new pane after `paneID`. Along the axis of the split that holds the pane, the
-    /// new pane joins that row or column with an equal share, and the others shrink in
-    /// proportion, so sizes set by hand keep their relation. Across it, the pane's own room
-    /// is halved.
-    func splitting(_ paneID: UUID, axis: TerminalSplitAxis, adding newID: UUID) -> TerminalSplitNode {
+    /// Puts a new pane after `paneID`, or before it. Along the axis of the split that holds
+    /// the pane, the new pane joins that row or column with an equal share, and the others
+    /// shrink in proportion, so sizes set by hand keep their relation. Across it, the pane's
+    /// own room is halved.
+    func splitting(_ paneID: UUID, axis: TerminalSplitAxis, adding newID: UUID,
+                   before: Bool = false) -> TerminalSplitNode {
         switch self {
         case let .pane(id):
             guard id == paneID else { return self }
-            return .split(id: UUID(), axis: axis, children: [
-                TerminalSplitChild(node: self, share: 0.5),
-                TerminalSplitChild(node: .pane(newID), share: 0.5),
-            ])
+            let pair = [TerminalSplitChild(node: self, share: 0.5), TerminalSplitChild(node: .pane(newID), share: 0.5)]
+            return .split(id: UUID(), axis: axis, children: before ? pair.reversed() : pair)
         case let .split(id, splitAxis, children):
             if splitAxis == axis, let index = children.firstIndex(where: { $0.node == .pane(paneID) }) {
-                let count = CGFloat(children.count)
-                var resized = children.map { TerminalSplitChild(node: $0.node, share: $0.share * count / (count + 1)) }
-                resized.insert(TerminalSplitChild(node: .pane(newID), share: 1 / (count + 1)), at: index + 1)
-                return .split(id: id, axis: splitAxis, children: resized)
+                return Self.joining(children, id: id, axis: axis, adding: newID, at: before ? index : index + 1)
             }
             return .split(id: id, axis: splitAxis, children: children.map {
-                TerminalSplitChild(node: $0.node.splitting(paneID, axis: axis, adding: newID), share: $0.share)
+                TerminalSplitChild(node: $0.node.splitting(paneID, axis: axis, adding: newID, before: before),
+                                   share: $0.share)
             })
         }
+    }
+
+    /// A split with one more pane on an equal share. The others shrink in proportion.
+    private static func joining(_ children: [TerminalSplitChild], id: UUID, axis: TerminalSplitAxis,
+                                adding newID: UUID, at index: Int) -> TerminalSplitNode {
+        let count = CGFloat(children.count)
+        var resized = children.map { TerminalSplitChild(node: $0.node, share: $0.share * count / (count + 1)) }
+        resized.insert(TerminalSplitChild(node: .pane(newID), share: 1 / (count + 1)), at: index)
+        return .split(id: id, axis: axis, children: resized)
+    }
+
+    /// The tree with `paneID` at `drop`. Nil when the drop names a pane that is not there.
+    func moving(_ paneID: UUID, to drop: TerminalPaneDrop) -> TerminalSplitNode? {
+        guard contains(paneID), drop.anchorID != paneID else { return nil }
+        if let anchorID = drop.anchorID, !contains(anchorID) { return nil }
+        if let reordered = reordering(paneID, to: drop) { return reordered }
+        guard let rest = removing(paneID) else { return nil }
+        let axis = drop.side.axis
+        if let anchorID = drop.anchorID {
+            return rest.splitting(anchorID, axis: axis, adding: paneID, before: drop.side.isLeading)
+        }
+        if case let .split(id, restAxis, children) = rest, restAxis == axis {
+            return Self.joining(children, id: id, axis: axis, adding: paneID,
+                                at: drop.side.isLeading ? 0 : children.count)
+        }
+        let pair = [TerminalSplitChild(node: rest, share: 0.5), TerminalSplitChild(node: .pane(paneID), share: 0.5)]
+        return .split(id: UUID(), axis: axis, children: drop.side.isLeading ? pair.reversed() : pair)
+    }
+
+    /// Moves a pane along its own row or column, keeping every share. Nil when the drop
+    /// leaves that row. This is what lets a drag back to a pane's own place change nothing:
+    /// removing and reinserting would reset the sizes set by hand.
+    private func reordering(_ paneID: UUID, to drop: TerminalPaneDrop) -> TerminalSplitNode? {
+        guard case let .split(id, axis, children) = self else { return nil }
+        if axis == drop.side.axis, let from = children.firstIndex(where: { $0.node == .pane(paneID) }) {
+            var reordered = children
+            let child = reordered.remove(at: from)
+            if let anchorID = drop.anchorID {
+                if let anchor = reordered.firstIndex(where: { $0.node == .pane(anchorID) }) {
+                    reordered.insert(child, at: drop.side.isLeading ? anchor : anchor + 1)
+                    return .split(id: id, axis: axis, children: reordered)
+                }
+            } else {
+                reordered.insert(child, at: drop.side.isLeading ? 0 : reordered.count)
+                return .split(id: id, axis: axis, children: reordered)
+            }
+        }
+        // The edge of the whole tab is the root's business, not a nested split's.
+        guard drop.anchorID != nil else { return nil }
+        for (index, child) in children.enumerated() {
+            guard let inner = child.node.reordering(paneID, to: drop) else { continue }
+            var updated = children
+            updated[index].node = inner
+            return .split(id: id, axis: axis, children: updated)
+        }
+        return nil
     }
 
     /// Removes a pane. The rest of its row or column take back its room in proportion, and
@@ -292,6 +367,62 @@ nonisolated struct TerminalTab: Identifiable, Equatable, Sendable {
     }
 
     mutating func equalize() { root = root.equalized() }
+
+    mutating func move(_ paneID: UUID, to drop: TerminalPaneDrop) {
+        guard let moved = root.moving(paneID, to: drop) else { return }
+        root = moved
+        focus(paneID)
+    }
+
+    /// Frames for the tab with `paneID` at `drop`, without changing the tab.
+    func frames(moving paneID: UUID, to drop: TerminalPaneDrop, in area: CGRect, gap: CGFloat) -> [UUID: CGRect]? {
+        root.moving(paneID, to: drop)?.layout(in: area, gap: gap).frames
+    }
+
+    /// The drag has to travel this far before panes make room, so a short nudge moves nothing.
+    private static let dropDeadZone: CGFloat = 32
+    /// How near the tab's edge the pointer has to be to land on that edge.
+    private static let dropEdgeBand: CGFloat = 28
+    /// How far past the tab's edge the pointer can go before the drag stops aiming anywhere.
+    private static let dropOuterMargin: CGFloat = 48
+
+    /// Where a dragged pane would land. The direction of travel picks the axis, and the
+    /// pointer picks the pane and the side. A pane is always carried by its header, so the
+    /// pointer is near the top of the row: judging the side by the pointer alone would turn
+    /// a sideways reorder into a stack.
+    ///
+    /// Panes are judged with the dragged pane already removed. That layout stays the same
+    /// for the whole drag, so a pane sliding under the pointer cannot change the answer.
+    func drop(for paneID: UUID, at point: CGPoint, travel: CGSize, in area: CGRect, gap: CGFloat) -> TerminalPaneDrop? {
+        guard max(abs(travel.width), abs(travel.height)) >= Self.dropDeadZone,
+              area.insetBy(dx: -Self.dropOuterMargin, dy: -Self.dropOuterMargin).contains(point),
+              let rest = root.removing(paneID) else { return nil }
+        let isSideways = abs(travel.width) >= abs(travel.height)
+        // An edge counts only when the drag is heading for it. A pane in the top row starts
+        // inside the top band, and must not land there on the way to somewhere else.
+        if isSideways {
+            if travel.width < 0, point.x <= area.minX + Self.dropEdgeBand { return TerminalPaneDrop(anchorID: nil, side: .left) }
+            if travel.width > 0, point.x >= area.maxX - Self.dropEdgeBand { return TerminalPaneDrop(anchorID: nil, side: .right) }
+        } else {
+            if travel.height < 0, point.y <= area.minY + Self.dropEdgeBand { return TerminalPaneDrop(anchorID: nil, side: .top) }
+            if travel.height > 0, point.y >= area.maxY - Self.dropEdgeBand { return TerminalPaneDrop(anchorID: nil, side: .bottom) }
+        }
+        let frames = rest.layout(in: area, gap: gap).frames
+        // In a gap or past the edge, the nearest pane stands in for the one under the pointer.
+        // Reading order breaks ties, because the dictionary's order changes between runs.
+        guard let anchorID = rest.paneIDs.min(by: {
+            Self.distance(from: point, to: frames[$0] ?? .null) < Self.distance(from: point, to: frames[$1] ?? .null)
+        }), let frame = frames[anchorID] else { return nil }
+        if isSideways { return TerminalPaneDrop(anchorID: anchorID, side: point.x < frame.midX ? .left : .right) }
+        return TerminalPaneDrop(anchorID: anchorID, side: point.y < frame.midY ? .top : .bottom)
+    }
+
+    private static func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        guard !rect.isNull else { return .greatestFiniteMagnitude }
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return hypot(dx, dy)
+    }
 
     /// Where each pane sits. A zoomed pane takes the area, less `stackInset` at the top for
     /// the edges of the cards under it; the rest keep their places underneath, so their
