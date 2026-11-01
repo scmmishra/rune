@@ -1,12 +1,18 @@
 name: Warm Package Cache
 
 # Release runs are scoped to their tag and can only restore caches saved on
-# main, so the Swift package cache is saved here rather than by releases.
+# main, so the Swift package cache and the GhosttyKit build are saved here
+# rather than by releases.
 on:
   push:
     branches: [main]
     paths:
       - Rune.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+      # These decide the GhosttyKit cache key in release.yml and below.
+      - Scripts/build-ghostty.sh
+      - Scripts/ghostty-patches/**
+      - mise.toml
+      - .github/workflows/package-cache.yml
   # GitHub evicts caches unused for 7 days; keep this one alive between releases.
   schedule:
     - cron: "0 6 * * 1"
@@ -17,16 +23,22 @@ permissions:
 
 jobs:
   resolve:
-    name: Resolve Swift packages
+    name: Resolve Swift packages and build GhosttyKit
     runs-on: macos-26
-    timeout-minutes: 15
+    # A cold GhosttyKit build has not been timed on a runner.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
+      # Same Xcode as release.yml: the cached library is linked against this SDK.
       - name: Select Xcode 26
-        run: sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+        id: xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          xcodebuild -version
+          echo "build=$(xcodebuild -version | sed -n 's/^Build version //p')" >> "$GITHUB_OUTPUT"
 
       - name: Restore package cache
         id: cache
@@ -41,3 +53,31 @@ jobs:
         run: |
           xcodebuild -project Rune.xcodeproj -scheme Rune \
             -derivedDataPath DerivedData -resolvePackageDependencies
+
+      # The key covers everything that decides the build output. There are no
+      # restore-keys: a stale Vendor/ would fail the script's stamp check anyway.
+      - name: Restore GhosttyKit cache
+        id: ghostty
+        uses: actions/cache@v4
+        with:
+          path: Vendor
+          key: ghostty-${{ runner.os }}-${{ steps.xcode.outputs.build }}-${{ hashFiles('Scripts/build-ghostty.sh', 'Scripts/ghostty-patches/*', 'mise.toml') }}
+
+      - name: Install Zig
+        if: steps.ghostty.outputs.cache-hit != 'true'
+        uses: jdx/mise-action@v5
+        with:
+          install_args: zig
+          cache: false
+
+      - name: Install Metal Toolchain
+        if: steps.ghostty.outputs.cache-hit != 'true'
+        run: |
+          if ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          xcrun -sdk macosx metal --version
+
+      # The post step of the cache action saves Vendor/ after a miss.
+      - name: Build GhosttyKit
+        run: bash Scripts/build-ghostty.sh

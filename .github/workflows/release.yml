@@ -16,7 +16,9 @@ jobs:
     name: Package macOS 26 / Apple Silicon
     # Rune's checks must also execute on its minimum supported macOS.
     runs-on: macos-26
-    timeout-minutes: 30
+    # A warm run takes about 8 minutes. A cold GhosttyKit build adds the Metal
+    # Toolchain download and a Zig build on a 3-core runner, which nobody has timed.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
         with:
@@ -24,10 +26,12 @@ jobs:
           persist-credentials: false
 
       - name: Select Xcode 26
+        id: xcode
         run: |
           test "$(uname -m)" = arm64
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version
+          echo "build=$(xcodebuild -version | sed -n 's/^Build version //p')" >> "$GITHUB_OUTPUT"
           sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
           test "${sdk_version%%.*}" = 26
 
@@ -56,6 +60,34 @@ jobs:
           path: DerivedData/SourcePackages
           key: spm-${{ runner.os }}-${{ hashFiles('Rune.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
+
+      # Saved by package-cache.yml on main. The key matches the one used there.
+      - name: Restore GhosttyKit
+        id: ghostty
+        uses: actions/cache/restore@v4
+        with:
+          path: Vendor
+          key: ghostty-${{ runner.os }}-${{ steps.xcode.outputs.build }}-${{ hashFiles('Scripts/build-ghostty.sh', 'Scripts/ghostty-patches/*', 'mise.toml') }}
+
+      # Scripts/build-ghostty.sh needs these only when the cache missed.
+      - name: Install Zig
+        if: steps.ghostty.outputs.cache-hit != 'true'
+        uses: jdx/mise-action@v5
+        with:
+          install_args: zig
+          cache: false
+
+      - name: Install Metal Toolchain
+        if: steps.ghostty.outputs.cache-hit != 'true'
+        run: |
+          if ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          xcrun -sdk macosx metal --version
+
+      # Does nothing when the cache restored Vendor/. Otherwise it builds Ghostty from source.
+      - name: Build GhosttyKit
+        run: bash Scripts/build-ghostty.sh
 
       - name: Build Debug and test highlighting
         run: |

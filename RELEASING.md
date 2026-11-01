@@ -6,6 +6,12 @@ checks, a ZIP and SHA-256 checksum, and a signed Sparkle update feed. Rune requi
 selects Xcode 26.6 and the macOS 26 SDK, and verifies the packaged minimum OS
 and generated feed. Both the runner OS and deployment target are explicit.
 
+The release also builds the Ghostty core (`Vendor/GhosttyKit.xcframework`) with
+`Scripts/build-ghostty.sh`. That needs the Zig version pinned in `mise.toml` and Xcode's
+Metal Toolchain, and the workflow installs both. **Warm Package Cache** saves the build
+on `main` so a release can restore it. If the cache is missing, the release builds the
+core from source, which takes several more minutes.
+
 ## One-time signing setup
 
 Rune uses Sparkle 2.9.5, matching brrr. Generate a separate Rune key, not brrr's:
