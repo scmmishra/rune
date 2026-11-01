@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What a pane draws differently while another pane's drag moves it.
+/// What a pane draws differently while a drag moves it.
 struct TerminalPanePreview: Equatable {
     /// How much bigger or smaller the pane's slot is than the pane.
     var growth = CGSize.zero
@@ -13,9 +13,9 @@ extension EnvironmentValues {
 
 /// A pane's outline with its bottom and trailing edges moved by `growth`.
 ///
-/// A drag moves panes without resizing their terminals, because a resize makes an agent's
-/// TUI redraw. A pane heading for a smaller slot crops to it. In a bigger slot, the same
-/// outline fills the extra room behind the terminal.
+/// A drop resizes each terminal once, then panes slide to their places by transform, because
+/// every resize makes an agent's TUI redraw. Until a pane arrives, this outline keeps the size
+/// it had: a terminal that grew is cropped to it, and one that shrank has the room filled.
 nonisolated struct TerminalPaneShape: InsettableShape {
     var top: CGFloat
     var bottom: CGFloat
@@ -47,13 +47,13 @@ nonisolated struct TerminalPaneShape: InsettableShape {
     }
 }
 
-/// One pane drag: the pane under the pointer, and where the others would land.
+/// One pane drag: the pane under the pointer, and where it would land.
 ///
 /// Panes watch this object themselves, so the workspace's body does not run on every mouse
-/// move. Terminals keep their sizes until the drop, which moves them once.
+/// move. Nothing but the carried pane moves until the drop.
 @MainActor
 final class TerminalPaneDrag: ObservableObject {
-    /// Where a pane sits during a drag, relative to its place in the layout.
+    /// Where a pane shows while it settles, relative to its place in the layout.
     struct Slot: Equatable {
         var offset = CGSize.zero
         var growth = CGSize.zero
@@ -65,19 +65,21 @@ final class TerminalPaneDrag: ObservableObject {
         var offset = CGSize.zero
     }
 
-    static let slideAnimation = Animation.snappy(duration: 0.22)
+    static let liftAnimation = Animation.snappy(duration: 0.18)
     static let settleAnimation = Animation.snappy(duration: 0.24)
-    /// A carried pane never takes more than this part of the tab, so the panes making room
-    /// stay in sight, and a tall pane can travel vertically inside the tab.
-    private static let carriedLimit: CGFloat = 0.6
+    /// A carried pane never takes more than this part of the tab, so the landing highlight
+    /// stays in sight around it.
+    private static let carriedLimit: CGFloat = 0.3
     private static let liftScale: CGFloat = 0.92
-    /// A target has to hold this long, so panes stay put while the pointer passes over them.
-    private static let dwell: Duration = .milliseconds(80)
 
     /// The pane being carried or settling into its place.
     @Published private(set) var pane: UUID?
     @Published private(set) var carry = Carry()
     @Published private(set) var slots: [UUID: Slot] = [:]
+    /// Where the pane was picked up, which stays outlined until the drop.
+    @Published private(set) var origin: CGRect?
+    /// Where the pane would land. Nil when the drop would change nothing.
+    @Published private(set) var landing: CGRect?
     private(set) var isActive = false
 
     private var tab: TerminalTab?
@@ -87,7 +89,6 @@ final class TerminalPaneDrag: ObservableObject {
     private var grab = CGPoint.zero
     private var scale: CGFloat = 1
     private var drop: TerminalPaneDrop?
-    private var dwellTask: Task<Void, Never>?
     /// Where a cancelled drag started. Escape ends the drag with the button still down, and
     /// the same gesture keeps reporting moves that must not start a new drag.
     private var cancelledStart: CGPoint?
@@ -111,27 +112,17 @@ final class TerminalPaneDrag: ObservableObject {
         scale = min(Self.liftScale, Self.carriedLimit * area.width / frame.width,
                     Self.carriedLimit * area.height / frame.height)
         isActive = true
-        withAnimation(Self.slideAnimation) { carry = carrying(by: travel, from: frame) }
+        origin = frame
+        withAnimation(Self.liftAnimation) { carry = carrying(by: travel, from: frame) }
     }
 
     func move(to point: CGPoint, travel: CGSize) {
         guard isActive, let pane, let tab, let frame = frames[pane] else { return }
         carry = carrying(by: travel, from: frame)
-        let target = tab.drop(for: pane, at: point, travel: travel, in: area, gap: gap)
+        let target = tab.drop(for: pane, at: point, in: area, gap: gap, headerHeight: TerminalDrawer.paneHeaderHeight)
         guard target != drop else { return }
         drop = target
-        dwellTask?.cancel()
-        dwellTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.dwell)
-            guard !Task.isCancelled else { return }
-            self?.showDrop()
-        }
-    }
-
-    /// Slides the panes to where the current drop would put them.
-    private func showDrop() {
-        let landing = landingFrames()
-        withAnimation(Self.slideAnimation) { slots = landing.map(makeSlots) ?? [:] }
+        landing = landingFrames()?[pane]
     }
 
     /// Frames after the drop, or nil when the drop would change nothing.
@@ -140,16 +131,6 @@ final class TerminalPaneDrag: ObservableObject {
               let landing = tab.frames(moving: pane, to: drop, in: area, gap: gap),
               landing != frames else { return nil }
         return landing
-    }
-
-    private func makeSlots(_ landing: [UUID: CGRect]) -> [UUID: Slot] {
-        var slots: [UUID: Slot] = [:]
-        for (id, target) in landing where id != pane {
-            guard let frame = frames[id] else { continue }
-            slots[id] = Slot(offset: CGSize(width: target.minX - frame.minX, height: target.minY - frame.minY),
-                             growth: CGSize(width: target.width - frame.width, height: target.height - frame.height))
-        }
-        return slots
     }
 
     /// The carried pane is scaled about the grab point, so the header stays under the
@@ -169,21 +150,27 @@ final class TerminalPaneDrag: ObservableObject {
     func finish() -> TerminalPaneDrop? {
         guard isActive else { return nil }
         isActive = false
-        dwellTask?.cancel()
+        origin = nil
+        landing = nil
         return landingFrames() == nil ? nil : drop
     }
 
-    /// Re-expresses the carried pane against its new place, so it stays where it is on
-    /// screen. Call in the transaction that moves the pane.
+    /// Re-expresses every pane against its new place, so nothing moves on screen yet. Call
+    /// in the transaction that moves the pane.
     func land() {
-        guard let pane, let frame = frames[pane], let drop, let tab,
-              let target = tab.frames(moving: pane, to: drop, in: area, gap: gap)?[pane],
-              target.width > 0, target.height > 0 else { return }
+        guard let pane, let frame = frames[pane], let landed = landingFrames(),
+              let target = landed[pane], target.width > 0, target.height > 0 else { return }
         let x = frame.minX + carry.offset.width
         let y = frame.minY + carry.offset.height
         carry = Carry(scale: CGSize(width: frame.width * scale / target.width, height: frame.height * scale / target.height),
                       offset: CGSize(width: x - target.minX, height: y - target.minY))
-        slots = [:]
+        var slots: [UUID: Slot] = [:]
+        for (id, place) in landed where id != pane {
+            guard let start = frames[id] else { continue }
+            slots[id] = Slot(offset: CGSize(width: start.minX - place.minX, height: start.minY - place.minY),
+                             growth: CGSize(width: start.width - place.width, height: start.height - place.height))
+        }
+        self.slots = slots
     }
 
     /// Brings every pane to rest at its place in the layout.
@@ -203,7 +190,8 @@ final class TerminalPaneDrag: ObservableObject {
 
     func cancel() {
         isActive = false
-        dwellTask?.cancel()
+        origin = nil
+        landing = nil
         drop = nil
         cancelledStart = grab
     }
@@ -211,8 +199,8 @@ final class TerminalPaneDrag: ObservableObject {
     func gestureEnded() { cancelledStart = nil }
 }
 
-/// Moves a pane for a drag. The transforms and the shape are visual only, so the terminal
-/// keeps its grid until the drop. They are always applied, because adding a modifier
+/// Moves a pane for a drag. The transforms and the shape are visual only, so they never
+/// resize the terminal. They are always applied, because adding a modifier
 /// partway through a drag would change the surface's identity and rebuild its PTY.
 struct TerminalPaneDragEffect: ViewModifier {
     @ObservedObject var drag: TerminalPaneDrag
@@ -225,5 +213,39 @@ struct TerminalPaneDragEffect: ViewModifier {
             .environment(\.terminalPanePreview, TerminalPanePreview(growth: slot.growth, isLifted: isCarried))
             .scaleEffect(isCarried ? drag.carry.scale : CGSize(width: 1, height: 1), anchor: .topLeading)
             .offset(isCarried ? drag.carry.offset : slot.offset)
+    }
+}
+
+/// What a pane drag draws over the hub: a hollow shell where the pane was picked up, and a
+/// highlight where it would land.
+struct TerminalPaneDragOverlay: View {
+    @ObservedObject var drag: TerminalPaneDrag
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.clear
+            if let origin = drag.origin {
+                RoundedRectangle(cornerRadius: WorkspaceMetrics.panelRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.16), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                    .frame(width: origin.width, height: origin.height)
+                    .offset(x: origin.minX, y: origin.minY)
+                    .transition(.opacity)
+            }
+            if let landing = drag.landing {
+                RoundedRectangle(cornerRadius: WorkspaceMetrics.panelRadius, style: .continuous)
+                    .fill(Color.primary.opacity(0.1))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: WorkspaceMetrics.panelRadius, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.28), lineWidth: 1)
+                    }
+                    .frame(width: landing.width, height: landing.height)
+                    .offset(x: landing.minX, y: landing.minY)
+                    .transition(.opacity)
+            }
+        }
+        // One animation for the highlight, so it glides between targets and fades at the ends.
+        .animation(.snappy(duration: 0.12), value: drag.landing)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

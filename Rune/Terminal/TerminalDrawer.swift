@@ -47,7 +47,9 @@ struct TerminalDrawer: View {
     /// stay muted, hovered or not, so the eye goes to where typing lands.
     private var headerEmphasis: Double { style == .card && !isFocused ? 0.5 : 1 }
 
-    private var headerHeight: CGFloat { style == .card ? 28 : 38 }
+    /// A split pane's header, which a dragged pane's drop treats as its own zone.
+    static let paneHeaderHeight: CGFloat = 28
+    private var headerHeight: CGFloat { style == .card ? Self.paneHeaderHeight : 38 }
 
     private var showsHeader: Bool { style != .merged || session.savedCommandID != nil }
     private var showsPaneControls: Bool { style == .card && (isHovered || isFocused) }

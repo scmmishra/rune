@@ -95,25 +95,30 @@ Drag a split pane by its header to move it. A drag starts after 6 points of move
 
 While a pane is dragged:
 
-- The pane shrinks a little and follows the pointer. It stays inside the hub.
-- The other panes slide to where the drop would put them.
-- Terminals keep their size. A pane going to a smaller place is cropped, and a pane going to a bigger place has blank room beside it.
+- The pane shrinks and follows the pointer. It stays inside the hub.
+- A dashed outline stays where the pane was.
+- A highlight shows where the pane will land.
 
-The drag's direction picks the axis, and the pointer picks the landing place. The pane under the pointer is the pane with the dragged pane already removed.
+Nothing else moves until the drop.
 
-| Drag | Pointer is over | The pane lands |
-|---|---|---|
-| Mostly sideways | The left or right half of a pane | Left or right of that pane |
-| Mostly up or down | The top or bottom half of a pane | Above or below that pane |
-| Toward an edge of the hub | Within 28 points of that edge | Along that whole edge |
+The pointer's position decides the landing place:
 
-Panes stay where they are until the drag has travelled 32 points. A target must also hold for 80 milliseconds, so panes do not move while the pointer passes over them.
+| Pointer is over | The pane lands |
+|---|---|
+| The dragged pane's own place | Nowhere. Nothing happens. |
+| Another pane's header | In that pane's place. The two panes swap, and all sizes stay. |
+| The middle of another pane | In that pane's place, the same swap. |
+| The outer 30% of another pane, by the nearest side | On that side of that pane |
+| Within 28 points of the hub's left, right or bottom edge | Along that whole edge |
+| Up to 48 points past any hub edge | Along that whole edge |
 
-A pane that stays in its own row or column keeps its size, and so do the others. A pane that joins another row takes an equal share of it. A pane dropped across another pane takes half of that pane.
+To turn two columns into two rows, drag one pane onto the top or bottom part of the other.
 
-Press Escape, or release more than 48 points outside the hub, and every pane returns to its place. The drag also cancels if the tab's panes change or the tab switches.
+A pane that stays in its own row or column keeps its size, and so do the others. A pane that joins another row takes an equal share of it. A pane dropped on a side of another pane takes half of that pane.
 
-Terminals resize once, on the drop.
+Press Escape, or release more than 48 points outside the hub, and the pane returns to its place. The drag also cancels if the tab's panes change or the tab switches.
+
+Terminals resize once, on the drop. The panes then slide to their new places.
 
 ## Moving a card
 

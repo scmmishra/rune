@@ -213,6 +213,9 @@ struct WorkspaceView: View {
                             .disabled(isPalettePresented)
                             .zIndex(0.28)
                     }
+                    TerminalPaneDragOverlay(drag: paneDrag)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .zIndex(0.36)
                     ZStack(alignment: .top) {
                         if let openDrawer {
                             drawer(openDrawer, rootURL: directoryURL)
@@ -744,8 +747,8 @@ struct WorkspaceView: View {
         )).combined(with: .opacity))
     }
 
-    /// Dragging a pane by its header carries it, and the other panes slide to where the drop
-    /// would put them.
+    /// Dragging a pane by its header carries it, and an overlay shows where the drop would
+    /// put it. Nothing else moves until the drop.
     private func dragPane(_ session: TerminalSession, value: DragGesture.Value, paneArea: CGRect) {
         if !paneDrag.isActive {
             let tab = terminals.panelTab
@@ -768,9 +771,9 @@ struct WorkspaceView: View {
         }
         NSCursor.pop()
         if let drop = paneDrag.finish() {
-            // Every pane already looks like its landing place, so the layout changes in one
-            // step. Animating it would resize each terminal on every frame, and each resize
-            // makes an agent's TUI redraw.
+            // The layout changes in one step, and each pane then slides there by transform.
+            // Animating the layout would resize each terminal on every frame, and each
+            // resize makes an agent's TUI redraw.
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {

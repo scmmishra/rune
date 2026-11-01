@@ -34,10 +34,13 @@ nonisolated enum TerminalPaneSide: Equatable, Sendable {
 }
 
 /// Where a dragged pane lands.
-nonisolated struct TerminalPaneDrop: Equatable, Sendable {
-    /// The pane to land beside. Nil means the edge of the whole tab.
-    let anchorID: UUID?
-    let side: TerminalPaneSide
+nonisolated enum TerminalPaneDrop: Equatable, Sendable {
+    /// Takes the other pane's place, and the other pane takes this one's.
+    case swap(UUID)
+    /// Lands on one side of a pane.
+    case beside(UUID, TerminalPaneSide)
+    /// Lands along a whole edge of the tab.
+    case edge(TerminalPaneSide)
 }
 
 /// The gap between two neighbouring nodes of a split, which drags to resize them.
@@ -125,44 +128,62 @@ nonisolated enum TerminalSplitNode: Equatable, Sendable {
 
     /// The tree with `paneID` at `drop`. Nil when the drop names a pane that is not there.
     func moving(_ paneID: UUID, to drop: TerminalPaneDrop) -> TerminalSplitNode? {
-        guard contains(paneID), drop.anchorID != paneID else { return nil }
-        if let anchorID = drop.anchorID, !contains(anchorID) { return nil }
-        if let reordered = reordering(paneID, to: drop) { return reordered }
-        guard let rest = removing(paneID) else { return nil }
-        let axis = drop.side.axis
-        if let anchorID = drop.anchorID {
-            return rest.splitting(anchorID, axis: axis, adding: paneID, before: drop.side.isLeading)
+        guard contains(paneID) else { return nil }
+        switch drop {
+        case let .swap(otherID):
+            guard otherID != paneID, contains(otherID) else { return nil }
+            return swapping(paneID, otherID)
+        case let .beside(anchorID, side):
+            guard anchorID != paneID, contains(anchorID) else { return nil }
+            return reordering(paneID, beside: anchorID, side: side)
+                ?? removing(paneID)?.splitting(anchorID, axis: side.axis, adding: paneID, before: side.isLeading)
+        case let .edge(side):
+            if let reordered = reordering(paneID, beside: nil, side: side) { return reordered }
+            guard let rest = removing(paneID) else { return nil }
+            if case let .split(id, restAxis, children) = rest, restAxis == side.axis {
+                return Self.joining(children, id: id, axis: side.axis, adding: paneID,
+                                    at: side.isLeading ? 0 : children.count)
+            }
+            let pair = [TerminalSplitChild(node: rest, share: 0.5), TerminalSplitChild(node: .pane(paneID), share: 0.5)]
+            return .split(id: UUID(), axis: side.axis, children: side.isLeading ? pair.reversed() : pair)
         }
-        if case let .split(id, restAxis, children) = rest, restAxis == axis {
-            return Self.joining(children, id: id, axis: axis, adding: paneID,
-                                at: drop.side.isLeading ? 0 : children.count)
+    }
+
+    /// Exchanges two panes. Every share stays, so the layout keeps its shape.
+    private func swapping(_ first: UUID, _ second: UUID) -> TerminalSplitNode {
+        switch self {
+        case let .pane(id):
+            return .pane(id == first ? second : (id == second ? first : id))
+        case let .split(id, axis, children):
+            return .split(id: id, axis: axis, children: children.map {
+                TerminalSplitChild(node: $0.node.swapping(first, second), share: $0.share)
+            })
         }
-        let pair = [TerminalSplitChild(node: rest, share: 0.5), TerminalSplitChild(node: .pane(paneID), share: 0.5)]
-        return .split(id: UUID(), axis: axis, children: drop.side.isLeading ? pair.reversed() : pair)
     }
 
     /// Moves a pane along its own row or column, keeping every share. Nil when the drop
-    /// leaves that row. This is what lets a drag back to a pane's own place change nothing:
-    /// removing and reinserting would reset the sizes set by hand.
-    private func reordering(_ paneID: UUID, to drop: TerminalPaneDrop) -> TerminalSplitNode? {
+    /// leaves that row. This is what lets a drop at a pane's own place change nothing:
+    /// removing and reinserting would reset the sizes set by hand. A nil anchor means the
+    /// edge of the whole tab.
+    private func reordering(_ paneID: UUID, beside anchorID: UUID?, side: TerminalPaneSide) -> TerminalSplitNode? {
         guard case let .split(id, axis, children) = self else { return nil }
-        if axis == drop.side.axis, let from = children.firstIndex(where: { $0.node == .pane(paneID) }) {
+        if axis == side.axis, let from = children.firstIndex(where: { $0.node == .pane(paneID) }) {
             var reordered = children
             let child = reordered.remove(at: from)
-            if let anchorID = drop.anchorID {
+            if let anchorID {
                 if let anchor = reordered.firstIndex(where: { $0.node == .pane(anchorID) }) {
-                    reordered.insert(child, at: drop.side.isLeading ? anchor : anchor + 1)
+                    reordered.insert(child, at: side.isLeading ? anchor : anchor + 1)
                     return .split(id: id, axis: axis, children: reordered)
                 }
             } else {
-                reordered.insert(child, at: drop.side.isLeading ? 0 : reordered.count)
+                reordered.insert(child, at: side.isLeading ? 0 : reordered.count)
                 return .split(id: id, axis: axis, children: reordered)
             }
         }
         // The edge of the whole tab is the root's business, not a nested split's.
-        guard drop.anchorID != nil else { return nil }
+        guard anchorID != nil else { return nil }
         for (index, child) in children.enumerated() {
-            guard let inner = child.node.reordering(paneID, to: drop) else { continue }
+            guard let inner = child.node.reordering(paneID, beside: anchorID, side: side) else { continue }
             var updated = children
             updated[index].node = inner
             return .split(id: id, axis: axis, children: updated)
@@ -379,42 +400,56 @@ nonisolated struct TerminalTab: Identifiable, Equatable, Sendable {
         root.moving(paneID, to: drop)?.layout(in: area, gap: gap).frames
     }
 
-    /// The drag has to travel this far before panes make room, so a short nudge moves nothing.
-    private static let dropDeadZone: CGFloat = 32
-    /// How near the tab's edge the pointer has to be to land on that edge.
+    /// How near the tab's edge the pointer has to be to land along that edge.
     private static let dropEdgeBand: CGFloat = 28
     /// How far past the tab's edge the pointer can go before the drag stops aiming anywhere.
     private static let dropOuterMargin: CGFloat = 48
+    /// The part of a pane's height or width, from each side, that lands on that side.
+    private static let dropSideZone: CGFloat = 0.3
 
-    /// Where a dragged pane would land. The direction of travel picks the axis, and the
-    /// pointer picks the pane and the side. A pane is always carried by its header, so the
-    /// pointer is near the top of the row: judging the side by the pointer alone would turn
-    /// a sideways reorder into a stack.
+    /// Where a dragged pane would land, judged against the panes on screen. The pointer's
+    /// place in the pane under it decides. The dragged pane's own place aims at nothing.
     ///
-    /// Panes are judged with the dragged pane already removed. That layout stays the same
-    /// for the whole drag, so a pane sliding under the pointer cannot change the answer.
-    func drop(for paneID: UUID, at point: CGPoint, travel: CGSize, in area: CGRect, gap: CGFloat) -> TerminalPaneDrop? {
-        guard max(abs(travel.width), abs(travel.height)) >= Self.dropDeadZone,
-              area.insetBy(dx: -Self.dropOuterMargin, dy: -Self.dropOuterMargin).contains(point),
-              let rest = root.removing(paneID) else { return nil }
-        let isSideways = abs(travel.width) >= abs(travel.height)
-        // An edge counts only when the drag is heading for it. A pane in the top row starts
-        // inside the top band, and must not land there on the way to somewhere else.
-        if isSideways {
-            if travel.width < 0, point.x <= area.minX + Self.dropEdgeBand { return TerminalPaneDrop(anchorID: nil, side: .left) }
-            if travel.width > 0, point.x >= area.maxX - Self.dropEdgeBand { return TerminalPaneDrop(anchorID: nil, side: .right) }
-        } else {
-            if travel.height < 0, point.y <= area.minY + Self.dropEdgeBand { return TerminalPaneDrop(anchorID: nil, side: .top) }
-            if travel.height > 0, point.y >= area.maxY - Self.dropEdgeBand { return TerminalPaneDrop(anchorID: nil, side: .bottom) }
-        }
-        let frames = rest.layout(in: area, gap: gap).frames
-        // In a gap or past the edge, the nearest pane stands in for the one under the pointer.
-        // Reading order breaks ties, because the dictionary's order changes between runs.
-        guard let anchorID = rest.paneIDs.min(by: {
+    /// Another pane's header swaps. A pane is carried by its header, so a sideways drag runs
+    /// along the headers, and that has to read as a swap rather than as that pane's top side.
+    /// For the same reason the tab's top edge is only reachable past the tab.
+    func drop(for paneID: UUID, at point: CGPoint, in area: CGRect, gap: CGFloat,
+              headerHeight: CGFloat) -> TerminalPaneDrop? {
+        guard isSplit, contains(paneID),
+              area.insetBy(dx: -Self.dropOuterMargin, dy: -Self.dropOuterMargin).contains(point) else { return nil }
+        if let side = Self.side(past: area, of: point) { return .edge(side) }
+        let frames = root.layout(in: area, gap: gap).frames
+        // In a gap, the nearest pane stands in for the one under the pointer. Reading order
+        // breaks ties, because the dictionary's order changes between runs.
+        guard let targetID = paneIDs.min(by: {
             Self.distance(from: point, to: frames[$0] ?? .null) < Self.distance(from: point, to: frames[$1] ?? .null)
-        }), let frame = frames[anchorID] else { return nil }
-        if isSideways { return TerminalPaneDrop(anchorID: anchorID, side: point.x < frame.midX ? .left : .right) }
-        return TerminalPaneDrop(anchorID: anchorID, side: point.y < frame.midY ? .top : .bottom)
+        }), targetID != paneID, let frame = frames[targetID] else { return nil }
+        if point.y < frame.minY + headerHeight { return .swap(targetID) }
+        if point.x <= area.minX + Self.dropEdgeBand { return .edge(.left) }
+        if point.x >= area.maxX - Self.dropEdgeBand { return .edge(.right) }
+        if point.y >= area.maxY - Self.dropEdgeBand { return .edge(.bottom) }
+
+        let body = CGRect(x: frame.minX, y: frame.minY + headerHeight, width: frame.width,
+                          height: max(1, frame.height - headerHeight))
+        let across = (point.x - body.minX) / max(1, body.width)
+        let down = (point.y - body.minY) / body.height
+        let sides: [(side: TerminalPaneSide, distance: CGFloat)] = [
+            (.left, across), (.right, 1 - across), (.top, down), (.bottom, 1 - down),
+        ]
+        guard let nearest = sides.min(by: { $0.distance < $1.distance }), nearest.distance < Self.dropSideZone else {
+            return .swap(targetID)
+        }
+        return .beside(targetID, nearest.side)
+    }
+
+    /// The side of `area` the point is furthest past, if it is outside.
+    private static func side(past area: CGRect, of point: CGPoint) -> TerminalPaneSide? {
+        let overshoots: [(side: TerminalPaneSide, distance: CGFloat)] = [
+            (.left, area.minX - point.x), (.right, point.x - area.maxX),
+            (.top, area.minY - point.y), (.bottom, point.y - area.maxY),
+        ]
+        guard let furthest = overshoots.max(by: { $0.distance < $1.distance }), furthest.distance > 0 else { return nil }
+        return furthest.side
     }
 
     private static func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
