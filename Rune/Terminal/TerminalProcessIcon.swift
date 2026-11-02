@@ -66,6 +66,8 @@ nonisolated struct TerminalProcessTile: Equatable, Sendable {
         "agent-clue": (0x0B1320, 0x82AAFF),
         "agent-codex": (0xF7F7F7, 0x1A1A1A),
         "agent-fx": (0x000000, 0xFFFFFF),
+        "agent-opencode": (0x1A1A1A, 0xFFFFFF),
+        "agent-pi": (0x1A1A1A, 0xFFFFFF),
         "process-bun": (0xFBF0DF, 0x3B2A20),
         "process-deno": (0x1B1B1B, 0xFFFFFF),
         "process-docker": (0x2496ED, 0xFFFFFF),
