@@ -11,7 +11,6 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "@fontsource/geist-mono": "^5.3.0",
     "astro": "^7.3.1",
     "marked": "^18.1.1"
   }

@@ -1,7 +1,11 @@
 ---
-import "@fontsource/geist-mono/400.css";
-import "@fontsource/geist-mono/500.css";
+import "../styles/fonts.css";
 import "../styles/global.css";
+import sansRegular from "../assets/fonts/TimelessSans-SansRegular-core.woff2?url";
+import sansSemibold from "../assets/fonts/TimelessSans-SansSemibold-core.woff2?url";
+import groteskMedium from "../assets/fonts/TimelessSans-GroteskMedium-core.woff2?url";
+import groteskSemibold from "../assets/fonts/TimelessSans-GroteskSemibold-core.woff2?url";
+import monoRegular from "../assets/fonts/GeistMono-Regular-core.woff2?url";
 import { REPO } from "../lib/site";
 import FloatingDownload from "../components/FloatingDownload.astro";
 
@@ -10,9 +14,15 @@ interface Props {
   description: string;
   /** The header link for the current page. */
   current?: "docs" | "changelog";
+  /** URLs of core font files this page sets text in, beyond the ones every page uses. */
+  fonts?: string[];
 }
 
-const { title, description, current } = Astro.props;
+const { title, description, current, fonts = [] } = Astro.props;
+
+// The header, footer, docs and changelog titles, and the floating download button use
+// these on every page. Only the core files are preloaded. See scripts/subset-fonts.py.
+const EVERY_PAGE_FONTS = [sansRegular, sansSemibold, groteskMedium, groteskSemibold, monoRegular];
 ---
 
 <!doctype html>
@@ -26,6 +36,7 @@ const { title, description, current } = Astro.props;
     <meta property="og:description" content={description} />
     <meta property="og:image" content={new URL("/icon.png", Astro.site)} />
     <link rel="icon" href="/favicon.png" />
+    {[...EVERY_PAGE_FONTS, ...fonts].map(url => <link rel="preload" href={url} as="font" type="font/woff2" crossorigin />)}
   </head>
   <body>
     <header class="wrap site-header">
