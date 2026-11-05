@@ -3,7 +3,9 @@
 # dependencies = ["fonttools==4.60.1", "brotli==1.1.0"]
 # ///
 """
-Cuts the site's fonts down to what the site uses, and writes them to public/fonts.
+Cuts the site's fonts down to what the site uses, and writes them to src/assets/fonts.
+The build only copies them: Vite gives each file a content hash, so they can be cached
+for good.
 
 Each face becomes two files. The core file holds ASCII, the punctuation most pages use
 and every other character the built pages use, and pages preload it. The ext file holds
@@ -40,7 +42,7 @@ from fontTools.varLib.instancer import instantiateVariableFont
 SITE = Path(__file__).resolve().parent.parent
 SOURCES = SITE / "fonts"
 DIST = SITE / "dist"
-OUTPUT = SITE / "public" / "fonts"
+OUTPUT = SITE / "src" / "assets" / "fonts"
 STYLESHEET = SITE / "src" / "styles" / "fonts.css"
 
 # Every page's text is ASCII plus a little punctuation: no-break space, middle dot,
@@ -121,7 +123,9 @@ def used_characters():
 
 
 def load(source, axes):
-    font = TTFont(SOURCES / source)
+    # Saving otherwise stamps the current time into the head table. The files would change
+    # on every run, and so would their hashed URLs, which would break browser caches.
+    font = TTFont(SOURCES / source, recalcTimestamp=False)
     if axes:
         font = instantiateVariableFont(font, axes)
         # Instancing leaves unrounded coordinates. Saving rounds them, as a served file would.
@@ -133,7 +137,7 @@ def reload(font):
     buffer = io.BytesIO()
     font.save(buffer)
     buffer.seek(0)
-    return TTFont(buffer)
+    return TTFont(buffer, recalcTimestamp=False)
 
 
 def cut(font, unicodes):
@@ -242,7 +246,7 @@ def main():
             check(name, data, font, unicodes)
             (OUTPUT / name).write_bytes(data)
             sizes.append(len(data))
-            lines = [f'  font-family: "{family}";', f'  src: url("/fonts/{name}") format("woff2");', f"  font-weight: {weight};"]
+            lines = [f'  font-family: "{family}";', f'  src: url("../assets/fonts/{name}") format("woff2");', f"  font-weight: {weight};"]
             if style:
                 lines.append(f"  font-style: {style};")
             lines += ["  font-display: swap;", f"  unicode-range: {ranges(unicodes)};"]

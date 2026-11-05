@@ -2,9 +2,10 @@
 import Base from "../layouts/Base.astro";
 import { releases } from "../lib/releases";
 import { REPO } from "../lib/site";
+import releaseHeadingFont from "../assets/fonts/GeistMono-Medium-core.woff2?url";
 ---
 
-<Base title="Changelog · Rune" description="Every Rune release and what changed in it." current="changelog" fonts={["GeistMono-Medium-core.woff2"]}>
+<Base title="Changelog · Rune" description="Every Rune release and what changed in it." current="changelog" fonts={[releaseHeadingFont]}>
   <div class="wrap">
     <h1>Changelog</h1>
     <p class="note">

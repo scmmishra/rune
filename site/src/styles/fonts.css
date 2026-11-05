@@ -8,7 +8,7 @@
 
 @font-face {
   font-family: "Timeless Sans";
-  src: url("/fonts/TimelessSans-SansRegular-core.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSans-SansRegular-core.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -17,7 +17,7 @@
 
 @font-face {
   font-family: "Timeless Sans";
-  src: url("/fonts/TimelessSans-SansRegular-ext.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSans-SansRegular-ext.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -26,25 +26,25 @@
 
 @font-face {
   font-family: "Timeless Sans";
-  src: url("/fonts/TimelessSans-SansRegularItalic-core.woff2") format("woff2");
-  font-weight: 400;
-  font-style: italic;
-  font-display: swap;
-  unicode-range: U+20-5D, U+5F-7E, U+A0, U+B7, U+E9, U+2013-2014, U+2018-2019, U+201C-201D, U+2022, U+2026, U+2039-203A, U+2191-2193, U+2212;
-}
-
-@font-face {
-  font-family: "Timeless Sans";
-  src: url("/fonts/TimelessSans-SansRegularItalic-ext.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSans-SansRegularItalic-core.woff2") format("woff2");
   font-weight: 400;
   font-style: italic;
   font-display: swap;
+  unicode-range: U+20-5D, U+5F-7E, U+A0, U+B7, U+E9, U+2013-2014, U+2018-2019, U+201C-201D, U+2022, U+2026, U+2039-203A, U+2191-2193, U+2212;
+}
+
+@font-face {
+  font-family: "Timeless Sans";
+  src: url("../assets/fonts/TimelessSans-SansRegularItalic-ext.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
   unicode-range: U+A1-A3, U+A5-A9, U+AB, U+AD-B0, U+B4, U+B6, U+B8, U+BA-E8, U+EA-110, U+112-127, U+129-137, U+139-148, U+14A-17E;
 }
 
 @font-face {
   font-family: "Timeless Sans";
-  src: url("/fonts/TimelessSans-SansMedium-core.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSans-SansMedium-core.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -53,7 +53,7 @@
 
 @font-face {
   font-family: "Timeless Sans";
-  src: url("/fonts/TimelessSans-SansMedium-ext.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSans-SansMedium-ext.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -62,7 +62,7 @@
 
 @font-face {
   font-family: "Timeless Sans";
-  src: url("/fonts/TimelessSans-SansSemibold-core.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSans-SansSemibold-core.woff2") format("woff2");
   font-weight: 600;
   font-style: normal;
   font-display: swap;
@@ -71,7 +71,7 @@
 
 @font-face {
   font-family: "Timeless Sans";
-  src: url("/fonts/TimelessSans-SansSemibold-ext.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSans-SansSemibold-ext.woff2") format("woff2");
   font-weight: 600;
   font-style: normal;
   font-display: swap;
@@ -80,7 +80,7 @@
 
 @font-face {
   font-family: "Timeless Grotesk";
-  src: url("/fonts/TimelessSans-GroteskMedium-core.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSans-GroteskMedium-core.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -89,7 +89,7 @@
 
 @font-face {
   font-family: "Timeless Grotesk";
-  src: url("/fonts/TimelessSans-GroteskMedium-ext.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSans-GroteskMedium-ext.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -98,7 +98,7 @@
 
 @font-face {
   font-family: "Timeless Grotesk";
-  src: url("/fonts/TimelessSans-GroteskSemibold-core.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSans-GroteskSemibold-core.woff2") format("woff2");
   font-weight: 600;
   font-style: normal;
   font-display: swap;
@@ -107,7 +107,7 @@
 
 @font-face {
   font-family: "Timeless Grotesk";
-  src: url("/fonts/TimelessSans-GroteskSemibold-ext.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSans-GroteskSemibold-ext.woff2") format("woff2");
   font-weight: 600;
   font-style: normal;
   font-display: swap;
@@ -116,7 +116,7 @@
 
 @font-face {
   font-family: "Timeless Variable";
-  src: url("/fonts/TimelessSansVF-core.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSansVF-core.woff2") format("woff2");
   font-weight: 300 800;
   font-display: swap;
   unicode-range: U+20-5D, U+5F-7E, U+A0, U+B7, U+E9, U+2013-2014, U+2018-2019, U+201C-201D, U+2022, U+2026, U+2039-203A, U+2191-2193, U+2212;
@@ -124,7 +124,7 @@
 
 @font-face {
   font-family: "Timeless Variable";
-  src: url("/fonts/TimelessSansVF-ext.woff2") format("woff2");
+  src: url("../assets/fonts/TimelessSansVF-ext.woff2") format("woff2");
   font-weight: 300 800;
   font-display: swap;
   unicode-range: U+A1-A3, U+A5-AB, U+AD-B0, U+B4, U+B6, U+B8, U+BA-E8, U+EA-110, U+112-127, U+129-137, U+139-148, U+14A-17E;
@@ -132,7 +132,7 @@
 
 @font-face {
   font-family: "Geist Mono";
-  src: url("/fonts/GeistMono-Regular-core.woff2") format("woff2");
+  src: url("../assets/fonts/GeistMono-Regular-core.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -141,7 +141,7 @@
 
 @font-face {
   font-family: "Geist Mono";
-  src: url("/fonts/GeistMono-Regular-ext.woff2") format("woff2");
+  src: url("../assets/fonts/GeistMono-Regular-ext.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -150,7 +150,7 @@
 
 @font-face {
   font-family: "Geist Mono";
-  src: url("/fonts/GeistMono-Medium-core.woff2") format("woff2");
+  src: url("../assets/fonts/GeistMono-Medium-core.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -159,7 +159,7 @@
 
 @font-face {
   font-family: "Geist Mono";
-  src: url("/fonts/GeistMono-Medium-ext.woff2") format("woff2");
+  src: url("../assets/fonts/GeistMono-Medium-ext.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
