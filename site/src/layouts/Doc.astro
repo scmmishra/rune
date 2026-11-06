@@ -70,7 +70,7 @@ const doc = docs.find(item => item.slug === slug)!;
 
   @media (max-width: 720px) {
     .layout {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
       gap: 1.5rem;
     }
 
